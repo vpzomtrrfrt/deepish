@@ -12,4 +12,7 @@ export default {
 			"@xmpp/sasl-scram-sha-1": pathUtil.resolve(__dirname, "node_modules/@xmpp/sasl-scram-sha-1/index.js"),
 		},
 	},
+	define: {
+		global: "window",
+	},
 };

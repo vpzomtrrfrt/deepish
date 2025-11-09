@@ -1,6 +1,8 @@
 import * as xmppClient from "@xmpp/client";
+import Connection from "@xmpp/connection";
 import { xml } from "@xmpp/client";
 import { JID, parse as parseJID } from "@xmpp/jid";
+import toBase64 from "es-arraybuffer-base64/Uint8Array.prototype.toBase64";
 import { createContext, h, render } from "preact";
 import { useCallback, useContext, useEffect, useMemo, useState } from "preact/hooks";
 import { Redirect, Route, useLocation } from "wouter-preact";
@@ -8,10 +10,12 @@ import { Redirect, Route, useLocation } from "wouter-preact";
 import ChatPage from "./pages/chat";
 import LoginPage from "./pages/login";
 import useEffectOnce from "./util/useEffectOnce";
+import useLatestCallback from "use-latest-callback";
 
 interface Account {
 	jid: JID;
 	client: xmppClient.Client;
+	connected: boolean;
 }
 
 export interface AppContext {
@@ -37,6 +41,42 @@ function App() {
 
 	const [inited, setInited] = useState(false);
 
+	const onClientOnline = useLatestCallback((client: xmppClient.Client) => {
+		setAccounts(current => {
+			return current.map(item => {
+				if(item.client === client) {
+					return {
+						...item,
+						connected: true,
+					};
+				}
+				else return item;
+			});
+		});
+
+		genVerString(
+			[{category: "client", type: "web", lang: "", name: "Deepish"}],
+			[],
+		)
+			.then(ver => {
+				client.send(
+					xml(
+						"presence",
+						undefined,
+						xml(
+							"c",
+							{
+								xmlns: "http://jabber.org/protocol/caps",
+								hash: "sha-1",
+								node: "https://deepish.vpzom.click",
+								ver,
+							},
+						),
+					),
+				);
+			});
+	});
+
 	const loadAccounts = useCallback(() => {
 		const infoStr = localStorage.getItem("deepishAccount");
 		if(infoStr === null) {
@@ -59,7 +99,10 @@ function App() {
 				return [
 					{
 						jid,
-						client: createXMPPClientForAccount(jid, info.token, info.userAgent),
+						client: createXMPPClientForAccount(jid, info.token, info.userAgent, {
+							online: onClientOnline,
+						}),
+						connected: false,
 					},
 				];
 			});
@@ -102,7 +145,16 @@ function RootPage() {
 
 render(<App />, document.getElementById("root") as HTMLDivElement);
 
-function createXMPPClientForAccount(jid: JID, token: unknown, userAgent: string) {
+function createXMPPClientForAccount(
+	jid: JID,
+	token: unknown,
+	userAgent: string,
+	listeners: {
+		[K in keyof Connection.ConnectionEvents]?: Connection.ConnectionEvents[K] extends (...args: infer T) => infer O ?
+			(client: xmppClient.Client, ...args: T) => O :
+			never
+	},
+) {
 	const client = xmppClient.client({
 		service: jid.domain,
 		domain: jid.domain,
@@ -115,7 +167,47 @@ function createXMPPClientForAccount(jid: JID, token: unknown, userAgent: string)
 			userAgent: xml("user-agent", {id: userAgent}),
 		}),
 	});
+
+	for(const key_ in listeners) {
+		const key = key_ as keyof Connection.ConnectionEvents;
+		if(typeof listeners[key] === "undefined") continue;
+
+		client.on(key, (listeners[key] as any).bind(undefined, client));
+	}
+
 	client.start();
 
 	return client;
+}
+
+async function genVerString(
+	identities: Array<{
+		category: string;
+		type: string;
+		lang: string;
+		name: string;
+	}>,
+	features: string[],
+) {
+	let s = "";
+
+	identities.toSorted((a, b) => {
+		let result = a.category.localeCompare(b.category);
+		if(result !== 0) return result;
+
+		result = a.type.localeCompare(b.type);
+		if(result !== 0) return result;
+
+		return a.lang.localeCompare(b.lang);
+	}).forEach(identity => {
+		s += identity.category + "/" + identity.type + "/" + identity.lang + "/" + identity.name + "<";
+	});
+
+	features.toSorted().forEach(feature => {
+		s += feature + "<";
+	});
+
+	const hash = await crypto.subtle.digest("SHA-1", new TextEncoder().encode(s));
+
+	return toBase64(new Uint8Array(hash));
 }
