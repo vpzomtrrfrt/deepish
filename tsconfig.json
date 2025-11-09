@@ -1,0 +1,12 @@
+{
+	"compilerOptions": {
+		"target": "esnext",
+		"strict": true,
+		"moduleResolution": "nodenext",
+		"module": "nodenext",
+		"jsx": "react",
+		"jsxFactory": "h",
+		"jsxFragmentFactory": "Fragment"
+	},
+	"include": ["src"]
+}
