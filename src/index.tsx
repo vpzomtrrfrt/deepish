@@ -5,7 +5,7 @@ import { JID, parse as parseJID } from "@xmpp/jid";
 import xml, { Element } from "@xmpp/xml";
 import toBase64 from "es-arraybuffer-base64/Uint8Array.prototype.toBase64";
 import { createContext, h, render } from "preact";
-import { useCallback, useContext, useEffect, useMemo, useState } from "preact/hooks";
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { Redirect, Route, useLocation } from "wouter-preact";
 
 import ChatPage from "./pages/chat";
@@ -26,10 +26,32 @@ export interface Account {
 	rooms: Map<string, Room>;
 }
 
+export interface Message {
+	room: JID | null;
+	from: JID;
+	content: string;
+}
+
+export interface MessageEvent {
+	message: Message;
+}
+
+interface AppEventMap {
+	message: MessageEvent;
+}
+
 export interface AppContext {
 	accounts: Account[];
 
 	saveToken(jid: JID, token: unknown, userAgent: string): void;
+	addEventListener<K extends keyof AppEventMap>(
+		event: K,
+		listener: (evt: AppEventMap[K]) => void,
+	): void;
+	removeEventListener<K extends keyof AppEventMap>(
+		event: K,
+		listener: (evt: AppEventMap[K]) => void,
+	): void;
 }
 
 export const AppContext = createContext<undefined | AppContext>(undefined);
@@ -207,6 +229,23 @@ function App() {
 				}
 			}
 		}
+		else if(elem.getName() === "message") {
+			const from = parseJID(elem.getAttr("from"));
+
+			if(elem.getAttr("type") === "groupchat") {
+				const content = elem.getChildText("body");
+
+				if(content !== null) {
+					emit("message", {
+						message: {
+							room: from.bare(), // TODO is this correct for non-anonymous MUCs?
+							from: from,
+							content,
+						},
+					});
+				}
+			}
+		}
 	});
 
 	const loadAccounts = useCallback(() => {
@@ -245,6 +284,40 @@ function App() {
 		setInited(true);
 	}, []);
 
+	const listenersRef = useRef<{
+		[K in keyof AppEventMap]: Set<(evt: AppEventMap[K]) => void>;
+	}>({
+		message: new Set(),
+	});
+
+	const addEventListener = useCallback(
+		<K extends keyof AppEventMap>(event: K, listener: (evt: AppEventMap[K]) => void) => {
+			listenersRef.current[event].add(listener);
+		},
+		[],
+	);
+
+	const removeEventListener = useCallback(
+		<K extends keyof AppEventMap>(event: K, listener: (evt: AppEventMap[K]) => void) => {
+			listenersRef.current[event].delete(listener);
+		},
+		[],
+	);
+
+	const emit = useCallback(
+		<K extends keyof AppEventMap>(eventType: K, event: AppEventMap[K]) => {
+			listenersRef.current[eventType].forEach(listener => {
+				try {
+					listener(event);
+				}
+				catch(ex) {
+					console.error(ex);
+				}
+			});
+		},
+		[],
+	);
+
 	const appCtx = useMemo(() => ({
 		accounts,
 
@@ -252,7 +325,10 @@ function App() {
 			localStorage.setItem("deepishAccount", JSON.stringify({jid: jid.toString(), token, userAgent}));
 			loadAccounts();
 		},
-	} satisfies AppContext), [accounts]);
+
+		addEventListener,
+		removeEventListener,
+	} satisfies AppContext), [accounts, addEventListener, removeEventListener, loadAccounts]);
 
 	useEffectOnce(() => {
 		loadAccounts();
@@ -271,6 +347,7 @@ function App() {
 
 	return <AppContext.Provider value={appCtx}>
 		<Route path="/" component={RootPage} />
+		<Route path="/chat" component={ChatPage} nest />
 		<Route path="/login" component={LoginPage} />
 	</AppContext.Provider>;
 }

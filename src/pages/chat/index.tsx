@@ -1,6 +1,8 @@
 import { h } from "preact";
+import { Link, Route } from "wouter-preact";
 
 import { Account, useAppContext } from "../..";
+import ChatRoomPage from "./rooms";
 
 export default function ChatPage() {
 	const appCtx = useAppContext();
@@ -13,6 +15,7 @@ export default function ChatPage() {
 				<ChatView account={account} /> :
 				"Connecting…"
 		}
+		<Route path="/rooms/:roomJID" component={ChatRoomPage} />
 	</div>;
 }
 
@@ -25,7 +28,7 @@ function ChatView(props: {account: Account}) {
 					props.account.rooms,
 					([roomJID, info]) => {
 						return <li key={roomJID}>
-							{roomJID} - {info.connected ? ("Connected as " + info.nick!) : "Not Connected"}
+							<Link to={"~/chat/rooms/" + encodeURIComponent(roomJID)}>{roomJID}</Link> - {info.connected ? ("Connected as " + info.nick!) : "Not Connected"}
 						</li>;
 					},
 				)
