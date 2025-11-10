@@ -12,6 +12,7 @@ export default function ChatRoomPage(props: {params: {roomJID: string}}) {
 function ChatRoomPageInner(props: {roomJID: string}) {
 	const appCtx = useAppContext();
 	const account = appCtx.accounts[0]!;
+	const room = account.rooms.get(props.roomJID);
 
 	const [messages, setMessages] = useState<Message[]>([]);
 
@@ -31,6 +32,12 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 		};
 	}, [onMessage, appCtx.addEventListener, appCtx.removeEventListener]);
 
+	useEffect(() => {
+		if(room?.connected === true) {
+			appCtx.requestArchive(account.jid, room.jid)
+				.then(console.log);
+		}
+	}, [room?.connected]);
 
 	return <div>
 		<h1>{props.roomJID}</h1>

@@ -14,6 +14,7 @@ import useEffectOnce from "./util/useEffectOnce";
 import useLatestCallback from "use-latest-callback";
 
 export interface Room {
+	jid: JID;
 	nick: string | null;
 	connected: boolean;
 }
@@ -40,6 +41,11 @@ interface AppEventMap {
 	message: MessageEvent;
 }
 
+interface ResultSetInfo {
+	firstItem: string;
+	lastItem: string;
+}
+
 export interface AppContext {
 	accounts: Account[];
 
@@ -52,6 +58,7 @@ export interface AppContext {
 		event: K,
 		listener: (evt: AppEventMap[K]) => void,
 	): void;
+	requestArchive(account: JID, entity: JID): Promise<ResultSetInfo | null>;
 }
 
 export const AppContext = createContext<undefined | AppContext>(undefined);
@@ -162,11 +169,14 @@ function App() {
 									rooms.set(entry.jid, item.rooms.get(entry.jid)!);
 								}
 								else {
+									const jid = parseJID(entry.jid);
+
 									rooms.set(entry.jid, {
+										jid,
 										nick: null,
 										connected: false,
 									});
-									connectMUC(client, entry.jid, entry.nick);
+									connectMUC(client, jid, entry.nick);
 								}
 							});
 
@@ -180,6 +190,35 @@ function App() {
 				});
 			});
 	});
+
+	function handleMessageStanza(elem: Element) {
+		const fromStr = elem.getAttr("from");
+		const from = typeof fromStr === "undefined" ? undefined : parseJID(fromStr);
+
+		if(elem.getAttr("type") === "groupchat") {
+			const content = elem.getChildText("body");
+
+			if(content !== null && typeof from !== "undefined") {
+				emit("message", {
+					message: {
+						room: from.bare(), // TODO is this correct for non-anonymous MUCs?
+						from: from,
+						content,
+					},
+				});
+			}
+		}
+		else {
+			const mamResultElem = elem.getChild("result", "urn:xmpp:mam:2");
+			if(typeof mamResultElem !== "undefined") {
+				const forwardedElem = mamResultElem.getChild("forwarded", "urn:xmpp:forward:0");
+				if(typeof forwardedElem !== "undefined") {
+					const messageElem = forwardedElem.getChild("message", "jabber:client");
+					if(typeof messageElem !== "undefined") handleMessageStanza(messageElem);
+				}
+			}
+		}
+	}
 
 	const onClientElement = useLatestCallback((client: xmppClient.Client, elem: Element) => {
 		if(elem.getName() === "presence" && elem.getNS() === "jabber:client") {
@@ -230,21 +269,7 @@ function App() {
 			}
 		}
 		else if(elem.getName() === "message") {
-			const from = parseJID(elem.getAttr("from"));
-
-			if(elem.getAttr("type") === "groupchat") {
-				const content = elem.getChildText("body");
-
-				if(content !== null) {
-					emit("message", {
-						message: {
-							room: from.bare(), // TODO is this correct for non-anonymous MUCs?
-							from: from,
-							content,
-						},
-					});
-				}
-			}
+			handleMessageStanza(elem);
 		}
 	});
 
@@ -318,6 +343,53 @@ function App() {
 		[],
 	);
 
+	const requestArchive = useLatestCallback(async (accountJID: JID, entity: JID) => {
+		const account = accounts.find(x => x.jid.equals(accountJID));
+		if(typeof account === "undefined") throw new Error("No such account");
+
+		return account.client.iqCaller.request(
+			xml(
+				"iq",
+				{type: "set", to: entity.toString()},
+				xml(
+					"query",
+					{xmlns: "urn:xmpp:mam:2"},
+					xml(
+						"set",
+						{xmlns: "http://jabber.org/protocol/rsm"},
+						xml("max", {}, "10"),
+						xml("before"),
+					),
+				),
+			),
+		)
+			.then(result => {
+				console.log("result is", result);
+
+				const finElem = result.getChild("fin", "urn:xmpp:mam:2");
+
+				if(typeof finElem === "undefined") {
+					throw new Error("Unexpected result of MAM query");
+				}
+
+				const setElem = finElem.getChild("set", "http://jabber.org/protocol/rsm");
+				if(typeof setElem === "undefined") throw new Error("Unexpected result of MAM query");
+
+				const firstItem = setElem.getChildText("first");
+				const lastItem = setElem.getChildText("last");
+
+				if(firstItem === null && lastItem === null) {
+					// There is nothing in the list
+					return null;
+				}
+
+				return {
+					firstItem: expectValue(firstItem),
+					lastItem: expectValue(lastItem),
+				} satisfies ResultSetInfo;
+			});
+	});
+
 	const appCtx = useMemo(() => ({
 		accounts,
 
@@ -328,7 +400,9 @@ function App() {
 
 		addEventListener,
 		removeEventListener,
-	} satisfies AppContext), [accounts, addEventListener, removeEventListener, loadAccounts]);
+
+		requestArchive,
+	} satisfies AppContext), [accounts, addEventListener, removeEventListener, loadAccounts, requestArchive]);
 
 	useEffectOnce(() => {
 		loadAccounts();
@@ -400,15 +474,13 @@ function createXMPPClientForAccount(
 	return client;
 }
 
-function connectMUC(client: xmppClient.Client, roomJID: string, preferredNick: string | undefined) {
+function connectMUC(client: xmppClient.Client, roomJID: JID, preferredNick: string | undefined) {
 	const nick = preferredNick ?? client.jid!.local;
-
-	const roomJID_ = parseJID(roomJID);
 
 	client.send(
 		xml(
 			"presence",
-			{id: xid(), to: new JID(roomJID_.local, roomJID_.domain, nick)},
+			{id: xid(), to: new JID(roomJID.local, roomJID.domain, nick)},
 			xml(
 				"x",
 				{xmlns: "http://jabber.org/protocol/muc"},
@@ -447,4 +519,10 @@ async function genVerString(
 	const hash = await crypto.subtle.digest("SHA-1", new TextEncoder().encode(s));
 
 	return toBase64(new Uint8Array(hash));
+}
+
+function expectValue<T>(value: T | null | undefined): T {
+	if(value === null) throw new Error("Unexpected null");
+	else if(typeof value === "undefined") throw new Error("Unexpected undefined");
+	else return value;
 }
