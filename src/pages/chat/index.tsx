@@ -1,6 +1,6 @@
 import { h } from "preact";
 
-import { useAppContext } from "../..";
+import { Account, useAppContext } from "../..";
 
 export default function ChatPage() {
 	const appCtx = useAppContext();
@@ -10,8 +10,26 @@ export default function ChatPage() {
 	return <div>
 		{
 			account.connected ?
-				"chat" :
+				<ChatView account={account} /> :
 				"Connecting…"
 		}
+	</div>;
+}
+
+function ChatView(props: {account: Account}) {
+	return <div>
+		chat
+		<ul>
+			{
+				Array.from(
+					props.account.rooms,
+					([roomJID, info]) => {
+						return <li key={roomJID}>
+							{roomJID} - {info.connected ? ("Connected as " + info.nick!) : "Not Connected"}
+						</li>;
+					},
+				)
+			}
+		</ul>
 	</div>;
 }

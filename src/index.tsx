@@ -1,7 +1,8 @@
 import * as xmppClient from "@xmpp/client";
 import Connection from "@xmpp/connection";
-import { xml } from "@xmpp/client";
+import xid from "@xmpp/id";
 import { JID, parse as parseJID } from "@xmpp/jid";
+import xml, { Element } from "@xmpp/xml";
 import toBase64 from "es-arraybuffer-base64/Uint8Array.prototype.toBase64";
 import { createContext, h, render } from "preact";
 import { useCallback, useContext, useEffect, useMemo, useState } from "preact/hooks";
@@ -12,10 +13,17 @@ import LoginPage from "./pages/login";
 import useEffectOnce from "./util/useEffectOnce";
 import useLatestCallback from "use-latest-callback";
 
-interface Account {
+export interface Room {
+	nick: string | null;
+	connected: boolean;
+}
+
+export interface Account {
 	jid: JID;
 	client: xmppClient.Client;
 	connected: boolean;
+
+	rooms: Map<string, Room>;
 }
 
 export interface AppContext {
@@ -54,12 +62,16 @@ function App() {
 			});
 		});
 
+		const features: string[] = [
+			"urn:xmpp:bookmarks:1+notify",
+		];
+
 		genVerString(
 			[{category: "client", type: "web", lang: "", name: "Deepish"}],
-			[],
+			features,
 		)
 			.then(ver => {
-				client.send(
+				return client.send(
 					xml(
 						"presence",
 						undefined,
@@ -74,7 +86,127 @@ function App() {
 						),
 					),
 				);
+			})
+			.then(() => {
+				return client.iqCaller.get(
+					xml(
+						"pubsub",
+						{xmlns: "http://jabber.org/protocol/pubsub"},
+						xml("items", {node: "urn:xmpp:bookmarks:1"}),
+					),
+				);
+			})
+			.then(initBookmarks => {
+				if(typeof initBookmarks === "undefined") throw new Error("Got invalid result from bookmarks retrieval");
+
+				const initBookmarksItems = initBookmarks.getChild("items");
+				if(typeof initBookmarksItems === "undefined") {
+					throw new Error("Got invalid result from bookmarks retrieval");
+				}
+
+				const targetRooms: Array<{
+					jid: string;
+					nick?: string;
+				}> = [];
+
+				initBookmarksItems.getChildren("item").forEach(item => {
+					const jid = item.getAttr("id");
+
+					const conf = item.getChild("conference", "urn:xmpp:bookmarks:1");
+					if(typeof conf !== "undefined") {
+						const autojoinValue = conf.getAttr("autojoin");
+						if(autojoinValue === "true" || autojoinValue === "1") {
+							const entry: typeof targetRooms[0] = {jid};
+
+							const nickNode = conf.getChild("nick");
+							if(typeof nickNode !== "undefined") {
+								entry.nick = nickNode.getText();
+							}
+
+							targetRooms.push(entry);
+						}
+					}
+				});
+
+				setAccounts(current => {
+					return current.map(item => {
+						if(item.client === client) {
+							const extraRooms = new Set<string>(item.rooms.keys());
+
+							const rooms = new Map<string, Room>();
+
+							targetRooms.forEach(entry => {
+								if(extraRooms.delete(entry.jid)) {
+									rooms.set(entry.jid, item.rooms.get(entry.jid)!);
+								}
+								else {
+									rooms.set(entry.jid, {
+										nick: null,
+										connected: false,
+									});
+									connectMUC(client, entry.jid, entry.nick);
+								}
+							});
+
+							return {
+								...item,
+								rooms,
+							};
+						}
+						else return item;
+					});
+				});
 			});
+	});
+
+	const onClientElement = useLatestCallback((client: xmppClient.Client, elem: Element) => {
+		if(elem.getName() === "presence" && elem.getNS() === "jabber:client") {
+			const srcJID = parseJID(elem.getAttr("from"));
+
+			const userInfo = elem.getChild("x", "http://jabber.org/protocol/muc#user");
+			if(typeof userInfo !== "undefined") {
+				const statusElems = userInfo.getChildren("status");
+
+				if(statusElems.length > 0) {
+					// it's for this client
+
+					let success = false;
+
+					statusElems.forEach(statusElem => {
+						if(statusElem.getAttr("code") === "110") {
+							success = true;
+						}
+					});
+
+					if(success) {
+						setAccounts(current => {
+							return current.map(item => {
+								if(item.client === client) {
+									const rooms = new Map(item.rooms);
+									const oldInfo = rooms.get(srcJID.bare().toString());
+									if(typeof oldInfo === "undefined") {
+										console.log("Tried to update room missing in list");
+										return item;
+									}
+
+									rooms.set(srcJID.bare().toString(), {
+										...oldInfo,
+										connected: true,
+										nick: srcJID.resource,
+									});
+
+									return {
+										...item,
+										rooms,
+									};
+								}
+								else return item;
+							});
+						});
+					}
+				}
+			}
+		}
 	});
 
 	const loadAccounts = useCallback(() => {
@@ -101,8 +233,10 @@ function App() {
 						jid,
 						client: createXMPPClientForAccount(jid, info.token, info.userAgent, {
 							online: onClientOnline,
+							element: onClientElement,
 						}),
 						connected: false,
+						rooms: new Map(),
 					},
 				];
 			});
@@ -123,6 +257,15 @@ function App() {
 	useEffectOnce(() => {
 		loadAccounts();
 	});
+
+	const onUnmount = useLatestCallback(() => {
+		accounts.forEach(account => {
+			account.client.stop();
+		});
+	});
+	useEffect(() => {
+		return onUnmount;
+	}, [onUnmount]);
 
 	if(!inited) return null;
 
@@ -178,6 +321,23 @@ function createXMPPClientForAccount(
 	client.start();
 
 	return client;
+}
+
+function connectMUC(client: xmppClient.Client, roomJID: string, preferredNick: string | undefined) {
+	const nick = preferredNick ?? client.jid!.local;
+
+	const roomJID_ = parseJID(roomJID);
+
+	client.send(
+		xml(
+			"presence",
+			{id: xid(), to: new JID(roomJID_.local, roomJID_.domain, nick)},
+			xml(
+				"x",
+				{xmlns: "http://jabber.org/protocol/muc"},
+			),
+		),
+	);
 }
 
 async function genVerString(

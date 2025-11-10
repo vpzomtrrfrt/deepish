@@ -14,6 +14,7 @@
   "devDependencies": {
     "@preact/preset-vite": "^2.10.2",
     "@types/xmpp__client": "^0.13.4",
+    "@types/xmpp__id": "^0.13.2",
     "vite-plugin-checker": "^0.11.0"
   },
   "overrides": {
