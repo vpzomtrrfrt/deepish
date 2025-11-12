@@ -1,7 +1,6 @@
 import * as xmppClient from "@xmpp/client";
 import { xml } from "@xmpp/client";
 import useLinkState from "linkstate/hook";
-import { h } from "preact";
 import { useCallback, useState } from "preact/hooks";
 import useSubmitting from "../util/useSubmitting";
 import { useAppContext } from "..";

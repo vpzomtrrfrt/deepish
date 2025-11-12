@@ -4,9 +4,8 @@
 		"strict": true,
 		"moduleResolution": "nodenext",
 		"module": "nodenext",
-		"jsx": "react",
-		"jsxFactory": "h",
-		"jsxFragmentFactory": "Fragment"
+		"jsx": "react-jsx",
+		"jsxImportSource": "preact"
 	},
 	"include": ["src"]
 }

@@ -4,7 +4,7 @@ import xid from "@xmpp/id";
 import { JID, parse as parseJID } from "@xmpp/jid";
 import xml, { Element } from "@xmpp/xml";
 import toBase64 from "es-arraybuffer-base64/Uint8Array.prototype.toBase64";
-import { createContext, h, render } from "preact";
+import { createContext, render } from "preact";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { Redirect, Route, useLocation } from "wouter-preact";
 

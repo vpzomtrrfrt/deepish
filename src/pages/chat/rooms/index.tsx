@@ -1,5 +1,4 @@
 import { css } from "@emotion/css";
-import { h } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { Message, MessageEvent, useAppContext } from "../../..";
 import useLatestCallback from "use-latest-callback";

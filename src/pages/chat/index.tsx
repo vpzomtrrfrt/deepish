@@ -1,5 +1,4 @@
 import { css } from "@emotion/css";
-import { h } from "preact";
 import { Link, Route } from "wouter-preact";
 
 import { Account, useAppContext } from "../..";
