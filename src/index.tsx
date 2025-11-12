@@ -13,6 +13,8 @@ import LoginPage from "./pages/login";
 import useEffectOnce from "./util/useEffectOnce";
 import useLatestCallback from "use-latest-callback";
 
+import "./global.css";
+
 export interface Room {
 	jid: JID;
 	nick: string | null;

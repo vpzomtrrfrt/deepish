@@ -1,15 +1,24 @@
+import { css } from "@emotion/css";
 import { h } from "preact";
 import { Link, Route } from "wouter-preact";
 
 import { Account, useAppContext } from "../..";
 import ChatRoomPage from "./rooms";
 
+const styles = {
+	page: css({
+		display: "flex",
+		height: "100%",
+		gap: ".5rem",
+	}),
+};
+
 export default function ChatPage() {
 	const appCtx = useAppContext();
 	const account = appCtx.accounts[0];
 	if(typeof account === "undefined") throw new Error("Missing account");
 
-	return <div>
+	return <div class={styles.page}>
 		{
 			account.connected ?
 				<ChatView account={account} /> :

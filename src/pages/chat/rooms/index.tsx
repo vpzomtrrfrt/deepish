@@ -1,3 +1,4 @@
+import { css } from "@emotion/css";
 import { h } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { Message, MessageEvent, useAppContext } from "../../..";
@@ -39,17 +40,19 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 		}
 	}, [room?.connected]);
 
-	return <div>
+	return <div class={css({display: "flex", flexDirection: "column", flexGrow: 1})}>
 		<h1>{props.roomJID}</h1>
-		{
-			messages.map(message => {
-				return <div>
-					<em>{message.from.resource}</em> says:
-					<blockquote>
-						{message.content}
-					</blockquote>
-				</div>;
-			})
-		}
+		<div class={css({overflowY: "auto"})}>
+			{
+				messages.map(message => {
+					return <div>
+						<em>{message.from.resource}</em> says:
+						<blockquote>
+							{message.content}
+						</blockquote>
+					</div>;
+				})
+			}
+		</div>
 	</div>;
 }
