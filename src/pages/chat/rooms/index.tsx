@@ -1,7 +1,8 @@
 import { css } from "@emotion/css";
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { Message, MessageEvent, useAppContext } from "../../..";
 import useLatestCallback from "use-latest-callback";
+import { List, ListImperativeAPI, RowComponentProps, useDynamicRowHeight, useListRef } from "react-window";
 
 export default function ChatRoomPage(props: {params: {roomJID: string}}) {
 	const roomJID = decodeURIComponent(props.params.roomJID);
@@ -39,19 +40,43 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 		}
 	}, [room?.connected]);
 
+	const messageListRef = useRef<HTMLDivElement>(null);
+
+	const rowHeight = useDynamicRowHeight({defaultRowHeight: 54});
+
+	const listRef = useRef<ListImperativeAPI>(null);
+	const lastScrollHeightRef = useRef(0);
+	useLayoutEffect(() => {
+		const elem = listRef.current!.element!;
+
+		const currentScrollLocation = elem.scrollTop;
+
+		if(currentScrollLocation >= lastScrollHeightRef.current - elem.clientHeight) {
+			elem.scrollTop = elem.scrollHeight;
+		}
+
+		lastScrollHeightRef.current = elem.scrollHeight;
+	});
+
 	return <div class={css({display: "flex", flexDirection: "column", flexGrow: 1})}>
 		<h1>{props.roomJID}</h1>
-		<div class={css({overflowY: "auto"})}>
-			{
-				messages.map(message => {
-					return <div>
-						<em>{message.from.resource}</em> says:
-						<blockquote>
-							{message.content}
-						</blockquote>
-					</div>;
-				})
-			}
-		</div>
+		<List
+			rowComponent={MessageRow}
+			rowCount={messages.length}
+			rowHeight={rowHeight}
+			rowProps={{messages}}
+			listRef={listRef}
+		/>
+	</div>;
+}
+
+function MessageRow(props: RowComponentProps<{messages: Message[]}>) {
+	const message = props.messages[props.index];
+
+	return <div style={props.style}>
+		<em>{message.from.resource}</em> says:
+		<blockquote>
+			{message.content}
+		</blockquote>
 	</div>;
 }
