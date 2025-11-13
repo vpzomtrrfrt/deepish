@@ -47,15 +47,17 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 	const listRef = useRef<ListImperativeAPI>(null);
 	const lastScrollHeightRef = useRef(0);
 	useLayoutEffect(() => {
-		const elem = listRef.current!.element!;
+		const elem = listRef.current!.element;
 
-		const currentScrollLocation = elem.scrollTop;
+		if(elem !== null) {
+			const currentScrollLocation = elem.scrollTop;
 
-		if(currentScrollLocation >= lastScrollHeightRef.current - elem.clientHeight) {
-			elem.scrollTop = elem.scrollHeight;
+			if(currentScrollLocation >= lastScrollHeightRef.current - elem.clientHeight) {
+				elem.scrollTop = elem.scrollHeight;
+			}
+
+			lastScrollHeightRef.current = elem.scrollHeight;
 		}
-
-		lastScrollHeightRef.current = elem.scrollHeight;
 	});
 
 	return <div class={css({display: "flex", flexDirection: "column", flexGrow: 1})}>
