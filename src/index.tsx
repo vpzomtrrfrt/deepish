@@ -33,6 +33,7 @@ export interface Message {
 	room: JID | null;
 	from: JID;
 	content: string;
+	id: string | null;
 }
 
 export interface MessageEvent {
@@ -193,19 +194,28 @@ function App() {
 			});
 	});
 
-	function handleMessageStanza(elem: Element) {
+	function handleMessageStanza(elem: Element, idFromWrapper?: string) {
 		const fromStr = elem.getAttr("from");
 		const from = typeof fromStr === "undefined" ? undefined : parseJID(fromStr);
 
 		if(elem.getAttr("type") === "groupchat") {
+			let id = idFromWrapper ?? null;
+
 			const content = elem.getChildText("body");
 
 			if(content !== null && typeof from !== "undefined") {
+				const idElem = elem.getChild("stanza-id", "urn:xmpp:sid:0");
+				if(typeof idElem !== "undefined") {
+					const maybeID = idElem.getAttr("id");
+					if(typeof maybeID !== "undefined" && maybeID !== null) id = maybeID;
+				}
+
 				emit("message", {
 					message: {
 						room: from.bare(), // TODO is this correct for non-anonymous MUCs?
 						from: from,
 						content,
+						id,
 					},
 				});
 			}
@@ -213,10 +223,12 @@ function App() {
 		else {
 			const mamResultElem = elem.getChild("result", "urn:xmpp:mam:2");
 			if(typeof mamResultElem !== "undefined") {
+				const id = mamResultElem.getAttr("id") ?? undefined;
+
 				const forwardedElem = mamResultElem.getChild("forwarded", "urn:xmpp:forward:0");
 				if(typeof forwardedElem !== "undefined") {
 					const messageElem = forwardedElem.getChild("message", "jabber:client");
-					if(typeof messageElem !== "undefined") handleMessageStanza(messageElem);
+					if(typeof messageElem !== "undefined") handleMessageStanza(messageElem, id);
 				}
 			}
 		}

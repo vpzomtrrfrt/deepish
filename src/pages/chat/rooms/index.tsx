@@ -18,13 +18,33 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 	const account = appCtx.accounts[0]!;
 	const room = account.rooms.get(props.roomJID);
 
-	const [messages, setMessages] = useState<Message[]>([]);
+	const [messagesData, setMessagesData] = useState<{messages: Message[]; messageMap: Map<string, Message>}>({
+		messages: [],
+		messageMap: new Map(),
+	});
 
 	const onMessage = useLatestCallback((evt: MessageEvent) => {
 		console.log("room page got message", evt);
 
 		if(evt.message.room !== null && evt.message.room.toString() === props.roomJID) {
-			setMessages(current => [...current, evt.message]);
+			setMessagesData(current => {
+				if(evt.message.id !== null && current.messageMap.has(evt.message.id)) {
+					// we already have this message, ignore
+					return current;
+				}
+
+				let newMap;
+				if(evt.message.id === null) newMap = current.messageMap;
+				else {
+					newMap = new Map(current.messageMap);
+					newMap.set(evt.message.id, evt.message);
+				}
+
+				return {
+					messages: [...current.messages, evt.message],
+					messageMap: newMap,
+				};
+			});
 		}
 	});
 
@@ -75,6 +95,8 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 	const loaderContent = (pageState === null || pageState.state === "done") ?
 		null :
 		<DataNonDoneView state={pageState} />;
+
+	const messages = messagesData.messages;
 
 	return <div class={css({display: "flex", flexDirection: "column", flexGrow: 1})}>
 		<h1>{props.roomJID}</h1>
