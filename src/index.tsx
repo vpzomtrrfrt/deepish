@@ -43,7 +43,7 @@ interface AppEventMap {
 	message: MessageEvent;
 }
 
-interface ResultSetInfo {
+export interface ResultSetInfo {
 	firstItem: string;
 	lastItem: string;
 }

@@ -1,8 +1,11 @@
 import { css } from "@emotion/css";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import { Message, MessageEvent, useAppContext } from "../../..";
+import { Message, MessageEvent, ResultSetInfo, useAppContext } from "../../..";
 import useLatestCallback from "use-latest-callback";
 import { List, ListImperativeAPI, RowComponentProps, useDynamicRowHeight, useListRef } from "react-window";
+import { LoadState } from "../../../util/useData";
+import { ComponentChild, VNode } from "preact";
+import { DataNonDoneView } from "../../../components/DataView";
 
 export default function ChatRoomPage(props: {params: {roomJID: string}}) {
 	const roomJID = decodeURIComponent(props.params.roomJID);
@@ -33,12 +36,21 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 		};
 	}, [onMessage, appCtx.addEventListener, appCtx.removeEventListener]);
 
+	const [pageState, setPageState] = useState<LoadState<ResultSetInfo | null> | null>(null);
+
 	useEffect(() => {
-		if(room?.connected === true) {
+		if(room?.connected === true && pageState === null) {
+			setPageState(LoadState.loading);
+
 			appCtx.requestArchive(account.jid, room.jid)
-				.then(console.log);
+				.then(value => {
+					setPageState(LoadState.wrapValue(value));
+				})
+				.catch(err => {
+					setPageState(LoadState.wrapError(err));
+				});
 		}
-	}, [room?.connected]);
+	}, [room?.connected, pageState]);
 
 	const messageListRef = useRef<HTMLDivElement>(null);
 
@@ -60,20 +72,40 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 		}
 	});
 
+	const loaderContent = (pageState === null || pageState.state === "done") ?
+		null :
+		<DataNonDoneView state={pageState} />;
+
 	return <div class={css({display: "flex", flexDirection: "column", flexGrow: 1})}>
 		<h1>{props.roomJID}</h1>
 		<List
 			rowComponent={MessageRow}
-			rowCount={messages.length}
+			rowCount={messages.length + (loaderContent === null ? 0 : 1)}
 			rowHeight={rowHeight}
-			rowProps={{messages}}
+			rowProps={{
+				messages,
+				loaderContent,
+			}}
 			listRef={listRef}
 		/>
 	</div>;
 }
 
-function MessageRow(props: RowComponentProps<{messages: Message[]}>) {
-	const message = props.messages[props.index];
+function MessageRow(props: RowComponentProps<{messages: Message[]; loaderContent: VNode | null}>) {
+	let index;
+	if(props.loaderContent === null) {
+		index = props.index;
+	}
+	else {
+		if(props.index === 0) {
+			return props.loaderContent;
+		}
+		else {
+			index = props.index - 1;
+		}
+	}
+
+	const message = props.messages[index];
 
 	return <div style={props.style}>
 		<em>{message.from.resource}</em> says:
