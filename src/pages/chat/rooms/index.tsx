@@ -14,6 +14,8 @@ export default function ChatRoomPage(props: {params: {roomJID: string}}) {
 	return <ChatRoomPageInner roomJID={roomJID} key={roomJID} />;
 }
 
+const DEFAULT_ROW_HEIGHT = 70;
+
 function ChatRoomPageInner(props: {roomJID: string}) {
 	const appCtx = useAppContext();
 	const account = appCtx.accounts[0]!;
@@ -90,18 +92,51 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 
 	const messageListRef = useRef<HTMLDivElement>(null);
 
-	const rowHeight = useDynamicRowHeight({defaultRowHeight: 54});
+	const rowHeight = useDynamicRowHeight({defaultRowHeight: DEFAULT_ROW_HEIGHT});
 
 	const listRef = useRef<ListImperativeAPI>(null);
 	const lastScrollHeightRef = useRef(0);
+
+	const lastMessages = useRef<Message[]>([]);
+
+	let lastCenterItem = null;
+	let lastCenterItemPos = null;
+	let lastCenterItemIndex = null;
+	if(listRef.current !== null && listRef.current.element !== null && listRef.current.element.children.length > 0) {
+		const centerItem = listRef.current.element.children[Math.floor(listRef.current.element.children.length / 2)] as HTMLElement;
+		lastCenterItemPos = centerItem.getBoundingClientRect().top;
+		lastCenterItemIndex = parseInt(centerItem.dataset.reactWindowIndex as string, 10);
+		lastCenterItem = lastMessages.current[lastCenterItemIndex - 1] ?? null;
+	}
+
+	const messages = messagesData.messages;
+	lastMessages.current = messages;
+
 	useLayoutEffect(() => {
 		const elem = listRef.current!.element;
 
 		if(elem !== null) {
+			console.log("maybe adjusting scroll");
+
 			const currentScrollLocation = elem.scrollTop;
 
 			if(currentScrollLocation >= lastScrollHeightRef.current - elem.clientHeight) {
 				elem.scrollTop = elem.scrollHeight;
+			}
+			else {
+				if(lastCenterItem !== null && lastCenterItemPos !== null) {
+					const centerItemNewIndex = messages.indexOf(lastCenterItem) + 1;
+
+					const topItem = elem.children[0] as HTMLElement;
+					const topItemIndex = parseInt(topItem.dataset.reactWindowIndex as string, 10);
+
+					console.log("lci", lastCenterItem, lastCenterItemPos, centerItemNewIndex, topItemIndex);
+
+					if(lastCenterItemIndex !== null && centerItemNewIndex > lastCenterItemIndex) {
+						console.log("adjusting scroll");
+						elem.scrollTop += elem.scrollHeight - lastScrollHeightRef.current;
+					}
+				}
 			}
 
 			lastScrollHeightRef.current = elem.scrollHeight;
@@ -109,20 +144,18 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 	});
 
 	const loaderContent = pageState === null ?
-		null :
+		<p>Connecting…</p> :
 		LoadState.ifDone(
 			pageState,
-			info => info === null ? null : <LoadMoreTriggerer loadMore={loadMore} />,
+			info => info === null ? <p>No more messages known.</p> : <LoadMoreTriggerer loadMore={loadMore} />,
 			pageState => <DataNonDoneView state={pageState} />,
 		);
-
-	const messages = messagesData.messages;
 
 	return <div class={css({display: "flex", flexDirection: "column", flexGrow: 1})}>
 		<h1>{props.roomJID}</h1>
 		<List
 			rowComponent={MessageRow}
-			rowCount={messages.length + (loaderContent === null ? 0 : 1)}
+			rowCount={messages.length + 1}
 			rowHeight={rowHeight}
 			rowProps={{
 				messages,
@@ -133,19 +166,12 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 	</div>;
 }
 
-function MessageRow(props: RowComponentProps<{messages: Message[]; loaderContent: VNode | null}>) {
-	let index;
-	if(props.loaderContent === null) {
-		index = props.index;
+function MessageRow(props: RowComponentProps<{messages: Message[]; loaderContent: VNode}>) {
+	if(props.index === 0) {
+		return props.loaderContent;
 	}
-	else {
-		if(props.index === 0) {
-			return props.loaderContent;
-		}
-		else {
-			index = props.index - 1;
-		}
-	}
+
+	const index = props.index - 1;
 
 	const message = props.messages[index];
 
