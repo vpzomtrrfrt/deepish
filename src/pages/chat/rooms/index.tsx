@@ -6,6 +6,7 @@ import { List, ListImperativeAPI, RowComponentProps, useDynamicRowHeight, useLis
 import { LoadState } from "../../../util/useData";
 import { ComponentChild, VNode } from "preact";
 import { DataNonDoneView } from "../../../components/DataView";
+import { pushAtSortPosition } from "array-push-at-sort-position";
 
 export default function ChatRoomPage(props: {params: {roomJID: string}}) {
 	const roomJID = decodeURIComponent(props.params.roomJID);
@@ -40,8 +41,16 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 					newMap.set(evt.message.id, evt.message);
 				}
 
+				const newMessages = current.messages.slice();
+				pushAtSortPosition(
+					newMessages,
+					evt.message,
+					(a, b) => (a.timestamp - b.timestamp) as (0 | 1 | -1), // it's not but should be fine
+					0,
+				);
+
 				return {
-					messages: [...current.messages, evt.message],
+					messages: newMessages,
 					messageMap: newMap,
 				};
 			});
@@ -58,19 +67,26 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 
 	const [pageState, setPageState] = useState<LoadState<ResultSetInfo | null> | null>(null);
 
+	const nextPageRef = useRef<string | null>(null);
+
+	const loadMore = useLatestCallback(() => {
+		setPageState(LoadState.loading);
+
+		appCtx.requestArchive(account.jid, room!.jid, nextPageRef.current ?? undefined)
+			.then(value => {
+				nextPageRef.current = value === null ? null : value.firstItem;
+				setPageState(LoadState.wrapValue(value));
+			})
+			.catch(err => {
+				setPageState(LoadState.wrapError(err));
+			});
+	});
+
 	useEffect(() => {
 		if(room?.connected === true && pageState === null) {
-			setPageState(LoadState.loading);
-
-			appCtx.requestArchive(account.jid, room.jid)
-				.then(value => {
-					setPageState(LoadState.wrapValue(value));
-				})
-				.catch(err => {
-					setPageState(LoadState.wrapError(err));
-				});
+			loadMore();
 		}
-	}, [room?.connected, pageState]);
+	}, [room?.connected, pageState, loadMore]);
 
 	const messageListRef = useRef<HTMLDivElement>(null);
 
@@ -92,9 +108,13 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 		}
 	});
 
-	const loaderContent = (pageState === null || pageState.state === "done") ?
+	const loaderContent = pageState === null ?
 		null :
-		<DataNonDoneView state={pageState} />;
+		LoadState.ifDone(
+			pageState,
+			info => info === null ? null : <LoadMoreTriggerer loadMore={loadMore} />,
+			pageState => <DataNonDoneView state={pageState} />,
+		);
 
 	const messages = messagesData.messages;
 
@@ -130,9 +150,27 @@ function MessageRow(props: RowComponentProps<{messages: Message[]; loaderContent
 	const message = props.messages[index];
 
 	return <div style={props.style}>
-		<em>{message.from.resource}</em> says:
+		At {message.timestamp.toLocaleString()}, <em>{message.from.resource}</em> says:
 		<blockquote>
 			{message.content}
 		</blockquote>
 	</div>;
+}
+
+function LoadMoreTriggerer(props: {loadMore: () => void}) {
+	const elemRef = useRef<HTMLDivElement>(null);
+
+	useEffect(() => {
+		const observer = new IntersectionObserver(props.loadMore, {
+			root: elemRef.current!.parentNode as Element,
+		});
+
+		observer.observe(elemRef.current!);
+
+		return () => {
+			observer.disconnect();
+		};
+	}, [props.loadMore]);
+
+	return <div ref={elemRef} />;
 }

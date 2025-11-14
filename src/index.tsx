@@ -34,6 +34,7 @@ export interface Message {
 	from: JID;
 	content: string;
 	id: string | null;
+	timestamp: Date;
 }
 
 export interface MessageEvent {
@@ -61,7 +62,7 @@ export interface AppContext {
 		event: K,
 		listener: (evt: AppEventMap[K]) => void,
 	): void;
-	requestArchive(account: JID, entity: JID): Promise<ResultSetInfo | null>;
+	requestArchive(account: JID, entity: JID, before?: string): Promise<ResultSetInfo | null>;
 }
 
 export const AppContext = createContext<undefined | AppContext>(undefined);
@@ -194,7 +195,7 @@ function App() {
 			});
 	});
 
-	function handleMessageStanza(elem: Element, idFromWrapper?: string) {
+	function handleMessageStanza(elem: Element, idFromWrapper?: string, timestampFromWrapper?: Date) {
 		const fromStr = elem.getAttr("from");
 		const from = typeof fromStr === "undefined" ? undefined : parseJID(fromStr);
 
@@ -210,12 +211,20 @@ function App() {
 					if(typeof maybeID !== "undefined" && maybeID !== null) id = maybeID;
 				}
 
+				let timestamp: Date | null = timestampFromWrapper ?? null;
+
+				const delayElem = elem.getChild("delay", "urn:xmpp:delay");
+				if(typeof delayElem !== "undefined") {
+					timestamp = new Date(delayElem.getAttr("stamp"));
+				}
+
 				emit("message", {
 					message: {
 						room: from.bare(), // TODO is this correct for non-anonymous MUCs?
 						from: from,
 						content,
 						id,
+						timestamp: timestamp ?? new Date(),
 					},
 				});
 			}
@@ -225,10 +234,17 @@ function App() {
 			if(typeof mamResultElem !== "undefined") {
 				const id = mamResultElem.getAttr("id") ?? undefined;
 
+				let timestamp: Date | undefined = undefined;
+
 				const forwardedElem = mamResultElem.getChild("forwarded", "urn:xmpp:forward:0");
 				if(typeof forwardedElem !== "undefined") {
+					const delayElem = forwardedElem.getChild("delay", "urn:xmpp:delay");
+					if(typeof delayElem !== "undefined") {
+						timestamp = new Date(delayElem.getAttr("stamp"));
+					}
+
 					const messageElem = forwardedElem.getChild("message", "jabber:client");
-					if(typeof messageElem !== "undefined") handleMessageStanza(messageElem, id);
+					if(typeof messageElem !== "undefined") handleMessageStanza(messageElem, id, timestamp);
 				}
 			}
 		}
@@ -357,7 +373,7 @@ function App() {
 		[],
 	);
 
-	const requestArchive = useLatestCallback(async (accountJID: JID, entity: JID) => {
+	const requestArchive = useLatestCallback(async (accountJID: JID, entity: JID, before?: string) => {
 		const account = accounts.find(x => x.jid.equals(accountJID));
 		if(typeof account === "undefined") throw new Error("No such account");
 
@@ -372,7 +388,9 @@ function App() {
 						"set",
 						{xmlns: "http://jabber.org/protocol/rsm"},
 						xml("max", {}, "10"),
-						xml("before"),
+						typeof before === "undefined" ?
+							xml("before") :
+							xml("before", {}, before),
 					),
 				),
 			),
