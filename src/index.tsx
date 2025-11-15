@@ -6,7 +6,7 @@ import xml, { Element } from "@xmpp/xml";
 import toBase64 from "es-arraybuffer-base64/Uint8Array.prototype.toBase64";
 import { createContext, render } from "preact";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "preact/hooks";
-import { Redirect, Route, useLocation } from "wouter-preact";
+import { Redirect, Route } from "wouter-preact";
 
 import ChatPage from "./pages/chat";
 import LoginPage from "./pages/login";
@@ -360,7 +360,7 @@ function App() {
 		}
 
 		setInited(true);
-	}, []);
+	}, [onClientElement, onClientOnline]);
 
 	const listenersRef = useRef<{
 		[K in keyof AppEventMap]: Set<(evt: AppEventMap[K]) => void>;
@@ -470,20 +470,23 @@ function App() {
 		await reflectDefer;
 	});
 
-	const appCtx = useMemo(() => ({
-		accounts,
+	const appCtx = useMemo(
+		() => ({
+			accounts,
 
-		saveToken(jid, token, userAgent) {
-			localStorage.setItem("deepishAccount", JSON.stringify({jid: jid.toString(), token, userAgent}));
-			loadAccounts();
-		},
+			saveToken(jid, token, userAgent) {
+				localStorage.setItem("deepishAccount", JSON.stringify({jid: jid.toString(), token, userAgent}));
+				loadAccounts();
+			},
 
-		addEventListener,
-		removeEventListener,
+			addEventListener,
+			removeEventListener,
 
-		requestArchive,
-		sendMessageToRoom,
-	} satisfies AppContext), [accounts, addEventListener, removeEventListener, loadAccounts, requestArchive]);
+			requestArchive,
+			sendMessageToRoom,
+		} satisfies AppContext),
+		[accounts, addEventListener, removeEventListener, loadAccounts, requestArchive, sendMessageToRoom],
+	);
 
 	useEffectOnce(() => {
 		loadAccounts();
@@ -547,6 +550,8 @@ function createXMPPClientForAccount(
 		const key = key_ as keyof Connection.ConnectionEvents;
 		if(typeof listeners[key] === "undefined") continue;
 
+		// objects are messy
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		client.on(key, (listeners[key] as any).bind(undefined, client));
 	}
 

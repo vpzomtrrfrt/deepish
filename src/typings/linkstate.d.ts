@@ -1,6 +1,6 @@
 declare module "linkstate/hook" {
-	export default function useLinkState<TEvent extends Event = Event, S = any>(
+	export default function useLinkState<S>(
 		initialState: S,
 		eventPath?: string
-	): [S, (e: TEvent) => void, (value: S | ((prevState: S) => S)) => void];
+	): [S, (e: Event) => void, (value: S | ((prevState: S) => S)) => void];
 }

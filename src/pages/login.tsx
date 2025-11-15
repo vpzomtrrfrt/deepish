@@ -1,14 +1,11 @@
 import * as xmppClient from "@xmpp/client";
 import { xml } from "@xmpp/client";
 import useLinkState from "linkstate/hook";
-import { useCallback, useState } from "preact/hooks";
 import useSubmitting from "../util/useSubmitting";
 import { useAppContext } from "..";
 
 export default function LoginPage() {
 	const appCtx = useAppContext();
-
-	const [client, setClient] = useState<null | xmppClient.Client>(null);
 
 	const [jid, linkJid] = useLinkState("");
 	const [password, linkPassword] = useLinkState("");
@@ -19,7 +16,6 @@ export default function LoginPage() {
 		const atIdx = jid.indexOf("@");
 		if(atIdx < 0) throw new Error("Invalid JID");
 
-		const initPromise = Promise.withResolvers();
 		const authCallback = Promise.withResolvers<void>();
 
 		const domain = jid.substring(atIdx + 1);
@@ -43,9 +39,13 @@ export default function LoginPage() {
 			saveToken(t: unknown): Promise<void>;
 		}}).fast.saveToken = async token => {
 			appCtx.saveToken.call(undefined, client.jid!, token, userAgent);
+
+			authCallback.resolve();
 		};
 
 		await client.start();
+
+		await authCallback.promise;
 
 		console.log("connected");
 	});
@@ -53,14 +53,10 @@ export default function LoginPage() {
 	console.log("what", jid);
 
 	return <div>
-		{
-			client === null ?
-				<form onSubmit={submit}>
-					<input type="text" value={jid} onChange={linkJid} />
-					<input type="password" value={password} onChange={linkPassword} />
-					<button type="submit" disabled={submitting}>Continue</button>
-				</form> :
-				null
-		}
+		<form onSubmit={submit}>
+			<input type="text" value={jid} onChange={linkJid} />
+			<input type="password" value={password} onChange={linkPassword} />
+			<button type="submit" disabled={submitting}>Continue</button>
+		</form>
 	</div>;
 }

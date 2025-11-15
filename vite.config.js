@@ -4,7 +4,13 @@ import * as pathUtil from "path";
 
 export default {
 	plugins: [
-		checker({typescript: true}),
+		checker({
+			typescript: true,
+			eslint: {
+				lintCommand: "eslint src/**/*.{ts,tsx}",
+				useFlatConfig: true,
+			},
+		}),
 		preact(),
 	],
 	resolve: {

@@ -1,10 +1,10 @@
 import { css } from "@emotion/css";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { Message, MessageEvent, ResultSetInfo, useAppContext } from "../../..";
 import useLatestCallback from "use-latest-callback";
-import { List, ListImperativeAPI, RowComponentProps, useDynamicRowHeight, useListRef } from "react-window";
+import { List, ListImperativeAPI, RowComponentProps, useDynamicRowHeight } from "react-window";
 import { LoadState } from "../../../util/useData";
-import { ComponentChild, JSX, VNode } from "preact";
+import { JSX, VNode } from "preact";
 import { DataNonDoneView } from "../../../components/DataView";
 import { pushAtSortPosition } from "array-push-at-sort-position";
 import useLinkState from "linkstate/hook";
@@ -65,10 +65,10 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 	});
 
 	useEffect(() => {
-		appCtx.addEventListener("message", onMessage);
+		appCtx.addEventListener.call(undefined, "message", onMessage);
 
 		return () => {
-			appCtx.removeEventListener("message", onMessage);
+			appCtx.removeEventListener.call(undefined, "message", onMessage);
 		};
 	}, [onMessage, appCtx.addEventListener, appCtx.removeEventListener]);
 
@@ -95,8 +95,6 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 		}
 	}, [room?.connected, pageState, loadMore]);
 
-	const messageListRef = useRef<HTMLDivElement>(null);
-
 	const [newMessage, linkNewMessage, setNewMessage] = useLinkState("");
 
 	const [submittingNewMessage, submitNewMessage] = useSubmitting(async (evt: Event) => {
@@ -112,24 +110,23 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 	const listRef = useRef<ListImperativeAPI>(null);
 	const lastScrollHeightRef = useRef(0);
 
-	const lastMessages = useRef<Message[]>([]);
-
-	let lastCenterItem = null;
-	let lastCenterItemPos = null;
-	let lastCenterItemIndex = null;
-	if(listRef.current !== null && listRef.current.element !== null && listRef.current.element.children.length > 0) {
-		const centerItem = listRef.current.element.children[Math.floor(listRef.current.element.children.length / 2)] as HTMLElement;
-		lastCenterItemPos = centerItem.getBoundingClientRect().top;
-		lastCenterItemIndex = parseInt(centerItem.dataset.reactWindowIndex as string, 10);
-		lastCenterItem = lastMessages.current[lastCenterItemIndex - 1] ?? null;
-	}
+	const lastMessagesRef = useRef<Message[]>([]);
 
 	const messages = messagesData.messages;
-	lastMessages.current = messages;
 
 	const atBottomRef = useRef(true);
 
 	useLayoutEffect(() => {
+		let lastCenterItem = null;
+		let lastCenterItemPos = null;
+		let lastCenterItemIndex = null;
+		if(listRef.current !== null && listRef.current.element !== null && listRef.current.element.children.length > 0) {
+			const centerItem = listRef.current.element.children[Math.floor(listRef.current.element.children.length / 2)] as HTMLElement;
+			lastCenterItemPos = centerItem.getBoundingClientRect().top;
+			lastCenterItemIndex = parseInt(centerItem.dataset.reactWindowIndex as string, 10);
+			lastCenterItem = lastMessagesRef.current[lastCenterItemIndex - 1] ?? null;
+		}
+
 		const elem = listRef.current!.element;
 
 		if(elem !== null) {
@@ -161,6 +158,10 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 			lastScrollHeightRef.current = elem.scrollHeight;
 		}
 	});
+
+	useEffect(() => {
+		lastMessagesRef.current = messages;
+	}, [messages]);
 
 	const onResize = useCallback(() => {
 		const elem = listRef.current!.element;

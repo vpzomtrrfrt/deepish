@@ -53,5 +53,10 @@ export default function useData<T>(fn: () => Promise<T>, deps: unknown[]) {
 		catch(err) {
 			setState(LoadState.wrapError(err));
 		}
+
+		// ignoring fn changing since it always will
+		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, deps);
+
+	return state;
 }
