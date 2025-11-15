@@ -1,10 +1,10 @@
 import { css } from "@emotion/css";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { Message, MessageEvent, ResultSetInfo, useAppContext } from "../../..";
 import useLatestCallback from "use-latest-callback";
 import { List, ListImperativeAPI, RowComponentProps, useDynamicRowHeight, useListRef } from "react-window";
 import { LoadState } from "../../../util/useData";
-import { ComponentChild, VNode } from "preact";
+import { ComponentChild, JSX, VNode } from "preact";
 import { DataNonDoneView } from "../../../components/DataView";
 import { pushAtSortPosition } from "array-push-at-sort-position";
 
@@ -15,6 +15,9 @@ export default function ChatRoomPage(props: {params: {roomJID: string}}) {
 }
 
 const DEFAULT_ROW_HEIGHT = 70;
+
+// Not sure why this is necessary but it seems to fix initial load scrolling
+const BOTTOM_TOLERANCE = 5;
 
 function ChatRoomPageInner(props: {roomJID: string}) {
 	const appCtx = useAppContext();
@@ -112,16 +115,20 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 	const messages = messagesData.messages;
 	lastMessages.current = messages;
 
+	const atBottomRef = useRef(true);
+
 	useLayoutEffect(() => {
 		const elem = listRef.current!.element;
 
 		if(elem !== null) {
-			console.log("maybe adjusting scroll");
-
 			const currentScrollLocation = elem.scrollTop;
 
-			if(currentScrollLocation >= lastScrollHeightRef.current - elem.clientHeight) {
+			console.log("maybe adjusting scroll", currentScrollLocation, lastScrollHeightRef.current, elem.clientHeight, lastScrollHeightRef.current - elem.clientHeight, elem.scrollHeight);
+
+			if(atBottomRef.current) {
+				console.log("adjusting scroll to bottom");
 				elem.scrollTop = elem.scrollHeight;
+				console.log("scroll was to", elem.scrollTop, elem.scrollHeight - elem.clientHeight);
 			}
 			else {
 				if(lastCenterItem !== null && lastCenterItemPos !== null) {
@@ -143,6 +150,23 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 		}
 	});
 
+	const onResize = useCallback(() => {
+		const elem = listRef.current!.element;
+
+		if(elem !== null) {
+			if(atBottomRef.current) {
+				elem.scrollTop = elem.scrollHeight;
+			}
+		}
+	}, []);
+
+	const onScroll = useCallback((evt: JSX.TargetedEvent<HTMLDivElement>) => {
+		atBottomRef.current =
+			evt.currentTarget.scrollTop >= evt.currentTarget.scrollHeight - evt.currentTarget.clientHeight - BOTTOM_TOLERANCE;
+
+		console.log("updated from scroll, atBottom=", atBottomRef.current, evt.currentTarget.scrollTop, evt.currentTarget.scrollHeight - evt.currentTarget.clientHeight);
+	}, []);
+
 	const loaderContent = pageState === null ?
 		<p>Connecting…</p> :
 		LoadState.ifDone(
@@ -162,6 +186,8 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 				loaderContent,
 			}}
 			listRef={listRef}
+			onResize={onResize}
+			onScroll={onScroll}
 		/>
 	</div>;
 }
