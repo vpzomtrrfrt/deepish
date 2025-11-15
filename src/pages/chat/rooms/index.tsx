@@ -7,6 +7,8 @@ import { LoadState } from "../../../util/useData";
 import { ComponentChild, JSX, VNode } from "preact";
 import { DataNonDoneView } from "../../../components/DataView";
 import { pushAtSortPosition } from "array-push-at-sort-position";
+import useLinkState from "linkstate/hook";
+import useSubmitting from "../../../util/useSubmitting";
 
 export default function ChatRoomPage(props: {params: {roomJID: string}}) {
 	const roomJID = decodeURIComponent(props.params.roomJID);
@@ -94,6 +96,16 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 	}, [room?.connected, pageState, loadMore]);
 
 	const messageListRef = useRef<HTMLDivElement>(null);
+
+	const [newMessage, linkNewMessage, setNewMessage] = useLinkState("");
+
+	const [submittingNewMessage, submitNewMessage] = useSubmitting(async (evt: Event) => {
+		evt.preventDefault();
+
+		await appCtx.sendMessageToRoom(account.jid, room!.jid, {body: newMessage});
+
+		setNewMessage("");
+	});
 
 	const rowHeight = useDynamicRowHeight({defaultRowHeight: DEFAULT_ROW_HEIGHT});
 
@@ -189,6 +201,10 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 			onResize={onResize}
 			onScroll={onScroll}
 		/>
+		<form onSubmit={submitNewMessage} class={css({display: "flex"})}>
+			<input type="text" value={newMessage} onChange={linkNewMessage} style={{flexGrow: 1}} />
+			<button type="submit" disabled={submittingNewMessage}>Send</button>
+		</form>
 	</div>;
 }
 

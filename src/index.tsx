@@ -63,6 +63,7 @@ export interface AppContext {
 		listener: (evt: AppEventMap[K]) => void,
 	): void;
 	requestArchive(account: JID, entity: JID, before?: string): Promise<ResultSetInfo | null>;
+	sendMessageToRoom(account: JID, room: JID, message: {body: string}): Promise<void>;
 }
 
 export const AppContext = createContext<undefined | AppContext>(undefined);
@@ -81,6 +82,8 @@ function App() {
 	const [accounts, setAccounts] = useState<Account[]>([]);
 
 	const [inited, setInited] = useState(false);
+
+	const outgoingMessagesRef = useRef<Map<string, {resolve: () => void; reject: (err: unknown) => void}>>(new Map());
 
 	const onClientOnline = useLatestCallback((client: xmppClient.Client) => {
 		setAccounts(current => {
@@ -202,15 +205,33 @@ function App() {
 		if(elem.getAttr("type") === "groupchat") {
 			let id = idFromWrapper ?? null;
 
+			const idElem = elem.getChild("stanza-id", "urn:xmpp:sid:0");
+			if(typeof idElem !== "undefined") {
+				const maybeID = idElem.getAttr("id");
+				if(typeof maybeID !== "undefined" && maybeID !== null) id = maybeID;
+			}
+
+			let outgoingListener;
+			if(id === null) {
+				outgoingListener = undefined;
+			}
+			else {
+				outgoingListener = outgoingMessagesRef.current.get(id);
+				outgoingMessagesRef.current.delete(id);
+			}
+
+			const errorElem = elem.getChild("error");
+			if(typeof errorElem !== "undefined") {
+				if(typeof outgoingListener !== "undefined") {
+					outgoingListener.reject(errorElem);
+				}
+
+				return;
+			}
+
 			const content = elem.getChildText("body");
 
 			if(content !== null && typeof from !== "undefined") {
-				const idElem = elem.getChild("stanza-id", "urn:xmpp:sid:0");
-				if(typeof idElem !== "undefined") {
-					const maybeID = idElem.getAttr("id");
-					if(typeof maybeID !== "undefined" && maybeID !== null) id = maybeID;
-				}
-
 				let timestamp: Date | null = timestampFromWrapper ?? null;
 
 				const delayElem = elem.getChild("delay", "urn:xmpp:delay");
@@ -228,6 +249,8 @@ function App() {
 					},
 				});
 			}
+
+			outgoingListener?.resolve();
 		}
 		else {
 			const mamResultElem = elem.getChild("result", "urn:xmpp:mam:2");
@@ -422,6 +445,31 @@ function App() {
 			});
 	});
 
+	const sendMessageToRoom = useLatestCallback(async (accountJID: JID, roomJID: JID, message: {body: string}) => {
+		const id = xid();
+
+		const account = accounts.find(x => x.jid.equals(accountJID));
+		if(typeof account === "undefined") throw new Error("No such account");
+
+		const reflectDefer = Promise.withResolvers<void>();
+
+		outgoingMessagesRef.current.set(id, reflectDefer);
+
+		await account.client.send(
+			xml(
+				"message",
+				{id, to: roomJID.toString(), type: "groupchat"},
+				xml(
+					"body",
+					{},
+					message.body,
+				),
+			),
+		);
+
+		await reflectDefer;
+	});
+
 	const appCtx = useMemo(() => ({
 		accounts,
 
@@ -434,6 +482,7 @@ function App() {
 		removeEventListener,
 
 		requestArchive,
+		sendMessageToRoom,
 	} satisfies AppContext), [accounts, addEventListener, removeEventListener, loadAccounts, requestArchive]);
 
 	useEffectOnce(() => {

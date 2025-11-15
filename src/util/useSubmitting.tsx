@@ -1,9 +1,10 @@
 import { useCallback, useState } from "preact/hooks";
+import useLatestCallback from "use-latest-callback";
 
-export default function useSubmitting<P extends unknown[], O>(fn: (...args: P) => Promise<O>, deps: unknown[]) {
+export default function useSubmitting<P extends unknown[], O>(fn: (...args: P) => Promise<O>) {
 	const [submitting, setSubmitting] = useState(false);
 
-	const submitInner = useCallback(fn, deps);
+	const submitInner = useLatestCallback(fn);
 
 	const submit = useCallback(async (...args: P) => {
 		setSubmitting(true);

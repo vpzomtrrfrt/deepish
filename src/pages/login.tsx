@@ -48,7 +48,7 @@ export default function LoginPage() {
 		await client.start();
 
 		console.log("connected");
-	}, [jid, password]);
+	});
 
 	console.log("what", jid);
 
