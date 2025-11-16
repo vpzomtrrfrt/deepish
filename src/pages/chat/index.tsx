@@ -4,6 +4,7 @@ import { Link, Route } from "wouter-preact";
 import { Account, useAppContext } from "../..";
 import ChatRoomPage from "./rooms";
 import { LoadState } from "../../util/useData";
+import Avatar from "../../components/Avatar";
 import WithTooltip from "../../components/WithTooltip";
 
 const styles = {
@@ -32,23 +33,23 @@ export default function ChatPage() {
 function ChatView(props: {account: Account}) {
 	return <div>
 		chat
-		<ul>
+		<div>
 			{
 				Array.from(
 					props.account.rooms,
 					([roomJID, info]) => {
 						const name = LoadState.ifDone(info.infoState, disco => disco.name, () => null) ?? roomJID;
 
-						return <li key={roomJID}>
+						return <div key={roomJID}>
 							<WithTooltip tooltip={name} side="inline-end">
 								<Link to={"~/chat/rooms/" + encodeURIComponent(roomJID)}>
-									{name}
+									<Avatar size="md" id={roomJID} />
 								</Link>
-							</WithTooltip> - {info.connected ? ("Connected as " + info.nick!) : "Not Connected"}
-						</li>;
+							</WithTooltip>
+						</div>;
 					},
 				)
 			}
-		</ul>
+		</div>
 	</div>;
 }
