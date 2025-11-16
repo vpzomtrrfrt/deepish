@@ -18,11 +18,11 @@ export const LoadState = {
 		else return elseHandler(state);
 	},
 
-	wrapError<T>(error: unknown): LoadState<T> {
+	wrapError<T>(error: unknown): LoadState<T> & {state: "error"} {
 		return {state: "error", error};
 	},
 
-	wrapValue<T>(value: T): LoadState<T> {
+	wrapValue<T>(value: T): LoadState<T> & {state: "done"} {
 		return {state: "done", value};
 	},
 };

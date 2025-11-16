@@ -10,15 +10,21 @@ import { Redirect, Route } from "wouter-preact";
 
 import ChatPage from "./pages/chat";
 import LoginPage from "./pages/login";
+import { LoadState } from "./util/useData";
 import useEffectOnce from "./util/useEffectOnce";
 import useLatestCallback from "use-latest-callback";
 
 import "./global.css";
 
+export interface RoomDiscoInfo {
+	name: string | null;
+}
+
 export interface Room {
 	jid: JID;
 	nick: string | null;
 	connected: boolean;
+	infoState: LoadState<RoomDiscoInfo>;
 }
 
 export interface Account {
@@ -85,18 +91,19 @@ function App() {
 
 	const outgoingMessagesRef = useRef<Map<string, {resolve: () => void; reject: (err: unknown) => void}>>(new Map());
 
-	const onClientOnline = useLatestCallback((client: xmppClient.Client) => {
+	const updateAccount = useCallback((identifier: xmppClient.Client | JID, fn: (current: Account) => Account) => {
 		setAccounts(current => {
-			return current.map(item => {
-				if(item.client === client) {
-					return {
-						...item,
-						connected: true,
-					};
+			return current.map(account => {
+				if(identifier instanceof JID ? account.jid.equals(identifier) : account.client === identifier) {
+					return fn(account);
 				}
-				else return item;
+				else return account;
 			});
 		});
+	}, []);
+
+	const onClientOnline = useLatestCallback((client: xmppClient.Client) => {
+		updateAccount(client, account => ({...account, connected: true}));
 
 		const features: string[] = [
 			"urn:xmpp:bookmarks:1+notify",
@@ -164,36 +171,32 @@ function App() {
 					}
 				});
 
-				setAccounts(current => {
-					return current.map(item => {
-						if(item.client === client) {
-							const extraRooms = new Set<string>(item.rooms.keys());
+				updateAccount(client, item => {
+					const extraRooms = new Set<string>(item.rooms.keys());
 
-							const rooms = new Map<string, Room>();
+					const rooms = new Map<string, Room>();
 
-							targetRooms.forEach(entry => {
-								if(extraRooms.delete(entry.jid)) {
-									rooms.set(entry.jid, item.rooms.get(entry.jid)!);
-								}
-								else {
-									const jid = parseJID(entry.jid);
-
-									rooms.set(entry.jid, {
-										jid,
-										nick: null,
-										connected: false,
-									});
-									connectMUC(client, jid, entry.nick);
-								}
-							});
-
-							return {
-								...item,
-								rooms,
-							};
+					targetRooms.forEach(entry => {
+						if(extraRooms.delete(entry.jid)) {
+							rooms.set(entry.jid, item.rooms.get(entry.jid)!);
 						}
-						else return item;
+						else {
+							const jid = parseJID(entry.jid);
+
+							rooms.set(entry.jid, {
+								jid,
+								nick: null,
+								connected: false,
+								infoState: LoadState.loading,
+							});
+							connectMUC(client, jid, entry.nick);
+						}
 					});
+
+					return {
+						...item,
+						rooms,
+					};
 				});
 			});
 	});
@@ -273,6 +276,56 @@ function App() {
 		}
 	}
 
+	const fetchRoomDisco = useLatestCallback((client: xmppClient.Client, roomJID: JID) => {
+		updateAccount(client, account => {
+			const info = account.rooms.get(roomJID.toString());
+			if(typeof info === "undefined") {
+				console.warn("trying to fetch disco for unknown room");
+				return account;
+			}
+
+			if(info.infoState.state !== "done") {
+				const newRooms = new Map(account.rooms);
+				newRooms.set(roomJID.toString(), {...info, infoState: LoadState.loading});
+				return {...account, rooms: newRooms};
+			}
+			else return account;
+		});
+
+		client.iqCaller.get(
+			xml("query", {xmlns: "http://jabber.org/protocol/disco#info"}),
+			roomJID.toString(),
+		)
+			.then((result): RoomDiscoInfo => {
+				if(typeof result === "undefined") throw new Error("Missing result from MUC disco");
+
+				const info: RoomDiscoInfo = {
+					name: null,
+				};
+
+				const identityElem = result.getChild("identity");
+				if(typeof identityElem !== "undefined") {
+					const name = identityElem.getAttr("name");
+					if(typeof name === "string") info.name = name;
+				}
+
+				return info;
+			})
+			.then(LoadState.wrapValue, LoadState.wrapError)
+			.then(newState => {
+				updateAccount(client, account => {
+					const info = account.rooms.get(roomJID.toString());
+					if(typeof info === "undefined") {
+						return account;
+					}
+
+					const newRooms = new Map(account.rooms);
+					newRooms.set(roomJID.toString(), {...info, infoState: newState});
+					return {...account, rooms: newRooms};
+				});
+			});
+	});
+
 	const onClientElement = useLatestCallback((client: xmppClient.Client, elem: Element) => {
 		if(elem.getName() === "presence" && elem.getNS() === "jabber:client") {
 			const srcJID = parseJID(elem.getAttr("from"));
@@ -317,6 +370,8 @@ function App() {
 								else return item;
 							});
 						});
+
+						fetchRoomDisco(client, srcJID.bare());
 					}
 				}
 			}

@@ -189,7 +189,15 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 		);
 
 	return <div class={css({display: "flex", flexDirection: "column", flexGrow: 1})}>
-		<h1>{props.roomJID}</h1>
+		<h1>
+			{
+				(
+					typeof room === "undefined" ?
+						null :
+						LoadState.ifDone(room.infoState, disco => disco.name, () => null)
+				) ?? props.roomJID
+			}
+		</h1>
 		<List
 			rowComponent={MessageRow}
 			rowCount={messages.length + 1}
