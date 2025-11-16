@@ -1,15 +1,17 @@
+import { Tooltip } from "@base-ui-components/react";
 import * as xmppClient from "@xmpp/client";
 import Connection from "@xmpp/connection";
 import xid from "@xmpp/id";
 import { JID, parse as parseJID } from "@xmpp/jid";
 import xml, { Element } from "@xmpp/xml";
 import toBase64 from "es-arraybuffer-base64/Uint8Array.prototype.toBase64";
-import { createContext, render } from "preact";
+import { createContext, RefObject, render } from "preact";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { Redirect, Route } from "wouter-preact";
 
 import ChatPage from "./pages/chat";
 import LoginPage from "./pages/login";
+import { themeCSS } from "./util/theme";
 import { LoadState } from "./util/useData";
 import useEffectOnce from "./util/useEffectOnce";
 import useLatestCallback from "use-latest-callback";
@@ -58,6 +60,8 @@ export interface ResultSetInfo {
 
 export interface AppContext {
 	accounts: Account[];
+
+	portalContainerRef: RefObject<HTMLDivElement>;
 
 	saveToken(jid: JID, token: unknown, userAgent: string): void;
 	addEventListener<K extends keyof AppEventMap>(
@@ -525,9 +529,12 @@ function App() {
 		await reflectDefer;
 	});
 
+	const portalContainerRef = useRef<HTMLDivElement>(null);
+
 	const appCtx = useMemo(
 		() => ({
 			accounts,
+			portalContainerRef,
 
 			saveToken(jid, token, userAgent) {
 				localStorage.setItem("deepishAccount", JSON.stringify({jid: jid.toString(), token, userAgent}));
@@ -559,9 +566,14 @@ function App() {
 	if(!inited) return null;
 
 	return <AppContext.Provider value={appCtx}>
-		<Route path="/" component={RootPage} />
-		<Route path="/chat" component={ChatPage} nest />
-		<Route path="/login" component={LoginPage} />
+		<div class="appWrapper" style={themeCSS.light}>
+			<Tooltip.Provider>
+				<Route path="/" component={RootPage} />
+				<Route path="/chat" component={ChatPage} nest />
+				<Route path="/login" component={LoginPage} />
+			</Tooltip.Provider>
+			<div style={{position: "absolute"}} ref={portalContainerRef} />
+		</div>
 	</AppContext.Provider>;
 }
 

@@ -2,7 +2,7 @@ body {
 	margin: 0;
 }
 
-#root {
+#root, .appWrapper {
 	width: 100vw;
 	height: 100vh;
 }

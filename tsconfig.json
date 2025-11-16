@@ -5,7 +5,7 @@
 		"moduleResolution": "nodenext",
 		"module": "nodenext",
 		"jsx": "react-jsx",
-		"jsxImportSource": "preact"
+		"jsxImportSource": "preact",
 	},
 	"include": ["src"]
 }

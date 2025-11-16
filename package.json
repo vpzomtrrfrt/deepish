@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "@base-ui-components/react": "^1.0.0-beta.4",
     "@emotion/css": "^11.13.5",
     "@xmpp/client": "^0.14.0",
     "@xmpp/resolve": "https://gitpkg.vercel.app/api/pkg.tgz?url=xmppjs%2Fxmpp.js%2Fpackages%2Fresolve&commit=febf6d340ec8626bcd6f3c61f7821f0c3e948a96",
