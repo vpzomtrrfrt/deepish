@@ -30,6 +30,7 @@ const styles = {
 		borderColor: themeVars.highlightOutline,
 	}),
 	roomLink: css({
+		display: "block",
 		borderWidth: "2px",
 		borderStyle: "solid",
 		borderColor: "transparent",
