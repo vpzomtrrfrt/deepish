@@ -3,6 +3,7 @@ import type * as csstype from "csstype";
 const src = {
 	bg1: {light: "#fff"},
 	outline1: {light: "#ddd"},
+	highlightOutline: {light: "#000"},
 } satisfies Record<string, {light: csstype.DataType.Color}>;
 
 const themeVars = {} as {
