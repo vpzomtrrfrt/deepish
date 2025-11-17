@@ -9,6 +9,14 @@ import { DataNonDoneView } from "../../../components/DataView";
 import { pushAtSortPosition } from "array-push-at-sort-position";
 import useLinkState from "linkstate/hook";
 import useSubmitting from "../../../util/useSubmitting";
+import Avatar from "../../../components/Avatar";
+
+const styles = {
+	message: css({
+		display: "flex",
+		gap: ".5rem",
+	}),
+};
 
 export default function ChatRoomPage(props: {params: {roomJID: string}}) {
 	const roomJID = decodeURIComponent(props.params.roomJID);
@@ -226,11 +234,17 @@ function MessageRow(props: RowComponentProps<{messages: Message[]; loaderContent
 
 	const message = props.messages[index];
 
-	return <div style={props.style}>
-		At {message.timestamp.toLocaleString()}, <em>{message.from.resource}</em> says:
-		<blockquote>
-			{message.content}
-		</blockquote>
+	return <div style={props.style} class={styles.message}>
+		<div>
+			<Avatar size="md" jid={message.from} />
+		</div>
+		<div>
+			<div>{message.timestamp.toLocaleString()}</div>
+			<div>{message.from.resource}</div>
+			<blockquote>
+				{message.content}
+			</blockquote>
+		</div>
 	</div>;
 }
 

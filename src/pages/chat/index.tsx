@@ -74,7 +74,7 @@ function ChatView(props: {account: Account}) {
 								<Link
 									to={"~/chat/rooms/" + encodeURIComponent(roomJID)}
 								>
-									<Avatar size="md" id={roomJID} class={cx(styles.roomLink, currentRoom === roomJID && styles.currentRoomLink)} />
+									<Avatar size="lg" jid={roomJID} class={cx(styles.roomLink, currentRoom === roomJID && styles.currentRoomLink)} />
 								</Link>
 							</WithTooltip>
 						</div>;
