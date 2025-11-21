@@ -12,6 +12,13 @@ import useSubmitting from "../../../util/useSubmitting";
 import Avatar from "../../../components/Avatar";
 
 const styles = {
+	page: css({
+		flexGrow: 1,
+		marginInlineStart: ".5rem",
+
+		display: "flex",
+		flexDirection: "column",
+	}),
 	message: css({
 		display: "flex",
 		gap: ".5rem",
@@ -196,7 +203,7 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 			pageState => <DataNonDoneView state={pageState} />,
 		);
 
-	return <div class={css({display: "flex", flexDirection: "column", flexGrow: 1})}>
+	return <div class={styles.page}>
 		<h1>
 			{
 				(

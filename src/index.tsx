@@ -18,6 +18,11 @@ import useLatestCallback from "use-latest-callback";
 
 import "./global.css";
 
+export interface Counterpart {
+	jid: JID;
+	inRoster: boolean;
+}
+
 export interface RoomDiscoInfo {
 	name: string | null;
 }
@@ -34,6 +39,7 @@ export interface Account {
 	client: xmppClient.Client;
 	connected: boolean;
 
+	counterparts: Map<string, Counterpart>;
 	rooms: Map<string, Room>;
 }
 
@@ -106,6 +112,124 @@ function App() {
 		});
 	}, []);
 
+	async function fetchBookmarks(client: xmppClient.Client) {
+		const initBookmarks = await client.iqCaller.get(
+			xml(
+				"pubsub",
+				{xmlns: "http://jabber.org/protocol/pubsub"},
+				xml("items", {node: "urn:xmpp:bookmarks:1"}),
+			),
+		);
+
+		if(typeof initBookmarks === "undefined") throw new Error("Got invalid result from bookmarks retrieval");
+
+		const initBookmarksItems = initBookmarks.getChild("items");
+		if(typeof initBookmarksItems === "undefined") {
+			throw new Error("Got invalid result from bookmarks retrieval");
+		}
+
+		const targetRooms: Array<{
+			jid: string;
+			nick?: string;
+		}> = [];
+
+		initBookmarksItems.getChildren("item").forEach(item => {
+			const jid = item.getAttr("id");
+
+			const conf = item.getChild("conference", "urn:xmpp:bookmarks:1");
+			if(typeof conf !== "undefined") {
+				const autojoinValue = conf.getAttr("autojoin");
+				if(autojoinValue === "true" || autojoinValue === "1") {
+					const entry: typeof targetRooms[0] = {jid};
+
+					const nickNode = conf.getChild("nick");
+					if(typeof nickNode !== "undefined") {
+						entry.nick = nickNode.getText();
+					}
+
+					targetRooms.push(entry);
+				}
+			}
+		});
+
+		updateAccount(client, item => {
+			const extraRooms = new Set<string>(item.rooms.keys());
+
+			const rooms = new Map<string, Room>();
+
+			targetRooms.forEach(entry => {
+				if(extraRooms.delete(entry.jid)) {
+					rooms.set(entry.jid, item.rooms.get(entry.jid)!);
+				}
+				else {
+					const jid = parseJID(entry.jid);
+
+					rooms.set(entry.jid, {
+						jid,
+						nick: null,
+						connected: false,
+						infoState: LoadState.loading,
+					});
+					connectMUC(client, jid, entry.nick);
+				}
+			});
+
+			return {
+				...item,
+				rooms,
+			};
+		});
+	}
+
+	async function fetchRoster(client: xmppClient.Client) {
+		const result = await client.iqCaller.get(xml("query", {xmlns: "jabber:iq:roster"}));
+		if(typeof result === "undefined") throw new Error("Missing result from roster fetch");
+
+		const items = result.getChildren("item", "jabber:iq:roster");
+
+		const newContacts = new Set<string>();
+		items.forEach(item => {
+			const jid = item.getAttr("jid");
+			if(typeof jid === "string") newContacts.add(jid);
+		});
+
+		if(newContacts.size > 0) {
+			updateAccount(client, account => {
+				const counterparts = new Map(account.counterparts);
+
+				newContacts.forEach(contact => {
+					const entry = counterparts.get(contact);
+					if(typeof entry === "undefined") {
+						counterparts.set(contact, {
+							jid: parseJID(contact),
+							inRoster: true,
+						});
+					}
+					else if(!entry.inRoster) {
+						counterparts.set(contact, {
+							...entry,
+							inRoster: true,
+						});
+					}
+				});
+
+				counterparts.forEach((value, key) => {
+					if(value.inRoster && !newContacts.has(key)) {
+						counterparts.set(key, {
+							...value,
+							inRoster: false,
+						});
+					}
+				});
+
+				return {
+					...account,
+					counterparts,
+				};
+			});
+		}
+	}
+
 	const onClientOnline = useLatestCallback((client: xmppClient.Client) => {
 		updateAccount(client, account => ({...account, connected: true}));
 
@@ -135,73 +259,10 @@ function App() {
 				);
 			})
 			.then(() => {
-				return client.iqCaller.get(
-					xml(
-						"pubsub",
-						{xmlns: "http://jabber.org/protocol/pubsub"},
-						xml("items", {node: "urn:xmpp:bookmarks:1"}),
-					),
-				);
-			})
-			.then(initBookmarks => {
-				if(typeof initBookmarks === "undefined") throw new Error("Got invalid result from bookmarks retrieval");
-
-				const initBookmarksItems = initBookmarks.getChild("items");
-				if(typeof initBookmarksItems === "undefined") {
-					throw new Error("Got invalid result from bookmarks retrieval");
-				}
-
-				const targetRooms: Array<{
-					jid: string;
-					nick?: string;
-				}> = [];
-
-				initBookmarksItems.getChildren("item").forEach(item => {
-					const jid = item.getAttr("id");
-
-					const conf = item.getChild("conference", "urn:xmpp:bookmarks:1");
-					if(typeof conf !== "undefined") {
-						const autojoinValue = conf.getAttr("autojoin");
-						if(autojoinValue === "true" || autojoinValue === "1") {
-							const entry: typeof targetRooms[0] = {jid};
-
-							const nickNode = conf.getChild("nick");
-							if(typeof nickNode !== "undefined") {
-								entry.nick = nickNode.getText();
-							}
-
-							targetRooms.push(entry);
-						}
-					}
-				});
-
-				updateAccount(client, item => {
-					const extraRooms = new Set<string>(item.rooms.keys());
-
-					const rooms = new Map<string, Room>();
-
-					targetRooms.forEach(entry => {
-						if(extraRooms.delete(entry.jid)) {
-							rooms.set(entry.jid, item.rooms.get(entry.jid)!);
-						}
-						else {
-							const jid = parseJID(entry.jid);
-
-							rooms.set(entry.jid, {
-								jid,
-								nick: null,
-								connected: false,
-								infoState: LoadState.loading,
-							});
-							connectMUC(client, jid, entry.nick);
-						}
-					});
-
-					return {
-						...item,
-						rooms,
-					};
-				});
+				return Promise.all([
+					fetchBookmarks(client),
+					fetchRoster(client),
+				]);
 			});
 	});
 
@@ -412,6 +473,7 @@ function App() {
 							element: onClientElement,
 						}),
 						connected: false,
+						counterparts: new Map(),
 						rooms: new Map(),
 					},
 				];

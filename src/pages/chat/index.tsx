@@ -1,6 +1,6 @@
 import { css, cx } from "@emotion/css";
-import { mdiHome } from "@mdi/js";
-import { Link, Route, useRoute } from "wouter-preact";
+import { mdiAccountMultiple, mdiHome } from "@mdi/js";
+import { Link, Route, Switch, useRoute } from "wouter-preact";
 
 import { Account, useAppContext } from "../..";
 import ChatRoomPage from "./rooms";
@@ -14,7 +14,6 @@ const styles = {
 	page: css({
 		display: "flex",
 		height: "100%",
-		gap: ".5rem",
 	}),
 	roomList: css({
 		padding: ".25rem",
@@ -55,6 +54,33 @@ const styles = {
 
 		borderRadius: "100%",
 	}),
+	spaceItemsList: css({
+		width: "250px",
+
+		display: "flex",
+		flexDirection: "column",
+
+		borderRightStyle: "solid",
+		borderRightWidth: "1px",
+		borderRightColor: themeVars.outline1,
+		backgroundColor: themeVars.bg1,
+	}),
+	spaceItem: css({
+		padding: ".5rem",
+		textDecoration: "none",
+		color: "inherit",
+
+		display: "flex",
+		alignItems: "center",
+
+		"&.active": {
+			backgroundColor: themeVars.active,
+		},
+	}),
+	bigSpaceItemIcon: css({
+		fontSize: "35px",
+		marginInlineEnd: ".5rem",
+	}),
 };
 
 export default function ChatPage() {
@@ -68,7 +94,10 @@ export default function ChatPage() {
 				<ChatView account={account} /> :
 				"Connecting…"
 		}
-		<Route path="/rooms/:roomJID" component={ChatRoomPage} />
+		<Switch>
+			<Route path="/rooms/:roomJID" component={ChatRoomPage} />
+			<Route component={ChatHomePage} />
+		</Switch>
 	</div>;
 }
 
@@ -104,5 +133,37 @@ function ChatView(props: {account: Account}) {
 				)
 			}
 		</div>
+	</div>;
+}
+
+function ChatHomePage() {
+	return <div style={{display: "flex"}}>
+		<div class={styles.spaceItemsList}>
+			<Link to="/" className={active => cx(styles.spaceItem, active && "active")}>
+				<Icon path={mdiAccountMultiple} class={styles.bigSpaceItemIcon} />
+				Contacts
+			</Link>
+		</div>
+		<Switch>
+			<Route path="/" component={ContactsPage} />
+		</Switch>
+	</div>;
+}
+
+function ContactsPage() {
+	const appCtx = useAppContext();
+	const account = appCtx.accounts[0];
+	if(typeof account === "undefined") throw new Error("Missing account");
+
+	return <div>
+		<ul>
+			{
+				Array.from(account.counterparts.values(), info => {
+					if(!info.inRoster) return null;
+
+					return <li key={info.jid.toString()}>{info.jid.toString()}</li>;
+				})
+			}
+		</ul>
 	</div>;
 }

@@ -4,6 +4,7 @@ const src = {
 	bg1: {light: "#fff"},
 	outline1: {light: "#ddd"},
 	highlightOutline: {light: "#000"},
+	active: {light: "#aaa"},
 } satisfies Record<string, {light: csstype.DataType.Color}>;
 
 const themeVars = {} as {
