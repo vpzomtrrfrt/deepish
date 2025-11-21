@@ -38,6 +38,7 @@ export interface Account {
 	jid: JID;
 	client: xmppClient.Client;
 	connected: boolean;
+	setupQuery: Promise<void> | null;
 
 	counterparts: Map<string, Counterpart>;
 	rooms: Map<string, Room>;
@@ -46,6 +47,7 @@ export interface Account {
 export interface Message {
 	room: JID | null;
 	from: JID;
+	to: JID | null;
 	content: string;
 	id: string | null;
 	timestamp: Date;
@@ -78,8 +80,9 @@ export interface AppContext {
 		event: K,
 		listener: (evt: AppEventMap[K]) => void,
 	): void;
-	requestArchive(account: JID, entity: JID, before?: string): Promise<ResultSetInfo | null>;
+	requestArchive(account: JID, entity: JID, params: {with?: JID}, before?: string): Promise<ResultSetInfo | null>;
 	sendMessageToRoom(account: JID, room: JID, message: {body: string}): Promise<void>;
+	sendMessageToCounterpart(account: JID, target: JID, message: {body: string}): Promise<void>;
 }
 
 export const AppContext = createContext<undefined | AppContext>(undefined);
@@ -231,13 +234,11 @@ function App() {
 	}
 
 	const onClientOnline = useLatestCallback((client: xmppClient.Client) => {
-		updateAccount(client, account => ({...account, connected: true}));
-
 		const features: string[] = [
 			"urn:xmpp:bookmarks:1+notify",
 		];
 
-		genVerString(
+		const setupQuery = genVerString(
 			[{category: "client", type: "web", lang: "", name: "Deepish"}],
 			features,
 		)
@@ -262,13 +263,20 @@ function App() {
 				return Promise.all([
 					fetchBookmarks(client),
 					fetchRoster(client),
+					client.iqCaller.set(xml("enable", {xmlns: "urn:xmpp:carbons:2"})),
 				]);
-			});
+			})
+			.then(() => undefined);
+
+		updateAccount(client, account => ({...account, connected: true, setupQuery}));
 	});
 
 	function handleMessageStanza(elem: Element, idFromWrapper?: string, timestampFromWrapper?: Date) {
 		const fromStr = elem.getAttr("from");
 		const from = typeof fromStr === "undefined" ? undefined : parseJID(fromStr);
+
+		const toStr = elem.getAttr("to");
+		const to = typeof toStr === "undefined" ? undefined : parseJID(toStr);
 
 		if(elem.getAttr("type") === "groupchat") {
 			let id = idFromWrapper ?? null;
@@ -311,6 +319,7 @@ function App() {
 					message: {
 						room: from.bare(), // TODO is this correct for non-anonymous MUCs?
 						from: from,
+						to: null,
 						content,
 						id,
 						timestamp: timestamp ?? new Date(),
@@ -319,6 +328,55 @@ function App() {
 			}
 
 			outgoingListener?.resolve();
+		}
+		else if(elem.getAttr("type") === "chat") {
+			let id = idFromWrapper ?? null;
+
+			const idElem = elem.getChild("stanza-id", "urn:xmpp:sid:0");
+			if(typeof idElem !== "undefined") {
+				const maybeID = idElem.getAttr("id");
+				if(typeof maybeID !== "undefined" && maybeID !== null) id = maybeID;
+			}
+
+			let outgoingListener;
+			if(id === null) {
+				outgoingListener = undefined;
+			}
+			else {
+				outgoingListener = outgoingMessagesRef.current.get(id);
+				outgoingMessagesRef.current.delete(id);
+			}
+
+			const errorElem = elem.getChild("error");
+			if(typeof errorElem !== "undefined") {
+				if(typeof outgoingListener !== "undefined") {
+					outgoingListener.reject(errorElem);
+				}
+
+				return;
+			}
+
+			const content = elem.getChildText("body");
+
+			if(content !== null && typeof from !== "undefined" && typeof to !== "undefined") {
+				let timestamp: Date | null = timestampFromWrapper ?? null;
+
+				const delayElem = elem.getChild("delay", "urn:xmpp:delay");
+				if(typeof delayElem !== "undefined") {
+					timestamp = new Date(delayElem.getAttr("stamp"));
+				}
+
+				emit("message", {
+					message: {
+						room: null,
+						from,
+						to,
+						content,
+						id,
+						timestamp: timestamp ?? new Date(),
+					},
+				});
+			}
 		}
 		else {
 			const mamResultElem = elem.getChild("result", "urn:xmpp:mam:2");
@@ -392,6 +450,8 @@ function App() {
 	});
 
 	const onClientElement = useLatestCallback((client: xmppClient.Client, elem: Element) => {
+		console.log("onClientElement", elem);
+
 		if(elem.getName() === "presence" && elem.getNS() === "jabber:client") {
 			const srcJID = parseJID(elem.getAttr("from"));
 
@@ -473,6 +533,7 @@ function App() {
 							element: onClientElement,
 						}),
 						connected: false,
+						setupQuery: null,
 						counterparts: new Map(),
 						rooms: new Map(),
 					},
@@ -517,7 +578,7 @@ function App() {
 		[],
 	);
 
-	const requestArchive = useLatestCallback(async (accountJID: JID, entity: JID, before?: string) => {
+	const requestArchive = useLatestCallback(async (accountJID: JID, entity: JID, params: {with?: JID}, before?: string) => {
 		const account = accounts.find(x => x.jid.equals(accountJID));
 		if(typeof account === "undefined") throw new Error("No such account");
 
@@ -528,6 +589,16 @@ function App() {
 				xml(
 					"query",
 					{xmlns: "urn:xmpp:mam:2"},
+					...(
+						typeof params.with === "undefined" ?
+							[] :
+							[xml(
+								"x",
+								{xmlns: "jabber:x:data", type: "submit"},
+								xml("field", {var: "FORM_TYPE", type: "hidden"}, xml("value", {}, "urn:xmpp:mam:2")),
+								xml("field", {var: "with"}, xml("value", {}, params.with.toString())),
+							)]
+					),
 					xml(
 						"set",
 						{xmlns: "http://jabber.org/protocol/rsm"},
@@ -566,6 +637,36 @@ function App() {
 			});
 	});
 
+	const sendMessageToCounterpart = useLatestCallback(async (accountJID: JID, targetJID: JID, message: {body: string}) => {
+		const id = xid();
+
+		const account = accounts.find(x => x.jid.equals(accountJID));
+		if(typeof account === "undefined") throw new Error("No such account");
+
+		await account.client.send(
+			xml(
+				"message",
+				{id, to: targetJID.toString(), type: "chat"},
+				xml(
+					"body",
+					{},
+					message.body,
+				),
+			),
+		);
+
+		emit("message", {
+			message: {
+				room: null,
+				from: accountJID,
+				to: targetJID,
+				content: message.body,
+				id,
+				timestamp: new Date(),
+			},
+		});
+	});
+
 	const sendMessageToRoom = useLatestCallback(async (accountJID: JID, roomJID: JID, message: {body: string}) => {
 		const id = xid();
 
@@ -588,7 +689,7 @@ function App() {
 			),
 		);
 
-		await reflectDefer;
+		await reflectDefer.promise;
 	});
 
 	const portalContainerRef = useRef<HTMLDivElement>(null);
@@ -607,9 +708,18 @@ function App() {
 			removeEventListener,
 
 			requestArchive,
+			sendMessageToCounterpart,
 			sendMessageToRoom,
 		} satisfies AppContext),
-		[accounts, addEventListener, removeEventListener, loadAccounts, requestArchive, sendMessageToRoom],
+		[
+			accounts,
+			addEventListener,
+			removeEventListener,
+			requestArchive,
+			sendMessageToCounterpart,
+			sendMessageToRoom,
+			loadAccounts,
+		],
 	);
 
 	useEffectOnce(() => {

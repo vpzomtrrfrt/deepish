@@ -1,13 +1,13 @@
 import { css } from "@emotion/css";
 import { useEffect, useRef, useState } from "preact/hooks";
-import { Message, MessageEvent, ResultSetInfo, useAppContext } from "../../..";
+import { Message, MessageEvent, ResultSetInfo, useAppContext } from "../..";
 import useLatestCallback from "use-latest-callback";
-import { LoadState } from "../../../util/useData";
-import { DataNonDoneView } from "../../../components/DataView";
+import { LoadState } from "../../util/useData";
+import { DataNonDoneView } from "../../components/DataView";
 import { pushAtSortPosition } from "array-push-at-sort-position";
 import useLinkState from "linkstate/hook";
-import useSubmitting from "../../../util/useSubmitting";
-import MessageList, { LoadMoreTriggerer } from "../../../components/MessageList";
+import useSubmitting from "../../util/useSubmitting";
+import MessageList, { LoadMoreTriggerer } from "../../components/MessageList";
 
 const styles = {
 	page: css({
@@ -19,16 +19,16 @@ const styles = {
 	}),
 };
 
-export default function ChatRoomPage(props: {params: {roomJID: string}}) {
-	const roomJID = decodeURIComponent(props.params.roomJID);
+export default function DirectChatPage(props: {params: {counterpartJID: string}}) {
+	const counterpartJID = decodeURIComponent(props.params.counterpartJID);
 
-	return <ChatRoomPageInner roomJID={roomJID} key={roomJID} />;
+	return <DirectChatPageInner counterpartJID={counterpartJID} key={counterpartJID} />;
 }
 
-function ChatRoomPageInner(props: {roomJID: string}) {
+function DirectChatPageInner(props: {counterpartJID: string}) {
 	const appCtx = useAppContext();
 	const account = appCtx.accounts[0]!;
-	const room = account.rooms.get(props.roomJID);
+	const counterpart = account.counterparts.get(props.counterpartJID);
 
 	const [messagesData, setMessagesData] = useState<{messages: Message[]; messageMap: Map<string, Message>}>({
 		messages: [],
@@ -36,9 +36,12 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 	});
 
 	const onMessage = useLatestCallback((evt: MessageEvent) => {
-		console.log("room page got message", evt);
-
-		if(evt.message.room !== null && evt.message.room.toString() === props.roomJID) {
+		if(
+			evt.message.room === null && (
+				evt.message.from.bare().toString() === props.counterpartJID ||
+					evt.message.to?.bare().toString() === props.counterpartJID
+			)
+		) {
 			setMessagesData(current => {
 				if(evt.message.id !== null && current.messageMap.has(evt.message.id)) {
 					// we already have this message, ignore
@@ -83,7 +86,7 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 	const loadMore = useLatestCallback(() => {
 		setPageState(LoadState.loading);
 
-		appCtx.requestArchive(account.jid, room!.jid, {}, nextPageRef.current ?? undefined)
+		appCtx.requestArchive(account.jid, account.jid, {with: counterpart!.jid}, nextPageRef.current ?? undefined)
 			.then(value => {
 				nextPageRef.current = value === null ? null : value.firstItem;
 				setPageState(LoadState.wrapValue(value));
@@ -94,17 +97,17 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 	});
 
 	useEffect(() => {
-		if(room?.connected === true && pageState === null) {
+		if(typeof counterpart !== "undefined" && pageState === null) {
 			loadMore();
 		}
-	}, [room?.connected, pageState, loadMore]);
+	}, [pageState, loadMore, account.connected, counterpart]);
 
 	const [newMessage, linkNewMessage, setNewMessage] = useLinkState("");
 
 	const [submittingNewMessage, submitNewMessage] = useSubmitting(async (evt: Event) => {
 		evt.preventDefault();
 
-		await appCtx.sendMessageToRoom(account.jid, room!.jid, {body: newMessage});
+		await appCtx.sendMessageToCounterpart(account.jid, counterpart!.jid, {body: newMessage});
 
 		setNewMessage("");
 	});
@@ -119,13 +122,7 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 
 	return <div class={styles.page}>
 		<h1>
-			{
-				(
-					typeof room === "undefined" ?
-						null :
-						LoadState.ifDone(room.infoState, disco => disco.name, () => null)
-				) ?? props.roomJID
-			}
+			{props.counterpartJID}
 		</h1>
 		<MessageList
 			messages={messagesData.messages}

@@ -9,6 +9,7 @@ import Avatar from "../../components/Avatar";
 import WithTooltip from "../../components/WithTooltip";
 import { themeVars } from "../../util/theme";
 import Icon from "../../components/Icon";
+import DirectChatPage from "./direct";
 
 const styles = {
 	page: css({
@@ -96,7 +97,7 @@ export default function ChatPage() {
 		}
 		<Switch>
 			<Route path="/rooms/:roomJID" component={ChatRoomPage} />
-			<Route component={ChatHomePage} />
+			<Route path="/" component={ChatHomePage} nest />
 		</Switch>
 	</div>;
 }
@@ -137,7 +138,7 @@ function ChatView(props: {account: Account}) {
 }
 
 function ChatHomePage() {
-	return <div style={{display: "flex"}}>
+	return <div style={{display: "flex", flexGrow: 1}}>
 		<div class={styles.spaceItemsList}>
 			<Link to="/" className={active => cx(styles.spaceItem, active && "active")}>
 				<Icon path={mdiAccountMultiple} class={styles.bigSpaceItemIcon} />
@@ -145,6 +146,7 @@ function ChatHomePage() {
 			</Link>
 		</div>
 		<Switch>
+			<Route path="/direct/:counterpartJID" component={DirectChatPage} />
 			<Route path="/" component={ContactsPage} />
 		</Switch>
 	</div>;
@@ -161,7 +163,11 @@ function ContactsPage() {
 				Array.from(account.counterparts.values(), info => {
 					if(!info.inRoster) return null;
 
-					return <li key={info.jid.toString()}>{info.jid.toString()}</li>;
+					return <li key={info.jid.toString()}>
+						<Link to={"~/chat/direct/" + encodeURIComponent(info.jid.toString())}>
+							{info.jid.toString()}
+						</Link>
+					</li>;
 				})
 			}
 		</ul>
