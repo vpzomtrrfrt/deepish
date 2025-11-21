@@ -1,4 +1,5 @@
 import { css, cx } from "@emotion/css";
+import { mdiHome } from "@mdi/js";
 import { Link, Route, useRoute } from "wouter-preact";
 
 import { Account, useAppContext } from "../..";
@@ -7,6 +8,7 @@ import { LoadState } from "../../util/useData";
 import Avatar from "../../components/Avatar";
 import WithTooltip from "../../components/WithTooltip";
 import { themeVars } from "../../util/theme";
+import Icon from "../../components/Icon";
 
 const styles = {
 	page: css({
@@ -40,6 +42,19 @@ const styles = {
 			borderColor: "#7f7f7f",
 		},
 	}),
+	roomLinkIcon: css({
+		fontSize: "35px",
+	}),
+	homeAvatar: css({
+		width: "50px",
+		height: "50px",
+
+		display: "flex",
+		justifyContent: "center",
+		alignItems: "center",
+
+		borderRadius: "100%",
+	}),
 };
 
 export default function ChatPage() {
@@ -63,6 +78,13 @@ function ChatView(props: {account: Account}) {
 
 	return <div class={css({display: "flex", flexDirection: "column"})}>
 		<div class={styles.roomList}>
+			<div>
+				<Link to="~/">
+					<div class={cx(styles.roomLink, currentRoom === null && styles.currentRoomLink, styles.homeAvatar)}>
+						<Icon path={mdiHome} class={styles.roomLinkIcon} />
+					</div>
+				</Link>
+			</div>
 			{
 				Array.from(
 					props.account.rooms,
