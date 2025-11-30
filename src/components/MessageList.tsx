@@ -88,10 +88,16 @@ export default function MessageList(props: {messages: Message[]; loaderContent: 
 	}, []);
 
 	const onScroll = useCallback((evt: JSX.TargetedEvent<HTMLDivElement>) => {
-		atBottomRef.current =
-			evt.currentTarget.scrollTop >= evt.currentTarget.scrollHeight - evt.currentTarget.clientHeight - BOTTOM_TOLERANCE;
+		const atBottom = evt.currentTarget.scrollTop >= evt.currentTarget.scrollHeight - evt.currentTarget.clientHeight - BOTTOM_TOLERANCE;
 
-		console.log("updated from scroll, atBottom=", atBottomRef.current, evt.currentTarget.scrollTop, evt.currentTarget.scrollHeight - evt.currentTarget.clientHeight);
+		if(atBottom || lastScrollHeightRef.current === evt.currentTarget.scrollHeight) {
+			atBottomRef.current = atBottom;
+
+			console.log("updated from scroll, atBottom=", atBottomRef.current, evt.currentTarget.scrollTop, evt.currentTarget.scrollHeight - evt.currentTarget.clientHeight);
+		}
+		else {
+			console.log("ignoring scroll as height has changed");
+		}
 	}, []);
 
 	return <List
