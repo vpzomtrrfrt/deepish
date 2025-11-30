@@ -25,6 +25,7 @@ export default function MessageList(props: {messages: Message[]; loaderContent: 
 
 	const listRef = useRef<ListImperativeAPI>(null);
 	const lastScrollHeightRef = useRef(0);
+	const lastClientHeightRef = useRef(0);
 
 	const lastMessagesRef = useRef<Message[]>([]);
 
@@ -70,6 +71,7 @@ export default function MessageList(props: {messages: Message[]; loaderContent: 
 			}
 
 			lastScrollHeightRef.current = elem.scrollHeight;
+			lastClientHeightRef.current = elem.clientHeight;
 		}
 	});
 
@@ -88,12 +90,18 @@ export default function MessageList(props: {messages: Message[]; loaderContent: 
 	}, []);
 
 	const onScroll = useCallback((evt: JSX.TargetedEvent<HTMLDivElement>) => {
-		const atBottom = evt.currentTarget.scrollTop >= evt.currentTarget.scrollHeight - evt.currentTarget.clientHeight - BOTTOM_TOLERANCE;
+		const elem = evt.currentTarget;
 
-		if(atBottom || lastScrollHeightRef.current === evt.currentTarget.scrollHeight) {
+		const atBottom = elem.scrollTop >= elem.scrollHeight - elem.clientHeight - BOTTOM_TOLERANCE;
+
+		if(
+			atBottom || (
+				lastScrollHeightRef.current === elem.scrollHeight && lastClientHeightRef.current === elem.clientHeight
+			)
+		) {
 			atBottomRef.current = atBottom;
 
-			console.log("updated from scroll, atBottom=", atBottomRef.current, evt.currentTarget.scrollTop, evt.currentTarget.scrollHeight - evt.currentTarget.clientHeight);
+			console.log("updated from scroll, atBottom=", atBottomRef.current, elem.scrollTop, elem.scrollHeight - elem.clientHeight);
 		}
 		else {
 			console.log("ignoring scroll as height has changed");
