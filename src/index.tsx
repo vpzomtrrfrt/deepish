@@ -4,7 +4,9 @@ import Connection from "@xmpp/connection";
 import xid from "@xmpp/id";
 import { JID, parse as parseJID } from "@xmpp/jid";
 import xml, { Element } from "@xmpp/xml";
+import fromBase64 from "es-arraybuffer-base64/Uint8Array.fromBase64";
 import toBase64 from "es-arraybuffer-base64/Uint8Array.prototype.toBase64";
+import toHex from "es-arraybuffer-base64/Uint8Array.prototype.toHex";
 import { createContext, RefObject, render } from "preact";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { Redirect, Route } from "wouter-preact";
@@ -25,6 +27,7 @@ export interface Counterpart {
 
 export interface RoomDiscoInfo {
 	name: string | null;
+	avatarHashes: string[];
 }
 
 export interface Room {
@@ -42,6 +45,8 @@ export interface Account {
 
 	counterparts: Map<string, Counterpart>;
 	rooms: Map<string, Room>;
+
+	avatarStates: Map<string, LoadState<string>>;
 }
 
 export interface Message {
@@ -399,6 +404,94 @@ function App() {
 		}
 	}
 
+	const startRequestingAvatar = useLatestCallback((client: xmppClient.Client, target: JID, expectedHashes: string[]) => {
+		{
+			const account = accounts.find(x => x.client === client);
+			if(typeof account === "undefined") {
+				console.warn("No such account");
+				return;
+			}
+
+			for(const hash of expectedHashes) {
+				const state = account.avatarStates.get(hash);
+				if(typeof state !== "undefined") {
+					console.log("Already loading this avatar");
+					return;
+				}
+			}
+		}
+
+		updateAccount(client, account => {
+			const newAvatarStates = new Map(account.avatarStates);
+
+			for(const hash of expectedHashes) {
+				newAvatarStates.set(hash, LoadState.loading);
+			}
+
+			return {...account, avatarStates: newAvatarStates};
+		});
+
+		client.iqCaller.get(
+			xml(
+				"vCard",
+				{xmlns: "vcard-temp"},
+			),
+			target.toString(),
+		)
+			.then(async (result) => {
+				if(typeof result === "undefined") throw new Error("Unexpected result");
+
+				const calls = [];
+
+				for(const photoElem of result.getChildren("PHOTO")) {
+					const type = photoElem.getChildText("TYPE");
+					const contentB64 = photoElem.getChildText("BINVAL");
+
+					if(type === null || contentB64 === null) continue;
+
+					const content = fromBase64(contentB64);
+
+					calls.push(
+						crypto.subtle.digest("SHA-1", content)
+							.then(hash => {
+								const hashStr = toHex(new Uint8Array(hash));
+
+								const blob = new Blob([content], {type});
+								const url = URL.createObjectURL(blob);
+
+								updateAccount(client, account => {
+									const newAvatarStates = new Map(account.avatarStates);
+
+									newAvatarStates.set(hashStr, LoadState.wrapValue(url));
+
+									return {...account, avatarStates: newAvatarStates};
+								});
+							}),
+					);
+				}
+			})
+			.catch(err => {
+				console.error(err);
+			})
+			.then(() => {
+				updateAccount(client, account => {
+					const newAvatarStates = new Map(account.avatarStates);
+
+					for(const hash of expectedHashes) {
+						const value = newAvatarStates.get(hash);
+						if(typeof value === "undefined" || value.state !== "done") {
+							newAvatarStates.set(
+								hash,
+								LoadState.wrapError(new Error("Didn't receive avatar image from request")),
+							);
+						}
+					}
+
+					return {...account, avatarStates: newAvatarStates};
+				});
+			});
+	});
+
 	const fetchRoomDisco = useLatestCallback((client: xmppClient.Client, roomJID: JID) => {
 		updateAccount(client, account => {
 			const info = account.rooms.get(roomJID.toString());
@@ -424,6 +517,7 @@ function App() {
 
 				const info: RoomDiscoInfo = {
 					name: null,
+					avatarHashes: [],
 				};
 
 				const identityElem = result.getChild("identity");
@@ -431,6 +525,20 @@ function App() {
 					const name = identityElem.getAttr("name");
 					if(typeof name === "string") info.name = name;
 				}
+
+				result.getChildren("x", "jabber:x:data").forEach(x => {
+					if(x.getAttr("type") === "result") {
+						x.getChildren("field").forEach(fieldElem => {
+							if(fieldElem.getAttr("var") === "muc#roominfo_avatarhash") {
+								fieldElem.getChildren("value").forEach(valueElem => {
+									info.avatarHashes.push(valueElem.getText());
+								});
+							}
+						});
+					}
+				});
+
+				startRequestingAvatar(client, roomJID, info.avatarHashes);
 
 				return info;
 			})
@@ -536,6 +644,7 @@ function App() {
 						setupQuery: null,
 						counterparts: new Map(),
 						rooms: new Map(),
+						avatarStates: new Map(),
 					},
 				];
 			});
