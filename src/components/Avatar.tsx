@@ -55,6 +55,14 @@ export default function Avatar(props: {size: "lg" | "md"; jid: string | JID; cla
 			}
 		}
 
+		const presence = account.presences.get(props.jid.toString());
+		if(typeof presence !== "undefined") {
+			for(const hash of presence.avatarHashes) {
+				const state = account.avatarStates.get(hash);
+				if(typeof state !== "undefined" && state.state === "done") return state.value;
+			}
+		}
+
 		return null;
 	}, [account, props.jid]);
 

@@ -37,6 +37,10 @@ export interface Room {
 	infoState: LoadState<RoomDiscoInfo>;
 }
 
+export interface Presence {
+	avatarHashes: string[];
+}
+
 export interface Account {
 	jid: JID;
 	client: xmppClient.Client;
@@ -47,6 +51,7 @@ export interface Account {
 	rooms: Map<string, Room>;
 
 	avatarStates: Map<string, LoadState<string>>;
+	presences: Map<string, Presence>;
 }
 
 export interface Message {
@@ -538,7 +543,9 @@ function App() {
 					}
 				});
 
-				startRequestingAvatar(client, roomJID, info.avatarHashes);
+				if(info.avatarHashes.length > 0) {
+					startRequestingAvatar(client, roomJID, info.avatarHashes);
+				}
 
 				return info;
 			})
@@ -608,6 +615,28 @@ function App() {
 					}
 				}
 			}
+
+			const presence: Presence = {
+				avatarHashes: [],
+			};
+
+			const vcardUpdateElem = elem.getChild("x", "vcard-temp:x:update");
+			if(typeof vcardUpdateElem !== "undefined") {
+				const photoElems = vcardUpdateElem.getChildren("photo");
+				presence.avatarHashes = photoElems.map(photoElem => photoElem.getText());
+			}
+
+			updateAccount(client, account => {
+				const presences = new Map(account.presences);
+
+				presences.set(srcJID.toString(), presence);
+
+				return {...account, presences};
+			});
+
+			if(presence.avatarHashes.length > 0) {
+				startRequestingAvatar(client, srcJID, presence.avatarHashes);
+			}
 		}
 		else if(elem.getName() === "message") {
 			handleMessageStanza(elem);
@@ -644,6 +673,7 @@ function App() {
 						setupQuery: null,
 						counterparts: new Map(),
 						rooms: new Map(),
+						presences: new Map(),
 						avatarStates: new Map(),
 					},
 				];
