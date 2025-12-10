@@ -1,4 +1,5 @@
 import { Tooltip } from "@base-ui-components/react";
+import { IDBCache } from "@instructure/idb-cache";
 import * as xmppClient from "@xmpp/client";
 import Connection from "@xmpp/connection";
 import xid from "@xmpp/id";
@@ -76,8 +77,14 @@ export interface ResultSetInfo {
 	lastItem: string;
 }
 
+export interface AvatarImageCacheEntry {
+	contentB64: string;
+	type: string;
+}
+
 export interface AppContext {
 	accounts: Account[];
+	cache: IDBCache;
 
 	portalContainerRef: RefObject<HTMLDivElement>;
 
@@ -113,6 +120,8 @@ function App() {
 	const [inited, setInited] = useState(false);
 
 	const outgoingMessagesRef = useRef<Map<string, {resolve: () => void; reject: (err: unknown) => void}>>(new Map());
+
+	const cache = useMemo(() => new IDBCache({dbName: "deepish-cache", cacheBuster: "3", cacheKey: "dummy"}), []);
 
 	const updateAccount = useCallback((identifier: xmppClient.Client | JID, fn: (current: Account) => Account) => {
 		setAccounts(current => {
@@ -436,14 +445,47 @@ function App() {
 			return {...account, avatarStates: newAvatarStates};
 		});
 
-		client.iqCaller.get(
-			xml(
-				"vCard",
-				{xmlns: "vcard-temp"},
-			),
-			target.toString(),
+		Promise.all(
+			expectedHashes.map(hash => {
+				return cache.getItem("avatarImages/" + encodeURIComponent(hash))
+					.then(x => x === null ? null : (JSON.parse(x) as AvatarImageCacheEntry));
+			}),
 		)
-			.then(async (result) => {
+			.then(async (cacheResults) => {
+				if(!cacheResults.includes(null)) {
+					// found all in cache
+
+					console.log("got avatar from cache for", target);
+
+					updateAccount(client, account => {
+						const avatarStates = new Map(account.avatarStates);
+
+						for(let i = 0; i < expectedHashes.length; i++) {
+							const entry = cacheResults[i]!;
+							const content = fromBase64(entry.contentB64);
+
+							const blob = new Blob([content], {type: entry.type});
+							const url = URL.createObjectURL(blob);
+
+							avatarStates.set(expectedHashes[i], LoadState.wrapValue(url));
+						}
+
+						return {...account, avatarStates};
+					});
+
+					return;
+				}
+
+				console.log("missing avatar for", target, " - fetching now");
+
+				const result = await client.iqCaller.get(
+					xml(
+						"vCard",
+						{xmlns: "vcard-temp"},
+					),
+					target.toString(),
+				);
+
 				if(typeof result === "undefined") throw new Error("Unexpected result");
 
 				const calls = [];
@@ -471,6 +513,11 @@ function App() {
 
 									return {...account, avatarStates: newAvatarStates};
 								});
+
+								cache.setItem(
+									"avatarImages/" + encodeURIComponent(hashStr),
+									JSON.stringify({contentB64, type} satisfies AvatarImageCacheEntry),
+								);
 							}),
 					);
 				}
@@ -837,6 +884,7 @@ function App() {
 		() => ({
 			accounts,
 			portalContainerRef,
+			cache,
 
 			saveToken(jid, token, userAgent) {
 				localStorage.setItem("deepishAccount", JSON.stringify({jid: jid.toString(), token, userAgent}));
@@ -853,6 +901,7 @@ function App() {
 		[
 			accounts,
 			addEventListener,
+			cache,
 			removeEventListener,
 			requestArchive,
 			sendMessageToCounterpart,
