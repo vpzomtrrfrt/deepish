@@ -155,7 +155,7 @@ function ChatHomePage() {
 	const conversations = useMemo(() => {
 		const list = Array.from(account.counterparts.entries())
 			.filter(x => !account.rooms.has(x[0]) && x[1].lastMessageTimestamp !== null);
-		list.sort((a, b) => a[1].lastMessageTimestamp!.getTime() - b[1].lastMessageTimestamp!.getTime());
+		list.sort((a, b) => b[1].lastMessageTimestamp!.getTime() - a[1].lastMessageTimestamp!.getTime());
 		return list.map(x => x[0]);
 	}, [account.counterparts, account.rooms]);
 
