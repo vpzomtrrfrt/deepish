@@ -13,6 +13,7 @@ const styles = {
 		borderRadius: "100%",
 		overflow: "hidden",
 		position: "relative",
+		flexShrink: 0,
 
 		"> img": {
 			position: "absolute",
@@ -70,11 +71,17 @@ export default function Avatar(props: {size: "lg" | "md"; jid: string | JID; cla
 		return generateColorForID(parsedJID.toString());
 	}, [parsedJID]);
 
-	return <div class={cx(styles.avatar, props.class)} style={{"--avatar-size": props.size === "lg" ? "50px": "35px"}}>
+	return <div class={cx("avatar", styles.avatar, props.class)} style={{"--avatar-size": props.size === "lg" ? "50px": "35px"}}>
 		{image === null ?
 			<svg class={styles.fallbackAvatar} style={{backgroundColor: color}} viewBox="0 0 30 30">
 				<text x="50%" y="50%">
-					{(parsedJID.resource === "" ? parsedJID.local : parsedJID.resource)[0].toUpperCase()}
+					{
+						(
+							parsedJID.resource === "" ?
+								(parsedJID.local === "" ? parsedJID.domain : parsedJID.local) :
+								parsedJID.resource
+						)[0].toUpperCase()
+					}
 				</text>
 			</svg> :
 			<img src={image} />

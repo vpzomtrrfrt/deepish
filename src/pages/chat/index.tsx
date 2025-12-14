@@ -10,6 +10,7 @@ import WithTooltip from "../../components/WithTooltip";
 import { themeVars } from "../../util/theme";
 import Icon from "../../components/Icon";
 import DirectChatPage from "./direct";
+import { useMemo } from "preact/hooks";
 
 const styles = {
 	page: css({
@@ -77,6 +78,15 @@ const styles = {
 		"&.active": {
 			backgroundColor: themeVars.active,
 		},
+
+		"> .avatar": {
+			marginInlineEnd: ".5rem",
+		},
+
+		"> span": {
+			overflow: "hidden",
+			textOverflow: "ellipsis",
+		},
 	}),
 	bigSpaceItemIcon: css({
 		fontSize: "35px",
@@ -138,12 +148,31 @@ function ChatView(props: {account: Account}) {
 }
 
 function ChatHomePage() {
+	const appCtx = useAppContext();
+	const account = appCtx.accounts[0];
+
+	// TODO this seems like a performance problem
+	const conversations = useMemo(() => {
+		const list = Array.from(account.counterparts.entries())
+			.filter(x => !account.rooms.has(x[0]) && x[1].lastMessageTimestamp !== null);
+		list.sort((a, b) => a[1].lastMessageTimestamp!.getTime() - b[1].lastMessageTimestamp!.getTime());
+		return list.map(x => x[0]);
+	}, [account.counterparts, account.rooms]);
+
 	return <div style={{display: "flex", flexGrow: 1}}>
 		<div class={styles.spaceItemsList}>
 			<Link to="/" className={active => cx(styles.spaceItem, active && "active")}>
 				<Icon path={mdiAccountMultiple} class={styles.bigSpaceItemIcon} />
-				Contacts
+				<span>Contacts</span>
 			</Link>
+			{
+				conversations.map(item => {
+					return <Link to={"~/chat/direct/" + encodeURIComponent(item)} className={active => cx(styles.spaceItem, active && "active")}>
+						<Avatar size="md" jid={item} />
+						<span>{item}</span>
+					</Link>;
+				})
+			}
 		</div>
 		<Switch>
 			<Route path="/direct/:counterpartJID" component={DirectChatPage} />

@@ -24,6 +24,7 @@ import "./global.css";
 export interface Counterpart {
 	jid: JID;
 	inRoster: boolean;
+	lastMessageTimestamp: Date | null;
 }
 
 export interface RoomDiscoInfo {
@@ -225,6 +226,7 @@ function App() {
 						counterparts.set(contact, {
 							jid: parseJID(contact),
 							inRoster: true,
+							lastMessageTimestamp: null,
 						});
 					}
 					else if(!entry.inRoster) {
@@ -248,6 +250,56 @@ function App() {
 					...account,
 					counterparts,
 				};
+			});
+		}
+	}
+
+	async function fetchInbox(client: xmppClient.Client) {
+		const result = await client.iqCaller.get(xml("summary", {xmlns: "xmpp:prosody.im/mod_map"}));
+		if(typeof result === "undefined") throw new Error("Missing result from summary");
+
+		console.log("inbox", result);
+
+		const newLastMessageTimestamps = new Map<string, Date>();
+
+		result.getChildren("item").forEach(item => {
+			try {
+				const itemJID = parseJID(item.getAttr("jid"));
+
+				const end = item.getChildText("end");
+				if(end !== null) {
+					const endDate = new Date(end);
+					if(!isNaN(endDate.getTime())) newLastMessageTimestamps.set(itemJID.toString(), endDate);
+				}
+			}
+			catch(ex) {
+				console.error(ex);
+			}
+		});
+
+		if(newLastMessageTimestamps.size > 0) {
+			updateAccount(client, account => {
+				const counterparts = new Map(account.counterparts);
+				newLastMessageTimestamps.forEach((timestamp, itemJID) => {
+					const entry = counterparts.get(itemJID);
+					if(typeof entry === "undefined") {
+						counterparts.set(itemJID, {
+							jid: parseJID(itemJID),
+							inRoster: false,
+							lastMessageTimestamp: timestamp,
+						});
+					}
+					else {
+						if(entry.lastMessageTimestamp === null || entry.lastMessageTimestamp < timestamp) {
+							counterparts.set(itemJID, {
+								...entry,
+								lastMessageTimestamp: timestamp,
+							});
+						}
+					}
+				});
+
+				return {...account, counterparts};
 			});
 		}
 	}
@@ -282,6 +334,7 @@ function App() {
 				return Promise.all([
 					fetchBookmarks(client),
 					fetchRoster(client),
+					fetchInbox(client),
 					client.iqCaller.set(xml("enable", {xmlns: "urn:xmpp:carbons:2"})),
 				]);
 			})
