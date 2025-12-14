@@ -343,7 +343,7 @@ function App() {
 		updateAccount(client, account => ({...account, connected: true, setupQuery}));
 	});
 
-	function handleMessageStanza(elem: Element, idFromWrapper?: string, timestampFromWrapper?: Date) {
+	function handleMessageStanza(client: xmppClient.Client, elem: Element, idFromWrapper?: string, timestampFromWrapper?: Date) {
 		const fromStr = elem.getAttr("from");
 		const from = typeof fromStr === "undefined" ? undefined : parseJID(fromStr);
 
@@ -438,6 +438,35 @@ function App() {
 					timestamp = new Date(delayElem.getAttr("stamp"));
 				}
 
+				timestamp = timestamp ?? new Date();
+
+				updateAccount(client, account => {
+					const entry = account.counterparts.get(from.bare().toString());
+					if(
+						typeof entry === "undefined" ||
+							entry.lastMessageTimestamp === null ||
+							entry.lastMessageTimestamp.getTime() < timestamp.getTime()
+					) {
+						const counterparts = new Map(account.counterparts);
+						if(typeof entry === "undefined") {
+							counterparts.set(from.bare().toString(), {
+								jid: from.bare(),
+								inRoster: false,
+								lastMessageTimestamp: timestamp,
+							});
+						}
+						else {
+							counterparts.set(from.bare().toString(), {
+								...entry,
+								lastMessageTimestamp: timestamp,
+							});
+						}
+
+						return {...account, counterparts};
+					}
+					else return account;
+				});
+
 				emit("message", {
 					message: {
 						room: null,
@@ -445,7 +474,7 @@ function App() {
 						to,
 						content,
 						id,
-						timestamp: timestamp ?? new Date(),
+						timestamp,
 					},
 				});
 			}
@@ -465,7 +494,7 @@ function App() {
 					}
 
 					const messageElem = forwardedElem.getChild("message", "jabber:client");
-					if(typeof messageElem !== "undefined") handleMessageStanza(messageElem, id, timestamp);
+					if(typeof messageElem !== "undefined") handleMessageStanza(client, messageElem, id, timestamp);
 				}
 			}
 		}
@@ -739,7 +768,7 @@ function App() {
 			}
 		}
 		else if(elem.getName() === "message") {
-			handleMessageStanza(elem);
+			handleMessageStanza(client, elem);
 		}
 	});
 
