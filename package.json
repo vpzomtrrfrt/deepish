@@ -12,7 +12,7 @@
     "es-arraybuffer-base64": "^1.1.2",
     "hsluv": "^1.0.1",
     "linkstate": "^2.0.1",
-    "preact": "^10.27.2",
+    "preact": "^10.28.0",
     "react-window": "^2.2.3",
     "sha.js": "^2.4.12",
     "typescript": "^5.9.3",
