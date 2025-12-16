@@ -109,6 +109,12 @@ export function useAppContext(): AppContext {
 	return appCtx;
 }
 
+const FEATURES: string[] = [
+	"urn:xmpp:bookmarks:1+notify",
+];
+const IDENTITY = {category: "client", type: "web", lang: "", name: "Deepish"};
+const NODE_URL = "https://deepish.vpzom.click";
+
 function App() {
 	// eventually we might support multiple accounts
 	// just one for now though
@@ -303,13 +309,9 @@ function App() {
 	}
 
 	const onClientOnline = useLatestCallback((client: xmppClient.Client) => {
-		const features: string[] = [
-			"urn:xmpp:bookmarks:1+notify",
-		];
-
 		const setupQuery = genVerString(
-			[{category: "client", type: "web", lang: "", name: "Deepish"}],
-			features,
+			[IDENTITY],
+			FEATURES,
 		)
 			.then(ver => {
 				return client.send(
@@ -321,7 +323,7 @@ function App() {
 							{
 								xmlns: "http://jabber.org/protocol/caps",
 								hash: "sha-1",
-								node: "https://deepish.vpzom.click",
+								node: NODE_URL,
 								ver,
 							},
 						),
@@ -1080,6 +1082,20 @@ function createXMPPClientForAccount(
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		client.on(key, (listeners[key] as any).bind(undefined, client));
 	}
+
+	client.iqCallee.get("http://jabber.org/protocol/disco#info", "query", async () => {
+		const ver = await genVerString([IDENTITY], FEATURES);
+
+		return xml(
+			"query",
+			{xmlns: "http://jabber.org/protocol/disco#info", node: NODE_URL + "#" + ver},
+			xml(
+				"identity",
+				{category: IDENTITY.category, name: IDENTITY.name, type: IDENTITY.type, "xml:lang": IDENTITY.lang},
+			),
+			...FEATURES.map(feature => xml("feature", {var: feature})),
+		);
+	});
 
 	client.start();
 
