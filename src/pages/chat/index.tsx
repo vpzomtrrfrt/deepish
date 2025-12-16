@@ -74,6 +74,7 @@ const styles = {
 
 		display: "flex",
 		alignItems: "center",
+		whiteSpace: "nowrap",
 
 		"&.active": {
 			backgroundColor: themeVars.active,
