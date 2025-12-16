@@ -59,6 +59,17 @@ export default function Avatar(props: {size: "lg" | "md"; jid: string | JID; cla
 		let counterpart = account.counterparts.get(parsedJID.toString());
 		if(typeof counterpart === "undefined" && parsedJID.resource !== "") {
 			counterpart = account.counterparts.get(parsedJID.bare().toString());
+
+			if(typeof counterpart === "undefined") {
+				// Maybe it's me?
+
+				const containerRoomEntry = account.rooms.get(parsedJID.bare().toString());
+				if(typeof containerRoomEntry !== "undefined") {
+					if(containerRoomEntry.connected && containerRoomEntry.nick === parsedJID.resource) {
+						counterpart = account.counterparts.get(account.jid.toString());
+					}
+				}
+			}
 		}
 
 		if(typeof counterpart !== "undefined") {

@@ -111,6 +111,7 @@ export function useAppContext(): AppContext {
 
 const FEATURES: string[] = [
 	"urn:xmpp:bookmarks:1+notify",
+	"urn:xmpp:avatar:metadata+notify",
 ];
 const IDENTITY = {category: "client", type: "web", lang: "", name: "Deepish"};
 const NODE_URL = "https://deepish.vpzom.click";
@@ -497,6 +498,45 @@ function App() {
 					const messageElem = forwardedElem.getChild("message", "jabber:client");
 					if(typeof messageElem !== "undefined") handleMessageStanza(client, messageElem, id, timestamp);
 				}
+			}
+
+			const eventElem = elem.getChild("event", "http://jabber.org/protocol/pubsub#event");
+			if(typeof eventElem !== "undefined") {
+				eventElem.getChildren("items").forEach(itemsElem => {
+					if(itemsElem.getAttr("node") === "urn:xmpp:avatar:metadata") {
+						const avatarHashes: string[] = [];
+						itemsElem.getChildren("item").forEach(itemElem => {
+							const hash = itemElem.getAttr("id");
+							if(typeof hash === "string") avatarHashes.push(hash);
+						});
+
+						if(typeof from !== "undefined") {
+							const contact = from;
+
+							updateAccount(client, account => {
+								const counterparts = new Map(account.counterparts);
+
+								const entry = counterparts.get(contact.toString());
+								if(typeof entry === "undefined") {
+									counterparts.set(contact.toString(), {
+										jid: contact,
+										inRoster: false,
+										lastMessageTimestamp: null,
+										avatarHashes,
+									});
+								}
+								else {
+									counterparts.set(contact.toString(), {
+										...entry,
+										avatarHashes,
+									});
+								}
+
+								return {...account, counterparts};
+							});
+						}
+					}
+				});
 			}
 		}
 	}
