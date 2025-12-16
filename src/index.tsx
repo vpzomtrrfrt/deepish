@@ -25,6 +25,7 @@ export interface Counterpart {
 	jid: JID;
 	inRoster: boolean;
 	lastMessageTimestamp: Date | null;
+	avatarHashes: string[];
 }
 
 export interface RoomDiscoInfo {
@@ -39,10 +40,6 @@ export interface Room {
 	infoState: LoadState<RoomDiscoInfo>;
 }
 
-export interface Presence {
-	avatarHashes: string[];
-}
-
 export interface Account {
 	jid: JID;
 	client: xmppClient.Client;
@@ -53,7 +50,6 @@ export interface Account {
 	rooms: Map<string, Room>;
 
 	avatarStates: Map<string, LoadState<string>>;
-	presences: Map<string, Presence>;
 }
 
 export interface Message {
@@ -227,6 +223,7 @@ function App() {
 							jid: parseJID(contact),
 							inRoster: true,
 							lastMessageTimestamp: null,
+							avatarHashes: [],
 						});
 					}
 					else if(!entry.inRoster) {
@@ -287,6 +284,7 @@ function App() {
 							jid: parseJID(itemJID),
 							inRoster: false,
 							lastMessageTimestamp: timestamp,
+							avatarHashes: [],
 						});
 					}
 					else {
@@ -453,6 +451,7 @@ function App() {
 								jid: from.bare(),
 								inRoster: false,
 								lastMessageTimestamp: timestamp,
+								avatarHashes: [],
 							});
 						}
 						else {
@@ -745,26 +744,44 @@ function App() {
 				}
 			}
 
-			const presence: Presence = {
-				avatarHashes: [],
-			};
+			let avatarHashes = undefined;
 
 			const vcardUpdateElem = elem.getChild("x", "vcard-temp:x:update");
 			if(typeof vcardUpdateElem !== "undefined") {
 				const photoElems = vcardUpdateElem.getChildren("photo");
-				presence.avatarHashes = photoElems.map(photoElem => photoElem.getText());
+				avatarHashes = photoElems.map(photoElem => photoElem.getText());
 			}
 
-			updateAccount(client, account => {
-				const presences = new Map(account.presences);
+			const contact = typeof userInfo === "undefined" ? srcJID.bare() : srcJID;
 
-				presences.set(srcJID.toString(), presence);
+			console.log("got presence from", srcJID.toString(), ", interpreting as from", contact.toString(), ", avatar hashes:", avatarHashes);
 
-				return {...account, presences};
-			});
+			if(typeof avatarHashes !== "undefined") {
+				updateAccount(client, account => {
+					const counterparts = new Map(account.counterparts);
 
-			if(presence.avatarHashes.length > 0) {
-				startRequestingAvatar(client, srcJID, presence.avatarHashes);
+					const entry = counterparts.get(contact.toString());
+					if(typeof entry === "undefined") {
+						counterparts.set(contact.toString(), {
+							jid: contact,
+							inRoster: false,
+							lastMessageTimestamp: null,
+							avatarHashes,
+						});
+					}
+					else {
+						counterparts.set(contact.toString(), {
+							...entry,
+							avatarHashes,
+						});
+					}
+
+					return {...account, counterparts};
+				});
+			}
+
+			if(typeof avatarHashes !== "undefined" && avatarHashes.length > 0) {
+				startRequestingAvatar(client, contact, avatarHashes);
 			}
 		}
 		else if(elem.getName() === "message") {

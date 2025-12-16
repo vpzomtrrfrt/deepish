@@ -46,7 +46,7 @@ export default function Avatar(props: {size: "lg" | "md"; jid: string | JID; cla
 	const image = useMemo((): string | null => {
 		if(typeof account === "undefined") return null;
 
-		const roomEntry = account.rooms.get(props.jid.toString());
+		const roomEntry = account.rooms.get(parsedJID.toString());
 		if(typeof roomEntry !== "undefined") {
 			if(roomEntry.infoState.state === "done") {
 				for(const hash of roomEntry.infoState.value.avatarHashes) {
@@ -56,16 +56,20 @@ export default function Avatar(props: {size: "lg" | "md"; jid: string | JID; cla
 			}
 		}
 
-		const presence = account.presences.get(props.jid.toString());
-		if(typeof presence !== "undefined") {
-			for(const hash of presence.avatarHashes) {
+		let counterpart = account.counterparts.get(parsedJID.toString());
+		if(typeof counterpart === "undefined" && parsedJID.resource !== "") {
+			counterpart = account.counterparts.get(parsedJID.bare().toString());
+		}
+
+		if(typeof counterpart !== "undefined") {
+			for(const hash of counterpart.avatarHashes) {
 				const state = account.avatarStates.get(hash);
 				if(typeof state !== "undefined" && state.state === "done") return state.value;
 			}
 		}
 
 		return null;
-	}, [account, props.jid]);
+	}, [account, parsedJID]);
 
 	const color = useMemo(() => {
 		return generateColorForID(parsedJID.toString());
