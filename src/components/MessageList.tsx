@@ -15,6 +15,11 @@ const styles = {
 	message: css({
 		display: "flex",
 		gap: ".5rem",
+		paddingBlock: ".5rem",
+	}),
+	messageTimestamp: css({
+		marginInlineStart: ".5em",
+		color: "#888",
 	}),
 };
 
@@ -138,11 +143,13 @@ function MessageRow(props: RowComponentProps<{messages: Message[]; loaderContent
 			<Avatar size="md" jid={from} />
 		</div>
 		<div>
-			<div>{message.timestamp.toLocaleString()}</div>
-			<div>{from.resource === "" ? from.local : from.resource}</div>
-			<blockquote>
+			<div>
+				<span>{from.resource === "" ? from.local : from.resource}</span>
+				<span class={styles.messageTimestamp}>{message.timestamp.toLocaleString()}</span>
+			</div>
+			<div>
 				{message.content}
-			</blockquote>
+			</div>
 		</div>
 	</div>;
 }
