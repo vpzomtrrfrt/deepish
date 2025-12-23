@@ -1,5 +1,6 @@
 import { css, cx } from "@emotion/css";
 import { mdiAccountMultiple, mdiHome } from "@mdi/js";
+import { useMemo } from "preact/hooks";
 import { Link, Route, Switch, useRoute } from "wouter-preact";
 
 import { Account, useAppContext } from "../..";
@@ -10,7 +11,7 @@ import WithTooltip from "../../components/WithTooltip";
 import { themeVars } from "../../util/theme";
 import Icon from "../../components/Icon";
 import DirectChatPage from "./direct";
-import { useMemo } from "preact/hooks";
+import AvatarWithStatus from "../../components/AvatarWithStatus";
 
 const styles = {
 	page: css({
@@ -169,7 +170,7 @@ function ChatHomePage() {
 			{
 				conversations.map(item => {
 					return <Link to={"~/chat/direct/" + encodeURIComponent(item)} className={active => cx(styles.spaceItem, active && "active")}>
-						<Avatar size="md" jid={item} />
+						<AvatarWithStatus size="md" jid={item} />
 						<span>{item}</span>
 					</Link>;
 				})

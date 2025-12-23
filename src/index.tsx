@@ -15,18 +15,33 @@ import { Redirect, Route } from "wouter-preact";
 import ChatPage from "./pages/chat";
 import LoginPage from "./pages/login";
 import { themeCSS } from "./util/theme";
+import { PresenceShowType } from "./util/types";
 import { LoadState } from "./util/useData";
 import useEffectOnce from "./util/useEffectOnce";
 import useLatestCallback from "use-latest-callback";
 
 import "./global.css";
 
+export interface Presence {
+	show: PresenceShowType | null;
+}
+
 export interface Counterpart {
 	jid: JID;
 	inRoster: boolean;
+	subscriptionTo: boolean;
 	lastMessageTimestamp: Date | null;
 	avatarHashes: string[];
+	presences: Map<string, Presence> | null;
 }
+
+const DEFAULT_COUNTERPART_INFO: Omit<Counterpart, "jid"> = {
+	inRoster: false,
+	subscriptionTo: false,
+	lastMessageTimestamp: null,
+	avatarHashes: [],
+	presences: null,
+};
 
 export interface RoomDiscoInfo {
 	name: string | null;
@@ -213,30 +228,44 @@ function App() {
 
 		const items = result.getChildren("item", "jabber:iq:roster");
 
-		const newContacts = new Set<string>();
+		const newContacts = new Map<string, {subscriptionTo: boolean}>();
 		items.forEach(item => {
 			const jid = item.getAttr("jid");
-			if(typeof jid === "string") newContacts.add(jid);
+			if(typeof jid === "string") {
+				let subscriptionTo = false;
+
+				const subscriptionState = item.getAttr("subscription");
+				if(subscriptionState === "to" || subscriptionState === "both") subscriptionTo = true;
+				else if(subscriptionState === "from" || subscriptionState === "none") {
+					// no subscription
+				}
+				else {
+					console.warn("Unknown subscription state:", subscriptionState);
+				}
+
+				newContacts.set(jid, {subscriptionTo});
+			}
 		});
 
 		if(newContacts.size > 0) {
 			updateAccount(client, account => {
 				const counterparts = new Map(account.counterparts);
 
-				newContacts.forEach(contact => {
+				newContacts.forEach((info, contact) => {
 					const entry = counterparts.get(contact);
 					if(typeof entry === "undefined") {
 						counterparts.set(contact, {
+							...DEFAULT_COUNTERPART_INFO,
 							jid: parseJID(contact),
 							inRoster: true,
-							lastMessageTimestamp: null,
-							avatarHashes: [],
+							subscriptionTo: info.subscriptionTo,
 						});
 					}
 					else if(!entry.inRoster) {
 						counterparts.set(contact, {
 							...entry,
 							inRoster: true,
+							subscriptionTo: info.subscriptionTo,
 						});
 					}
 				});
@@ -246,6 +275,7 @@ function App() {
 						counterparts.set(key, {
 							...value,
 							inRoster: false,
+							subscriptionTo: false,
 						});
 					}
 				});
@@ -288,10 +318,9 @@ function App() {
 					const entry = counterparts.get(itemJID);
 					if(typeof entry === "undefined") {
 						counterparts.set(itemJID, {
+							...DEFAULT_COUNTERPART_INFO,
 							jid: parseJID(itemJID),
-							inRoster: false,
 							lastMessageTimestamp: timestamp,
-							avatarHashes: [],
 						});
 					}
 					else {
@@ -451,10 +480,9 @@ function App() {
 						const counterparts = new Map(account.counterparts);
 						if(typeof entry === "undefined") {
 							counterparts.set(from.bare().toString(), {
+								...DEFAULT_COUNTERPART_INFO,
 								jid: from.bare(),
-								inRoster: false,
 								lastMessageTimestamp: timestamp,
-								avatarHashes: [],
 							});
 						}
 						else {
@@ -519,9 +547,8 @@ function App() {
 								const entry = counterparts.get(contact.toString());
 								if(typeof entry === "undefined") {
 									counterparts.set(contact.toString(), {
+										...DEFAULT_COUNTERPART_INFO,
 										jid: contact,
-										inRoster: false,
-										lastMessageTimestamp: null,
 										avatarHashes,
 									});
 								}
@@ -786,6 +813,79 @@ function App() {
 				}
 			}
 
+			const contact = typeof userInfo === "undefined" ? srcJID.bare() : srcJID;
+
+			if(elem.getAttr("type") === "unavailable") {
+				updateAccount(client, account => {
+					const counterparts = new Map(account.counterparts);
+
+					const entry = counterparts.get(contact.toString());
+					if(typeof entry === "undefined") {
+						counterparts.set(contact.toString(), {
+							...DEFAULT_COUNTERPART_INFO,
+							jid: contact,
+							presences: new Map(),
+						});
+					}
+					else {
+						const presences: typeof entry.presences = entry.presences === null ?
+							new Map() :
+							new Map(entry.presences);
+						presences.delete(srcJID.toString());
+
+						counterparts.set(contact.toString(), {
+							...entry,
+							presences,
+						});
+					}
+
+					return {...account, counterparts};
+				});
+			}
+			else {
+				const showValue = elem.getChildText("show");
+				let show = null;
+				for(const key_ in PresenceShowType) {
+					const key = key_ as keyof typeof PresenceShowType;
+					if(PresenceShowType[key] === showValue) {
+						show = PresenceShowType[key];
+						break;
+					}
+				}
+
+				updateAccount(client, account => {
+					const counterparts = new Map(account.counterparts);
+
+					const entry = counterparts.get(contact.toString());
+					let presences: Map<string, Presence>;
+					if(typeof entry === "undefined") {
+						presences = new Map();
+						counterparts.set(contact.toString(), {
+							...DEFAULT_COUNTERPART_INFO,
+							jid: contact,
+							presences,
+						});
+					}
+					else {
+						if(entry.presences === null) {
+							presences = new Map();
+
+							counterparts.set(contact.toString(), {
+								...entry,
+								presences,
+							});
+						}
+						else presences = new Map(entry.presences);
+					}
+
+					presences.set(srcJID.toString(), {
+						show,
+					});
+
+					return {...account, counterparts};
+				});
+			}
+
 			let avatarHashes = undefined;
 
 			const vcardUpdateElem = elem.getChild("x", "vcard-temp:x:update");
@@ -793,8 +893,6 @@ function App() {
 				const photoElems = vcardUpdateElem.getChildren("photo");
 				avatarHashes = photoElems.map(photoElem => photoElem.getText());
 			}
-
-			const contact = typeof userInfo === "undefined" ? srcJID.bare() : srcJID;
 
 			console.log("got presence from", srcJID.toString(), ", interpreting as from", contact.toString(), ", avatar hashes:", avatarHashes);
 
@@ -805,9 +903,8 @@ function App() {
 					const entry = counterparts.get(contact.toString());
 					if(typeof entry === "undefined") {
 						counterparts.set(contact.toString(), {
+							...DEFAULT_COUNTERPART_INFO,
 							jid: contact,
-							inRoster: false,
-							lastMessageTimestamp: null,
 							avatarHashes,
 						});
 					}
@@ -861,9 +958,8 @@ function App() {
 						setupQuery: null,
 						counterparts: new Map(),
 						rooms: new Map(),
-						presences: new Map(),
 						avatarStates: new Map(),
-					},
+					} satisfies Account,
 				];
 			});
 		}

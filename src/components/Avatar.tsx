@@ -37,7 +37,9 @@ const styles = {
 	}),
 };
 
-export default function Avatar(props: {size: "lg" | "md"; jid: string | JID; class?: string}) {
+export type AvatarSize = "lg" | "md";
+
+export default function Avatar(props: {size: AvatarSize; jid: string | JID; class?: string}) {
 	const appCtx = useAppContext();
 	const account = appCtx.accounts[0];
 
