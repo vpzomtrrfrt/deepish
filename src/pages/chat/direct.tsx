@@ -5,9 +5,8 @@ import useLatestCallback from "use-latest-callback";
 import { LoadState } from "../../util/useData";
 import { DataNonDoneView } from "../../components/DataView";
 import { pushAtSortPosition } from "array-push-at-sort-position";
-import useLinkState from "linkstate/hook";
-import useSubmitting from "../../util/useSubmitting";
 import MessageList, { LoadMoreTriggerer } from "../../components/MessageList";
+import MessageInput from "../../components/MessageInput";
 
 const styles = {
 	page: css({
@@ -102,14 +101,8 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 		}
 	}, [pageState, loadMore, account.connected, counterpart]);
 
-	const [newMessage, linkNewMessage, setNewMessage] = useLinkState("");
-
-	const [submittingNewMessage, submitNewMessage] = useSubmitting(async (evt: Event) => {
-		evt.preventDefault();
-
+	const submitMessage = useLatestCallback(async (newMessage: string) => {
 		await appCtx.sendMessageToCounterpart(account.jid, counterpart!.jid, {body: newMessage});
-
-		setNewMessage("");
 	});
 
 	const loaderContent = pageState === null ?
@@ -128,10 +121,7 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 			messages={messagesData.messages}
 			loaderContent={loaderContent}
 		/>
-		<form onSubmit={submitNewMessage} class={css({display: "flex"})}>
-			<input type="text" value={newMessage} onChange={linkNewMessage} style={{flexGrow: 1}} />
-			<button type="submit" disabled={submittingNewMessage}>Send</button>
-		</form>
+		<MessageInput submitMessage={submitMessage} />
 	</div>;
 }
 

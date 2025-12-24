@@ -3,8 +3,10 @@ import type * as csstype from "csstype";
 const src = {
 	bg1: {light: "#fff"},
 	outline1: {light: "#ddd"},
+	focusOutline: {light: "#3949AB"},
 	highlightOutline: {light: "#000"},
 	active: {light: "#aaa"},
+	hoverOverlay: {light: "rgba(0, 0, 0, 0.25)"},
 } satisfies Record<string, {light: csstype.DataType.Color}>;
 
 const themeVars = {} as {
