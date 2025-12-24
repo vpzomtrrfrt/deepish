@@ -289,53 +289,8 @@ function App() {
 	}
 
 	async function fetchInbox(client: xmppClient.Client) {
-		const result = await client.iqCaller.get(xml("summary", {xmlns: "xmpp:prosody.im/mod_map"}));
+		const result = await client.iqCaller.get(xml("inbox", {xmlns: "http://deepish.vpzom.click/ns/inbox"}));
 		if(typeof result === "undefined") throw new Error("Missing result from summary");
-
-		console.log("inbox", result);
-
-		const newLastMessageTimestamps = new Map<string, Date>();
-
-		result.getChildren("item").forEach(item => {
-			try {
-				const itemJID = parseJID(item.getAttr("jid"));
-
-				const end = item.getChildText("end");
-				if(end !== null) {
-					const endDate = new Date(end);
-					if(!isNaN(endDate.getTime())) newLastMessageTimestamps.set(itemJID.toString(), endDate);
-				}
-			}
-			catch(ex) {
-				console.error(ex);
-			}
-		});
-
-		if(newLastMessageTimestamps.size > 0) {
-			updateAccount(client, account => {
-				const counterparts = new Map(account.counterparts);
-				newLastMessageTimestamps.forEach((timestamp, itemJID) => {
-					const entry = counterparts.get(itemJID);
-					if(typeof entry === "undefined") {
-						counterparts.set(itemJID, {
-							...DEFAULT_COUNTERPART_INFO,
-							jid: parseJID(itemJID),
-							lastMessageTimestamp: timestamp,
-						});
-					}
-					else {
-						if(entry.lastMessageTimestamp === null || entry.lastMessageTimestamp < timestamp) {
-							counterparts.set(itemJID, {
-								...entry,
-								lastMessageTimestamp: timestamp,
-							});
-						}
-					}
-				});
-
-				return {...account, counterparts};
-			});
-		}
 	}
 
 	const onClientOnline = useLatestCallback((client: xmppClient.Client) => {
@@ -564,6 +519,43 @@ function App() {
 						}
 					}
 				});
+			}
+
+			const inboxElem = elem.getChild("entry", "http://deepish.vpzom.click/ns/inbox");
+			if(typeof inboxElem !== "undefined") {
+				const timestamp = new Date(inboxElem.getAttr("stamp"));
+				const stanzaID = inboxElem.getAttr("id");
+				let itemJID = null;
+				try {
+					itemJID = parseJID(inboxElem.getAttr("jid"));
+				}
+				catch(ex) {
+					console.error(ex);
+				}
+
+				if(!isNaN(timestamp.getTime()) && itemJID !== null && typeof stanzaID === "string") {
+					updateAccount(client, account => {
+						const counterparts = new Map(account.counterparts);
+						const entry = counterparts.get(itemJID.toString());
+						if(typeof entry === "undefined") {
+							counterparts.set(itemJID.toString(), {
+								...DEFAULT_COUNTERPART_INFO,
+								jid: itemJID,
+								lastMessageTimestamp: timestamp,
+							});
+						}
+						else {
+							if(entry.lastMessageTimestamp === null || entry.lastMessageTimestamp < timestamp) {
+								counterparts.set(itemJID.toString(), {
+									...entry,
+									lastMessageTimestamp: timestamp,
+								});
+							}
+						}
+
+						return {...account, counterparts};
+					});
+				}
 			}
 		}
 	}
