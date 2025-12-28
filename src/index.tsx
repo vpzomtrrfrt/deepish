@@ -59,7 +59,7 @@ export interface Account {
 	jid: JID;
 	client: xmppClient.Client;
 	connected: boolean;
-	lastError: Error | null;
+	lastError: unknown;
 	setupQuery: Promise<void> | null;
 
 	counterparts: Map<string, Counterpart>;
@@ -345,7 +345,7 @@ function App() {
 		}
 	});
 
-	const onClientError = useLatestCallback((client: xmppClient.Client, err: Error) => {
+	const onClientError = useLatestCallback((client: xmppClient.Client, err: unknown) => {
 		console.error(err);
 
 		updateAccount(client, account => ({...account, lastError: err}));
@@ -970,7 +970,7 @@ function App() {
 							status: onClientStatusChanged,
 							error: onClientError,
 							element: onClientElement,
-						}),
+						}, onClientError),
 						lastError: null,
 						connected: false,
 						setupQuery: null,
@@ -1214,6 +1214,7 @@ function createXMPPClientForAccount(
 			(client: xmppClient.Client, ...args: T) => O :
 			never
 	},
+	onStartError: (client: xmppClient.Client, err: unknown) => void,
 ) {
 	const client = xmppClient.client({
 		service: jid.domain,
@@ -1251,7 +1252,7 @@ function createXMPPClientForAccount(
 		);
 	});
 
-	client.start();
+	client.start().catch(onStartError.bind(undefined, client));
 
 	return client;
 }

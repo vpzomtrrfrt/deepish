@@ -98,6 +98,7 @@ const styles = {
 	connectingView: css({
 		display: "flex",
 		height: "100%",
+		flexDirection: "column",
 		justifyContent: "center",
 		alignItems: "center",
 	}),
