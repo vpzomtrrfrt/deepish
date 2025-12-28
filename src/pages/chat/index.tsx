@@ -94,6 +94,12 @@ const styles = {
 		fontSize: "35px",
 		marginInlineEnd: ".5rem",
 	}),
+	connectingView: css({
+		display: "flex",
+		height: "100%",
+		justifyContent: "center",
+		alignItems: "center",
+	}),
 };
 
 export default function ChatPage() {
@@ -101,12 +107,12 @@ export default function ChatPage() {
 	const account = appCtx.accounts[0];
 	if(typeof account === "undefined") throw new Error("Missing account");
 
+	if(!account.connected) {
+		return <ConnectingView />;
+	}
+
 	return <div class={styles.page}>
-		{
-			account.connected ?
-				<ChatView account={account} /> :
-				"Connecting…"
-		}
+		<ChatView account={account} />
 		<Switch>
 			<Route path="/rooms/:roomJID" component={ChatRoomPage} />
 			<Route path="/" component={ChatHomePage} nest />
@@ -202,5 +208,17 @@ function ContactsPage() {
 				})
 			}
 		</ul>
+	</div>;
+}
+
+function ConnectingView() {
+	const appCtx = useAppContext();
+	const account = appCtx.accounts[0];
+	if(typeof account === "undefined") throw new Error("Missing account");
+
+	return <div class={styles.connectingView}>
+		<div>
+			Connecting…
+		</div>
 	</div>;
 }
