@@ -59,6 +59,7 @@ export interface Account {
 	jid: JID;
 	client: xmppClient.Client;
 	connected: boolean;
+	lastError: Error | null;
 	setupQuery: Promise<void> | null;
 
 	counterparts: Map<string, Counterpart>;
@@ -325,7 +326,29 @@ function App() {
 			})
 			.then(() => undefined);
 
-		updateAccount(client, account => ({...account, connected: true, setupQuery}));
+		updateAccount(client, account => ({...account, setupQuery}));
+	});
+
+	const onClientStatusChanged = useLatestCallback((
+		client: xmppClient.Client,
+		status: keyof Connection.StatusEvents,
+		..._args: unknown[]
+	) => {
+		console.log("client is:", status);
+
+		// seems to only sometimes go to "online"?
+		if(status === "online" || status === "open") {
+			updateAccount(client, account => ({...account, connected: true}));
+		}
+		else {
+			updateAccount(client, account => ({...account, connected: false}));
+		}
+	});
+
+	const onClientError = useLatestCallback((client: xmppClient.Client, err: Error) => {
+		console.error(err);
+
+		updateAccount(client, account => ({...account, lastError: err}));
 	});
 
 	function handleMessageStanza(client: xmppClient.Client, elem: Element, idFromWrapper?: string, timestampFromWrapper?: Date) {
@@ -944,8 +967,11 @@ function App() {
 						jid,
 						client: createXMPPClientForAccount(jid, info.token, info.userAgent, {
 							online: onClientOnline,
+							status: onClientStatusChanged,
+							error: onClientError,
 							element: onClientElement,
 						}),
+						lastError: null,
 						connected: false,
 						setupQuery: null,
 						counterparts: new Map(),
@@ -957,7 +983,7 @@ function App() {
 		}
 
 		setInited(true);
-	}, [onClientElement, onClientOnline]);
+	}, [onClientElement, onClientOnline, onClientStatusChanged, onClientError]);
 
 	const listenersRef = useRef<{
 		[K in keyof AppEventMap]: Set<(evt: AppEventMap[K]) => void>;

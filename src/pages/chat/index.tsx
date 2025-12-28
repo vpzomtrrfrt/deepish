@@ -12,6 +12,7 @@ import { themeVars } from "../../util/theme";
 import Icon from "../../components/Icon";
 import DirectChatPage from "./direct";
 import AvatarWithStatus from "../../components/AvatarWithStatus";
+import { ErrorAlert } from "../../components/DataView";
 
 const styles = {
 	page: css({
@@ -220,5 +221,8 @@ function ConnectingView() {
 		<div>
 			Connecting…
 		</div>
+		{account.lastError !== null &&
+			<ErrorAlert error={account.lastError} />
+		}
 	</div>;
 }
