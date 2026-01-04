@@ -226,12 +226,7 @@ function App() {
 		});
 	}
 
-	async function fetchRoster(client: xmppClient.Client) {
-		const result = await client.iqCaller.get(xml("query", {xmlns: "jabber:iq:roster"}));
-		if(typeof result === "undefined") throw new Error("Missing result from roster fetch");
-
-		const items = result.getChildren("item", "jabber:iq:roster");
-
+	const handleRosterUpdate = useCallback((accountJID: JID, items: Element[], isAll: boolean) => {
 		const newContacts = new Map<string, RosterEntry>();
 		items.forEach(item => {
 			const jid = item.getAttr("jid");
@@ -251,8 +246,8 @@ function App() {
 			}
 		});
 
-		if(newContacts.size > 0) {
-			updateAccount(client, account => {
+		if(newContacts.size > 0 || isAll) {
+			updateAccount(accountJID, account => {
 				const counterparts = new Map(account.counterparts);
 
 				newContacts.forEach((info, contact) => {
@@ -272,14 +267,16 @@ function App() {
 					}
 				});
 
-				counterparts.forEach((value, key) => {
-					if(value.rosterEntry !== null && !newContacts.has(key)) {
-						counterparts.set(key, {
-							...value,
-							rosterEntry: null,
-						});
-					}
-				});
+				if(isAll) {
+					counterparts.forEach((value, key) => {
+						if(value.rosterEntry !== null && !newContacts.has(key)) {
+							counterparts.set(key, {
+								...value,
+								rosterEntry: null,
+							});
+						}
+					});
+				}
 
 				return {
 					...account,
@@ -287,6 +284,14 @@ function App() {
 				};
 			});
 		}
+	}, [updateAccount]);
+
+	async function fetchRoster(client: xmppClient.Client) {
+		const result = await client.iqCaller.get(xml("query", {xmlns: "jabber:iq:roster"}));
+		if(typeof result === "undefined") throw new Error("Missing result from roster fetch");
+
+		const items = result.getChildren("item", "jabber:iq:roster");
+		handleRosterUpdate(client.jid!.bare(), items, true);
 	}
 
 	async function fetchInbox(client: xmppClient.Client) {
@@ -957,6 +962,13 @@ function App() {
 
 			const jid = parseJID(info.jid);
 
+			const client = createXMPPClientForAccount(jid, info.token, info.userAgent, {
+				online: onClientOnline,
+				status: onClientStatusChanged,
+				error: onClientError,
+				element: onClientElement,
+			}, onClientError);
+
 			setAccounts(current => {
 				current.forEach(account => {
 					account.client.stop();
@@ -965,12 +977,7 @@ function App() {
 				return [
 					{
 						jid,
-						client: createXMPPClientForAccount(jid, info.token, info.userAgent, {
-							online: onClientOnline,
-							status: onClientStatusChanged,
-							error: onClientError,
-							element: onClientElement,
-						}, onClientError),
+						client,
 						lastError: null,
 						connected: false,
 						setupQuery: null,
@@ -980,10 +987,30 @@ function App() {
 					} satisfies Account,
 				];
 			});
+
+			client.iqCallee.set("jabber:iq:roster", "query", async (req) => {
+				console.log("got roster update", req);
+
+				if(
+					req.from === null ||
+						req.from.equals(jid) ||
+
+						// I'm assuming xmpp.js adds this? The raw message has no from at all
+						(req.from.domain === jid.domain && req.from.local === "")
+				) {
+					const elem = (req as unknown as {element: Element}).element; // ???
+					handleRosterUpdate(jid, elem.getChildren("item"), false);
+				}
+				else {
+					console.log("ignoring roster update since from isn't me");
+				}
+
+				return null;
+			});
 		}
 
 		setInited(true);
-	}, [onClientElement, onClientOnline, onClientStatusChanged, onClientError]);
+	}, [onClientOnline, onClientStatusChanged, onClientError, onClientElement, handleRosterUpdate]);
 
 	const listenersRef = useRef<{
 		[K in keyof AppEventMap]: Set<(evt: AppEventMap[K]) => void>;
