@@ -1,3 +1,5 @@
+import { JID } from "@xmpp/jid";
+
 export enum PresenceShowType {
 	Away = "away",
 	Chat = "chat",
@@ -12,3 +14,23 @@ enum PresenceShowTypeMore {
 
 export type PresenceShowTypeExtended = PresenceShowType | PresenceShowTypeMore;
 export const PresenceShowTypeExtended = {...PresenceShowType, ...PresenceShowTypeMore};
+
+export interface Presence {
+	show: PresenceShowType | null;
+}
+
+export interface RosterEntry {
+	requestingSubscriptionTo: boolean;
+	subscriptionTo: boolean;
+	subscriptionFrom: boolean;
+}
+
+export interface Counterpart {
+	jid: JID;
+	rosterEntry: null | RosterEntry;
+	requestingMySubscription: boolean;
+	lastMessageTimestamp: Date | null;
+	overrideVisibleTimestamp: Date | null;
+	avatarHashes: string[];
+	presences: Map<string, Presence> | null;
+}

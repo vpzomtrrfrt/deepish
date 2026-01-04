@@ -1,11 +1,11 @@
 import { ButtonHTMLAttributes } from "preact";
 import { css, cx } from "@emotion/css";
 
+import * as commonStyles from "../util/commonStyles";
 import unsignal from "../util/unsignal";
-import { themeVars } from "../util/theme";
 
 const styles = {
-	iconButton: css({
+	iconButton: cx(commonStyles.hoverOverlay, css({
 		borderRadius: "50%",
 		background: "none",
 		border: "none",
@@ -18,26 +18,9 @@ const styles = {
 		},
 
 		"&::after": {
-			content: "\"\"",
-			display: "block",
-			position: "absolute",
-			left: 0,
-			top: 0,
-			width: "100%",
-			height: "100%",
-			transition: "opacity 300ms",
-			pointerEvents: "none",
 			borderRadius: "50%",
-			opacity: 0,
-			backgroundColor: themeVars.hoverOverlay,
 		},
-
-		"&:hover": {
-			"&::after": {
-				opacity: 1,
-			},
-		},
-	}),
+	})),
 };
 
 export default function IconButton(props: ButtonHTMLAttributes<HTMLButtonElement>) {

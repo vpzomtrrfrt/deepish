@@ -15,32 +15,12 @@ import { Redirect, Route } from "wouter-preact";
 import ChatPage from "./pages/chat";
 import LoginPage from "./pages/login";
 import { themeCSS } from "./util/theme";
-import { PresenceShowType } from "./util/types";
+import { Counterpart, Presence, PresenceShowType, RosterEntry } from "./util/types";
 import { LoadState } from "./util/useData";
 import useEffectOnce from "./util/useEffectOnce";
 import useLatestCallback from "use-latest-callback";
 
 import "./global.css";
-
-export interface Presence {
-	show: PresenceShowType | null;
-}
-
-export interface RosterEntry {
-	requestingSubscriptionTo: boolean;
-	subscriptionTo: boolean;
-	subscriptionFrom: boolean;
-}
-
-export interface Counterpart {
-	jid: JID;
-	rosterEntry: null | RosterEntry;
-	requestingMySubscription: boolean;
-	lastMessageTimestamp: Date | null;
-	overrideVisibleTimestamp: Date | null;
-	avatarHashes: string[];
-	presences: Map<string, Presence> | null;
-}
 
 const DEFAULT_COUNTERPART_INFO: Omit<Counterpart, "jid"> = {
 	rosterEntry: null,

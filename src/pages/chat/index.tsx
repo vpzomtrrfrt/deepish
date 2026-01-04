@@ -17,6 +17,9 @@ import { ErrorAlert } from "../../components/DataView";
 import { ManualTabsContainer, TabLink, TabsList } from "../../components/Tabs";
 import Block from "../../components/Block";
 import IconButton from "../../components/IconButton";
+import * as commonStyles from "../../util/commonStyles";
+import { PresenceShowTypeExtended } from "../../util/types";
+import { getShowTypeForCounterpart } from "../../util/statusUtil";
 
 const styles = {
 	page: css({
@@ -106,12 +109,16 @@ const styles = {
 		justifyContent: "center",
 		alignItems: "center",
 	}),
-	friendEntry: css({
+	friendEntry: cx(commonStyles.hoverOverlay, css({
 		display: "flex",
-		justifyContent: "space-between",
+		gap: ".5rem",
+		alignItems: "center",
 
 		padding: ".5rem",
-	}),
+
+		textDecoration: "none",
+		color: "inherit",
+	})),
 	friendButtons: css({
 		display: "flex",
 		gap: ".5rem",
@@ -121,6 +128,10 @@ const styles = {
 		display: "flex",
 		flexDirection: "column",
 		flexGrow: 1,
+	}),
+	statusText: css({
+		opacity: 0.65,
+		fontSize: "80%",
 	}),
 };
 
@@ -243,7 +254,7 @@ function ContactsPage() {
 			</TabsList>
 
 			{
-				(tab === FriendsTab.All || tab === FriendsTab.Online) && <ul>
+				(tab === FriendsTab.All || tab === FriendsTab.Online) && <div>
 					{
 						Array.from(account.counterparts.values(), info => {
 							if(info.rosterEntry === null) return null;
@@ -253,14 +264,24 @@ function ContactsPage() {
 								if(info.presences === null || info.presences.size < 1) return null;
 							}
 
-							return <li key={info.jid.toString()}>
-								<Link to={"~/chat/direct/" + encodeURIComponent(info.jid.toString())}>
+							const showType = getShowTypeForCounterpart(info);
+
+							return <Link
+								to={"~/chat/direct/" + encodeURIComponent(info.jid.toString())}
+								key={info.jid.toString()}
+								class={styles.friendEntry}
+							>
+								<AvatarWithStatus size="md" jid={info.jid} />
+								<div>
 									{info.jid.toString()}
-								</Link>
-							</li>;
+									{showType !== null && <div class={styles.statusText}>
+										{presenceShowTypeNames[showType]}
+									</div>}
+								</div>
+							</Link>;
 						})
 					}
-				</ul>
+				</div>
 			}
 			{
 				tab === FriendsTab.Requests && <div>
@@ -293,7 +314,7 @@ function ContactsPage() {
 								}
 
 								return <div class={styles.friendEntry} key={info.jid.toString()}>
-									<div>
+									<div style={{flexGrow: 1}}>
 										{info.jid.toString()}
 									</div>
 									<div class={styles.friendButtons}>
@@ -325,3 +346,12 @@ function ConnectingView() {
 		}
 	</div>;
 }
+
+const presenceShowTypeNames: Record<PresenceShowTypeExtended, string> = {
+	[PresenceShowTypeExtended.XA]: "Extended Away",
+	[PresenceShowTypeExtended.DND]: "Do Not Disturb",
+	[PresenceShowTypeExtended.Chat]: "Open to Chat",
+	[PresenceShowTypeExtended.Away]: "Away",
+	[PresenceShowTypeExtended.Available]: "Online",
+	[PresenceShowTypeExtended.Unavailable]: "Offline",
+};
