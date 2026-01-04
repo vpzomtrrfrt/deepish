@@ -34,6 +34,7 @@ export interface RosterEntry {
 export interface Counterpart {
 	jid: JID;
 	rosterEntry: null | RosterEntry;
+	requestingMySubscription: boolean;
 	lastMessageTimestamp: Date | null;
 	overrideVisibleTimestamp: Date | null;
 	avatarHashes: string[];
@@ -42,6 +43,7 @@ export interface Counterpart {
 
 const DEFAULT_COUNTERPART_INFO: Omit<Counterpart, "jid"> = {
 	rosterEntry: null,
+	requestingMySubscription: false,
 	lastMessageTimestamp: null,
 	overrideVisibleTimestamp: null,
 	avatarHashes: [],
@@ -840,7 +842,9 @@ function App() {
 
 			const contact = typeof userInfo === "undefined" ? srcJID.bare() : srcJID;
 
-			if(elem.getAttr("type") === "unavailable") {
+			const type = elem.getAttr("type");
+
+			if(type === "unavailable") {
 				updateAccount(client, account => {
 					const counterparts = new Map(account.counterparts);
 
@@ -861,6 +865,28 @@ function App() {
 						counterparts.set(contact.toString(), {
 							...entry,
 							presences,
+						});
+					}
+
+					return {...account, counterparts};
+				});
+			}
+			else if(type === "subscribe") {
+				updateAccount(client, account => {
+					const counterparts = new Map(account.counterparts);
+
+					const entry = counterparts.get(contact.toString());
+					if(typeof entry === "undefined") {
+						counterparts.set(contact.toString(), {
+							...DEFAULT_COUNTERPART_INFO,
+							jid: contact,
+							requestingMySubscription: true,
+						});
+					}
+					else {
+						counterparts.set(contact.toString(), {
+							...entry,
+							requestingMySubscription: true,
 						});
 					}
 

@@ -241,26 +241,42 @@ function ContactsPage() {
 				</ul>
 			}
 			{
-				tab === FriendsTab.Requests && <Block>
-					<h1>Outgoing</h1>
-					<ul>
-						{Array.from(account.counterparts.values(), info => {
-							if(
-								!(
-									info.rosterEntry !== null &&
-										!info.rosterEntry.subscriptionTo &&
-										info.rosterEntry.requestingSubscriptionTo
-								)
-							) {
-								return null;
-							}
+				tab === FriendsTab.Requests && <div>
+					<Block>
+						<h1>Outgoing</h1>
+						<ul>
+							{Array.from(account.counterparts.values(), info => {
+								if(
+									!(
+										info.rosterEntry !== null &&
+											!info.rosterEntry.subscriptionTo &&
+											info.rosterEntry.requestingSubscriptionTo
+									)
+								) {
+									return null;
+								}
 
-							return <li key={info.jid.toString()}>
-								{info.jid.toString()}
-							</li>;
-						})}
-					</ul>
-				</Block>
+								return <li key={info.jid.toString()}>
+									{info.jid.toString()}
+								</li>;
+							})}
+						</ul>
+					</Block>
+					<Block>
+						<h1>Incoming</h1>
+						<ul>
+							{Array.from(account.counterparts.values(), info => {
+								if(!info.requestingMySubscription) {
+									return null;
+								}
+
+								return <li key={info.jid.toString()}>
+									{info.jid.toString()}
+								</li>;
+							})}
+						</ul>
+					</Block>
+				</div>
 			}
 		</ManualTabsContainer>
 	</div>;
