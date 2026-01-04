@@ -884,15 +884,13 @@ function App() {
 						});
 					}
 					else {
-						if(entry.presences === null) {
-							presences = new Map();
-
-							counterparts.set(contact.toString(), {
-								...entry,
-								presences,
-							});
-						}
+						if(entry.presences === null) presences = new Map();
 						else presences = new Map(entry.presences);
+
+						counterparts.set(contact.toString(), {
+							...entry,
+							presences,
+						});
 					}
 
 					presences.set(srcJID.toString(), {
