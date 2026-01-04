@@ -29,6 +29,8 @@ const DEFAULT_COUNTERPART_INFO: Omit<Counterpart, "jid"> = {
 	overrideVisibleTimestamp: null,
 	avatarHashes: [],
 	presences: null,
+	lastReportedComposing: false,
+	composingFrom: null,
 };
 
 export interface RoomDiscoInfo {
@@ -103,6 +105,7 @@ export interface AppContext {
 	sendMessageToCounterpart(account: JID, target: JID, message: {body: string}): Promise<void>;
 	markCounterpartAsVisible(account: JID, target: JID): void;
 	acceptFriendRequest(account: JID, target: JID): void;
+	setComposingToCounterpart(account: JID, target: JID, composing: boolean): void;
 }
 
 export const AppContext = createContext<undefined | AppContext>(undefined);
@@ -118,6 +121,7 @@ export function useAppContext(): AppContext {
 const FEATURES: string[] = [
 	"urn:xmpp:bookmarks:1+notify",
 	"urn:xmpp:avatar:metadata+notify",
+	"http://jabber.org/protocol/chatstates",
 ];
 const IDENTITY = {category: "client", type: "web", lang: "", name: "Deepish"};
 const NODE_URL = "https://deepish.vpzom.click";
@@ -443,6 +447,46 @@ function App() {
 				}
 
 				return;
+			}
+
+			const composing =
+				(
+					typeof elem.getChild("composing", "http://jabber.org/protocol/chatstates") !== "undefined" ||
+						typeof elem.getChild("paused", "http://jabber.org/protocol/chatstates") !== "undefined"
+				) ?
+					true :
+					(
+						(
+							typeof elem.getChild("active", "http://jabber.org/protocol/chatstates") !== "undefined" ||
+								typeof elem.getChild("inactive", "http://jabber.org/protocol/chatstates") !== "undefined" ||
+								typeof elem.getChild("gone", "http://jabber.org/protocol/chatstates") !== "undefined"
+						) ?
+							false :
+							null
+					);
+
+			if(composing !== null && typeof from !== "undefined") {
+				console.log("updating composing from", from, composing, elem);
+
+				updateAccount(client, account => {
+					const entry = account.counterparts.get(from.bare().toString());
+					const counterparts = new Map(account.counterparts);
+					if(typeof entry === "undefined") {
+						counterparts.set(from.bare().toString(), {
+							...DEFAULT_COUNTERPART_INFO,
+							jid: from.bare(),
+							composingFrom: composing,
+						});
+					}
+					else {
+						counterparts.set(from.bare().toString(), {
+							...entry,
+							composingFrom: composing,
+						});
+					}
+
+					return {...account, counterparts};
+				});
 			}
 
 			const content = elem.getChildText("body");
@@ -1241,6 +1285,41 @@ function App() {
 		}
 	});
 
+	const setComposingToCounterpart = useLatestCallback((accountJID: JID, target: JID, composing: boolean) => {
+		{
+			const account = accounts.find(x => x.jid.equals(accountJID));
+			if(typeof account === "undefined") throw new Error("No such account");
+
+			const counterpart = account.counterparts.get(target.toString());
+			if(counterpart?.lastReportedComposing === composing) return;
+
+			account.client.send(
+				xml(
+					"message",
+					{type: "chat", to: target.toString()},
+					composing ?
+						xml("composing", {xmlns: "http://jabber.org/protocol/chatstates"}) :
+						xml("active", {xmlns: "http://jabber.org/protocol/chatstates"})
+				),
+			);
+		}
+
+		updateAccount(accountJID, account => {
+			const counterparts = new Map(account.counterparts);
+
+			const entry = counterparts.get(target.toString());
+			counterparts.set(
+				target.toString(),
+				{
+					...(entry ?? {...DEFAULT_COUNTERPART_INFO, jid: target}),
+					lastReportedComposing: composing,
+				},
+			);
+
+			return {...account, counterparts};
+		});
+	});
+
 	const portalContainerRef = useRef<HTMLDivElement>(null);
 
 	const appCtx = useMemo(
@@ -1262,6 +1341,7 @@ function App() {
 			sendMessageToRoom,
 			markCounterpartAsVisible,
 			acceptFriendRequest,
+			setComposingToCounterpart,
 		} satisfies AppContext),
 		[
 			accounts,
@@ -1274,6 +1354,7 @@ function App() {
 			loadAccounts,
 			markCounterpartAsVisible,
 			acceptFriendRequest,
+			setComposingToCounterpart,
 		],
 	);
 

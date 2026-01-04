@@ -33,4 +33,6 @@ export interface Counterpart {
 	overrideVisibleTimestamp: Date | null;
 	avatarHashes: string[];
 	presences: Map<string, Presence> | null;
+	lastReportedComposing: boolean;
+	composingFrom: boolean | null;
 }

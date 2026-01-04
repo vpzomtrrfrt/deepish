@@ -21,6 +21,9 @@ const styles = {
 		marginInlineStart: ".5em",
 		color: "#888",
 	}),
+	typingIndicatorPlaceholder: css({
+		height: "1.5rem",
+	}),
 };
 
 export default function MessageList(props: {messages: Message[]; loaderContent: VNode}) {
@@ -115,7 +118,7 @@ export default function MessageList(props: {messages: Message[]; loaderContent: 
 
 	return <List
 		rowComponent={MessageRow}
-		rowCount={messages.length + 1}
+		rowCount={messages.length + 2}
 		rowHeight={rowHeight}
 		rowProps={{
 			messages,
@@ -130,6 +133,10 @@ export default function MessageList(props: {messages: Message[]; loaderContent: 
 function MessageRow(props: RowComponentProps<{messages: Message[]; loaderContent: VNode}>) {
 	if(props.index === 0) {
 		return props.loaderContent;
+	}
+
+	if(props.index === props.messages.length + 1) {
+		return <div class={styles.typingIndicatorPlaceholder} style={props.style} />;
 	}
 
 	const index = props.index - 1;

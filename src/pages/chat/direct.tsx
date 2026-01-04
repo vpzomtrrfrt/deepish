@@ -1,4 +1,5 @@
-import { css } from "@emotion/css";
+import { css, cx } from "@emotion/css";
+import { JID, parse as parseJID } from "@xmpp/jid";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { Message, MessageEvent, ResultSetInfo, useAppContext } from "../..";
 import useLatestCallback from "use-latest-callback";
@@ -7,6 +8,7 @@ import { DataNonDoneView } from "../../components/DataView";
 import { pushAtSortPosition } from "array-push-at-sort-position";
 import MessageList, { LoadMoreTriggerer } from "../../components/MessageList";
 import MessageInput from "../../components/MessageInput";
+import { themeVars } from "../../util/theme";
 
 const styles = {
 	page: css({
@@ -15,6 +17,21 @@ const styles = {
 
 		display: "flex",
 		flexDirection: "column",
+	}),
+	typingIndicatorWrapper: css({
+		position: "relative",
+	}),
+	typingIndicator: css({
+		position: "absolute",
+		bottom: 0,
+		width: "100%",
+		height: "1.5rem",
+		visibility: "hidden",
+		backgroundColor: themeVars.bg1,
+
+		"&.active": {
+			visibility: "visible",
+		},
 	}),
 };
 
@@ -111,6 +128,14 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 		await appCtx.sendMessageToCounterpart(account.jid, counterpart!.jid, {body: newMessage});
 	});
 
+	const onChangeComposing = useLatestCallback((composing: boolean) => {
+		appCtx.setComposingToCounterpart(account.jid, parseJID(props.counterpartJID), composing);
+	});
+
+	useEffect(() => {
+		return () => onChangeComposing(false);
+	}, [onChangeComposing]);
+
 	const loaderContent = pageState === null ?
 		<p>Connecting…</p> :
 		LoadState.ifDone(
@@ -127,7 +152,17 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 			messages={messagesData.messages}
 			loaderContent={loaderContent}
 		/>
-		<MessageInput submitMessage={submitMessage} autofocus />
+		<TypingIndicator
+			usersTyping={(typeof counterpart !== "undefined" && counterpart.composingFrom) ? [counterpart.jid] : []}
+		/>
+		<MessageInput submitMessage={submitMessage} autofocus onChangeComposing={onChangeComposing} />
 	</div>;
 }
 
+function TypingIndicator(props: {usersTyping: JID[]}) {
+	return <div class={styles.typingIndicatorWrapper}>
+		<div class={cx(styles.typingIndicator, props.usersTyping.length > 0 && "active")}>
+			{props.usersTyping.length > 0 && props.usersTyping[0].toString() + " is typing…"}
+		</div>
+	</div>;
+}

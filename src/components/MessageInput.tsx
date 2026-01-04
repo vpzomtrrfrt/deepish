@@ -6,6 +6,7 @@ import Input from "./Input";
 import IconButton from "./IconButton";
 import { mdiSend } from "@mdi/js";
 import Icon from "./Icon";
+import { useEffect } from "preact/hooks";
 
 const styles = {
 	messageInput: css({
@@ -16,7 +17,12 @@ const styles = {
 	}),
 };
 
-export default function MessageInput(props: {submitMessage: (text: string) => Promise<void>; autofocus: boolean}) {
+export default function MessageInput(props: {
+	submitMessage: (text: string) => Promise<void>;
+	autofocus: boolean;
+
+	onChangeComposing?(composing: boolean): void;
+}) {
 	const [newMessage, linkNewMessage, setNewMessage] = useLinkState("");
 
 	const [submittingMessage, submitMessage] = useSubmitting(async (evt: Event) => {
@@ -26,6 +32,12 @@ export default function MessageInput(props: {submitMessage: (text: string) => Pr
 
 		setNewMessage("");
 	});
+
+	const composing = newMessage !== "";
+
+	useEffect(() => {
+		props.onChangeComposing?.call(undefined, composing);
+	}, [composing, props.onChangeComposing]);
 
 	return <form onSubmit={submitMessage} class={styles.messageInput}>
 		<Input
