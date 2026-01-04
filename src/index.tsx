@@ -345,10 +345,8 @@ function App() {
 		status: keyof Connection.StatusEvents,
 		..._args: unknown[]
 	) => {
-		console.log("client is:", status);
-
 		// seems to only sometimes go to "online"?
-		if(status === "online" || status === "open") {
+		if(status === "online" || (status === "open" && client.jid !== null && client.jid.resource !== "")) {
 			updateAccount(client, account => ({...account, connected: true}));
 		}
 		else {
