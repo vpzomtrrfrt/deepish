@@ -2,6 +2,7 @@ import { css, cx } from "@emotion/css";
 import { InputHTMLAttributes } from "preact";
 import unsignal from "../util/unsignal";
 import { themeVars } from "../util/theme";
+import { useEffect, useRef } from "preact/hooks";
 
 const styles = {
 	input: css({
@@ -20,5 +21,15 @@ const styles = {
 };
 
 export default function Input(props: InputHTMLAttributes<HTMLInputElement>) {
-	return <input {...props} class={cx(styles.input, unsignal(props.className), unsignal(props.class))} />;
+	const ref = useRef<HTMLInputElement>(null);
+
+	const autofocus = unsignal(props.autofocus);
+
+	useEffect(() => {
+		if(autofocus === true) {
+			ref.current!.focus();
+		}
+	}, [autofocus]);
+
+	return <input {...props} class={cx(styles.input, unsignal(props.className), unsignal(props.class))} ref={ref} />;
 }

@@ -121,7 +121,7 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 			messages={messagesData.messages}
 			loaderContent={loaderContent}
 		/>
-		<MessageInput submitMessage={submitMessage} />
+		<MessageInput submitMessage={submitMessage} autofocus />
 	</div>;
 }
 

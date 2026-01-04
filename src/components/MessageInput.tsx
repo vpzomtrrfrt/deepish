@@ -16,7 +16,7 @@ const styles = {
 	}),
 };
 
-export default function MessageInput(props: {submitMessage: (text: string) => Promise<void>}) {
+export default function MessageInput(props: {submitMessage: (text: string) => Promise<void>; autofocus: boolean}) {
 	const [newMessage, linkNewMessage, setNewMessage] = useLinkState("");
 
 	const [submittingMessage, submitMessage] = useSubmitting(async (evt: Event) => {
@@ -28,7 +28,13 @@ export default function MessageInput(props: {submitMessage: (text: string) => Pr
 	});
 
 	return <form onSubmit={submitMessage} class={styles.messageInput}>
-		<Input type="text" value={newMessage} onChange={linkNewMessage} style={{flexGrow: 1}} />
+		<Input
+			type="text"
+			value={newMessage}
+			onChange={linkNewMessage}
+			style={{flexGrow: 1}}
+			autofocus={props.autofocus}
+		/>
 		<IconButton type="submit" disabled={submittingMessage}>
 			<Icon path={mdiSend} />
 		</IconButton>

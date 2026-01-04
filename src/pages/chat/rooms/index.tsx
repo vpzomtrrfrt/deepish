@@ -124,7 +124,7 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 			messages={messagesData.messages}
 			loaderContent={loaderContent}
 		/>
-		<MessageInput submitMessage={submitMessage} />
+		<MessageInput submitMessage={submitMessage} autofocus />
 	</div>;
 }
 
