@@ -29,6 +29,7 @@ export interface Presence {
 export interface RosterEntry {
 	requestingSubscriptionTo: boolean;
 	subscriptionTo: boolean;
+	subscriptionFrom: boolean;
 }
 
 export interface Counterpart {
@@ -121,6 +122,7 @@ export interface AppContext {
 	sendMessageToRoom(account: JID, room: JID, message: {body: string}): Promise<void>;
 	sendMessageToCounterpart(account: JID, target: JID, message: {body: string}): Promise<void>;
 	markCounterpartAsVisible(account: JID, target: JID): void;
+	acceptFriendRequest(account: JID, target: JID): void;
 }
 
 export const AppContext = createContext<undefined | AppContext>(undefined);
@@ -237,17 +239,31 @@ function App() {
 			const jid = item.getAttr("jid");
 			if(typeof jid === "string") {
 				let subscriptionTo = false;
+				let subscriptionFrom = false;
 
 				const subscriptionState = item.getAttr("subscription");
-				if(subscriptionState === "to" || subscriptionState === "both") subscriptionTo = true;
-				else if(subscriptionState === "from" || subscriptionState === "none") {
+				if(subscriptionState === "to") {
+					subscriptionTo = true;
+				}
+				else if(subscriptionState === "both") {
+					subscriptionTo = true;
+					subscriptionFrom = true;
+				}
+				else if(subscriptionState === "from") {
+					subscriptionFrom = true;
+				}
+				else if(subscriptionState === "none") {
 					// no subscription
 				}
 				else {
 					console.warn("Unknown subscription state:", subscriptionState);
 				}
 
-				newContacts.set(jid, {subscriptionTo, requestingSubscriptionTo: item.getAttr("ask") === "subscribe"});
+				newContacts.set(jid, {
+					subscriptionTo,
+					requestingSubscriptionTo: item.getAttr("ask") === "subscribe",
+					subscriptionFrom,
+				});
 			}
 		});
 
@@ -268,6 +284,7 @@ function App() {
 						counterparts.set(contact, {
 							...entry,
 							rosterEntry: info,
+							requestingMySubscription: entry.requestingMySubscription && !info.subscriptionFrom,
 						});
 					}
 				});
@@ -893,7 +910,7 @@ function App() {
 					return {...account, counterparts};
 				});
 			}
-			else {
+			else if(typeof type === "undefined") {
 				const showValue = elem.getChildText("show");
 				let show = null;
 				for(const key_ in PresenceShowType) {
@@ -1215,6 +1232,35 @@ function App() {
 		});
 	});
 
+	const acceptFriendRequest = useLatestCallback((accountJID: JID, target: JID) => {
+		const account = accounts.find(x => x.jid.equals(accountJID));
+		if(typeof account === "undefined") throw new Error("No such account");
+
+		const info = account.counterparts.get(target.toString());
+		if(typeof info === "undefined") throw new Error("Unknown counterpart");
+
+		if(!info.requestingMySubscription) throw new Error("No such friend request");
+
+		account.client.send(
+			xml(
+				"presence",
+				{to: target.toString(), type: "subscribed"},
+			),
+		);
+
+		if(
+			info.rosterEntry === null ||
+				(!info.rosterEntry.requestingSubscriptionTo && !info.rosterEntry.subscriptionTo)
+		) {
+			account.client.send(
+				xml(
+					"presence",
+					{to: target.toString(), type: "subscribe"},
+				),
+			);
+		}
+	});
+
 	const portalContainerRef = useRef<HTMLDivElement>(null);
 
 	const appCtx = useMemo(
@@ -1235,6 +1281,7 @@ function App() {
 			sendMessageToCounterpart,
 			sendMessageToRoom,
 			markCounterpartAsVisible,
+			acceptFriendRequest,
 		} satisfies AppContext),
 		[
 			accounts,
@@ -1246,6 +1293,7 @@ function App() {
 			sendMessageToRoom,
 			loadAccounts,
 			markCounterpartAsVisible,
+			acceptFriendRequest,
 		],
 	);
 

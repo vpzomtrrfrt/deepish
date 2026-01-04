@@ -1,5 +1,6 @@
 import { css, cx } from "@emotion/css";
-import { mdiAccountMultiple, mdiHome } from "@mdi/js";
+import { mdiAccountMultiple, mdiCheck, mdiHome } from "@mdi/js";
+import { JID } from "@xmpp/jid";
 import { useMemo, useState } from "preact/hooks";
 import { Link, Route, Switch, useRoute } from "wouter-preact";
 
@@ -15,6 +16,7 @@ import AvatarWithStatus from "../../components/AvatarWithStatus";
 import { ErrorAlert } from "../../components/DataView";
 import { ManualTabsContainer, TabLink, TabsList } from "../../components/Tabs";
 import Block from "../../components/Block";
+import IconButton from "../../components/IconButton";
 
 const styles = {
 	page: css({
@@ -103,6 +105,22 @@ const styles = {
 		flexDirection: "column",
 		justifyContent: "center",
 		alignItems: "center",
+	}),
+	friendEntry: css({
+		display: "flex",
+		justifyContent: "space-between",
+
+		padding: ".5rem",
+	}),
+	friendButtons: css({
+		display: "flex",
+		gap: ".5rem",
+		flexShrink: 0,
+	}),
+	contactsPage: css({
+		display: "flex",
+		flexDirection: "column",
+		flexGrow: 1,
 	}),
 };
 
@@ -212,7 +230,11 @@ function ContactsPage() {
 
 	const [tab, setTab] = useState<FriendsTab>(FriendsTab.All);
 
-	return <div>
+	function acceptFriendRequest(target: JID) {
+		appCtx.acceptFriendRequest(account.jid, target);
+	}
+
+	return <div class={styles.contactsPage}>
 		<ManualTabsContainer tab={tab} setTab={setTab}>
 			<TabsList>
 				<TabLink tab={FriendsTab.Online}>Online</TabLink>
@@ -264,17 +286,24 @@ function ContactsPage() {
 					</Block>
 					<Block>
 						<h1>Incoming</h1>
-						<ul>
+						<div>
 							{Array.from(account.counterparts.values(), info => {
 								if(!info.requestingMySubscription) {
 									return null;
 								}
 
-								return <li key={info.jid.toString()}>
-									{info.jid.toString()}
-								</li>;
+								return <div class={styles.friendEntry} key={info.jid.toString()}>
+									<div>
+										{info.jid.toString()}
+									</div>
+									<div class={styles.friendButtons}>
+										<IconButton onClick={acceptFriendRequest.bind(undefined, info.jid)}>
+											<Icon path={mdiCheck} />
+										</IconButton>
+									</div>
+								</div>;
 							})}
-						</ul>
+						</div>
 					</Block>
 				</div>
 			}
