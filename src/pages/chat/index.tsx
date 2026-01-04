@@ -1,6 +1,6 @@
 import { css, cx } from "@emotion/css";
 import { mdiAccountMultiple, mdiHome } from "@mdi/js";
-import { useMemo } from "preact/hooks";
+import { useMemo, useState } from "preact/hooks";
 import { Link, Route, Switch, useRoute } from "wouter-preact";
 
 import { Account, useAppContext } from "../..";
@@ -13,6 +13,7 @@ import Icon from "../../components/Icon";
 import DirectChatPage from "./direct";
 import AvatarWithStatus from "../../components/AvatarWithStatus";
 import { ErrorAlert } from "../../components/DataView";
+import { ManualTabsContainer, TabLink, TabsList } from "../../components/Tabs";
 
 const styles = {
 	page: css({
@@ -173,7 +174,7 @@ function ChatHomePage() {
 		<div class={styles.spaceItemsList}>
 			<Link to="/" className={active => cx(styles.spaceItem, active && "active")}>
 				<Icon path={mdiAccountMultiple} class={styles.bigSpaceItemIcon} />
-				<span>Contacts</span>
+				<span>Friends</span>
 			</Link>
 			{
 				conversations.map(item => {
@@ -191,25 +192,44 @@ function ChatHomePage() {
 	</div>;
 }
 
+enum FriendsTab {
+	Online,
+	All,
+}
+
 function ContactsPage() {
 	const appCtx = useAppContext();
 	const account = appCtx.accounts[0];
 	if(typeof account === "undefined") throw new Error("Missing account");
 
-	return <div>
-		<ul>
-			{
-				Array.from(account.counterparts.values(), info => {
-					if(!info.inRoster) return null;
+	const [tab, setTab] = useState<FriendsTab>(FriendsTab.All);
 
-					return <li key={info.jid.toString()}>
-						<Link to={"~/chat/direct/" + encodeURIComponent(info.jid.toString())}>
-							{info.jid.toString()}
-						</Link>
-					</li>;
-				})
-			}
-		</ul>
+	return <div>
+		<ManualTabsContainer tab={tab} setTab={setTab}>
+			<TabsList>
+				<TabLink tab={FriendsTab.Online}>Online</TabLink>
+				<TabLink tab={FriendsTab.All}>All</TabLink>
+			</TabsList>
+
+			<ul>
+				{
+					Array.from(account.counterparts.values(), info => {
+						if(!info.inRoster) return null;
+						if(!info.subscriptionTo) return null;
+
+						if(tab === FriendsTab.Online) {
+							if(info.presences === null || info.presences.size < 1) return null;
+						}
+
+						return <li key={info.jid.toString()}>
+							<Link to={"~/chat/direct/" + encodeURIComponent(info.jid.toString())}>
+								{info.jid.toString()}
+							</Link>
+						</li>;
+					})
+				}
+			</ul>
+		</ManualTabsContainer>
 	</div>;
 }
 
