@@ -26,18 +26,21 @@ export interface Presence {
 	show: PresenceShowType | null;
 }
 
+export interface RosterEntry {
+	requestingSubscriptionTo: boolean;
+	subscriptionTo: boolean;
+}
+
 export interface Counterpart {
 	jid: JID;
-	inRoster: boolean;
-	subscriptionTo: boolean;
+	rosterEntry: null | RosterEntry;
 	lastMessageTimestamp: Date | null;
 	avatarHashes: string[];
 	presences: Map<string, Presence> | null;
 }
 
 const DEFAULT_COUNTERPART_INFO: Omit<Counterpart, "jid"> = {
-	inRoster: false,
-	subscriptionTo: false,
+	rosterEntry: null,
 	lastMessageTimestamp: null,
 	avatarHashes: [],
 	presences: null,
@@ -229,7 +232,7 @@ function App() {
 
 		const items = result.getChildren("item", "jabber:iq:roster");
 
-		const newContacts = new Map<string, {subscriptionTo: boolean}>();
+		const newContacts = new Map<string, RosterEntry>();
 		items.forEach(item => {
 			const jid = item.getAttr("jid");
 			if(typeof jid === "string") {
@@ -244,7 +247,7 @@ function App() {
 					console.warn("Unknown subscription state:", subscriptionState);
 				}
 
-				newContacts.set(jid, {subscriptionTo});
+				newContacts.set(jid, {subscriptionTo, requestingSubscriptionTo: item.getAttr("ask") === "subscribe"});
 			}
 		});
 
@@ -258,25 +261,22 @@ function App() {
 						counterparts.set(contact, {
 							...DEFAULT_COUNTERPART_INFO,
 							jid: parseJID(contact),
-							inRoster: true,
-							subscriptionTo: info.subscriptionTo,
+							rosterEntry: info,
 						});
 					}
-					else if(!entry.inRoster) {
+					else {
 						counterparts.set(contact, {
 							...entry,
-							inRoster: true,
-							subscriptionTo: info.subscriptionTo,
+							rosterEntry: info,
 						});
 					}
 				});
 
 				counterparts.forEach((value, key) => {
-					if(value.inRoster && !newContacts.has(key)) {
+					if(value.rosterEntry !== null && !newContacts.has(key)) {
 						counterparts.set(key, {
 							...value,
-							inRoster: false,
-							subscriptionTo: false,
+							rosterEntry: null,
 						});
 					}
 				});

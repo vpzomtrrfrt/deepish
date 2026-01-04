@@ -14,6 +14,7 @@ import DirectChatPage from "./direct";
 import AvatarWithStatus from "../../components/AvatarWithStatus";
 import { ErrorAlert } from "../../components/DataView";
 import { ManualTabsContainer, TabLink, TabsList } from "../../components/Tabs";
+import Block from "../../components/Block";
 
 const styles = {
 	page: css({
@@ -195,6 +196,7 @@ function ChatHomePage() {
 enum FriendsTab {
 	Online,
 	All,
+	Requests,
 }
 
 function ContactsPage() {
@@ -209,26 +211,51 @@ function ContactsPage() {
 			<TabsList>
 				<TabLink tab={FriendsTab.Online}>Online</TabLink>
 				<TabLink tab={FriendsTab.All}>All</TabLink>
+				<TabLink tab={FriendsTab.Requests}>Requests</TabLink>
 			</TabsList>
 
-			<ul>
-				{
-					Array.from(account.counterparts.values(), info => {
-						if(!info.inRoster) return null;
-						if(!info.subscriptionTo) return null;
+			{
+				(tab === FriendsTab.All || tab === FriendsTab.Online) && <ul>
+					{
+						Array.from(account.counterparts.values(), info => {
+							if(info.rosterEntry === null) return null;
+							if(!info.rosterEntry.subscriptionTo) return null;
 
-						if(tab === FriendsTab.Online) {
-							if(info.presences === null || info.presences.size < 1) return null;
-						}
+							if(tab === FriendsTab.Online) {
+								if(info.presences === null || info.presences.size < 1) return null;
+							}
 
-						return <li key={info.jid.toString()}>
-							<Link to={"~/chat/direct/" + encodeURIComponent(info.jid.toString())}>
+							return <li key={info.jid.toString()}>
+								<Link to={"~/chat/direct/" + encodeURIComponent(info.jid.toString())}>
+									{info.jid.toString()}
+								</Link>
+							</li>;
+						})
+					}
+				</ul>
+			}
+			{
+				tab === FriendsTab.Requests && <Block>
+					<h1>Outgoing</h1>
+					<ul>
+						{Array.from(account.counterparts.values(), info => {
+							if(
+								!(
+									info.rosterEntry !== null &&
+										!info.rosterEntry.subscriptionTo &&
+										info.rosterEntry.requestingSubscriptionTo
+								)
+							) {
+								return null;
+							}
+
+							return <li key={info.jid.toString()}>
 								{info.jid.toString()}
-							</Link>
-						</li>;
-					})
-				}
-			</ul>
+							</li>;
+						})}
+					</ul>
+				</Block>
+			}
 		</ManualTabsContainer>
 	</div>;
 }

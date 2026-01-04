@@ -32,7 +32,7 @@ export default function AvatarWithStatus(props: {
 
 	let showType = null;
 	const counterpart = account.counterparts.get(jid.toString());
-	if(typeof counterpart !== "undefined" && counterpart.subscriptionTo) {
+	if(typeof counterpart !== "undefined" && counterpart.rosterEntry?.subscriptionTo === true) {
 		if(counterpart.presences !== null) {
 			let best: PresenceShowTypeExtended = PresenceShowTypeExtended.Unavailable;
 			counterpart.presences.forEach(entry => {
