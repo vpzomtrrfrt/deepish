@@ -367,13 +367,15 @@ function App() {
 				if(typeof maybeID !== "undefined" && maybeID !== null) id = maybeID;
 			}
 
+			const unstableID = elem.getAttr("id");
+
 			let outgoingListener;
-			if(id === null) {
-				outgoingListener = undefined;
+			if(typeof unstableID === "string") {
+				outgoingListener = outgoingMessagesRef.current.get(unstableID);
+				outgoingMessagesRef.current.delete(unstableID);
 			}
 			else {
-				outgoingListener = outgoingMessagesRef.current.get(id);
-				outgoingMessagesRef.current.delete(id);
+				outgoingListener = undefined;
 			}
 
 			const errorElem = elem.getChild("error");
