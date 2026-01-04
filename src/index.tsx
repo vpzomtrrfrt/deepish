@@ -35,6 +35,7 @@ export interface Counterpart {
 	jid: JID;
 	rosterEntry: null | RosterEntry;
 	lastMessageTimestamp: Date | null;
+	overrideVisibleTimestamp: Date | null;
 	avatarHashes: string[];
 	presences: Map<string, Presence> | null;
 }
@@ -42,6 +43,7 @@ export interface Counterpart {
 const DEFAULT_COUNTERPART_INFO: Omit<Counterpart, "jid"> = {
 	rosterEntry: null,
 	lastMessageTimestamp: null,
+	overrideVisibleTimestamp: null,
 	avatarHashes: [],
 	presences: null,
 };
@@ -116,6 +118,7 @@ export interface AppContext {
 	requestArchive(account: JID, entity: JID, params: {with?: JID}, before?: string): Promise<ResultSetInfo | null>;
 	sendMessageToRoom(account: JID, room: JID, message: {body: string}): Promise<void>;
 	sendMessageToCounterpart(account: JID, target: JID, message: {body: string}): Promise<void>;
+	markCounterpartAsVisible(account: JID, target: JID): void;
 }
 
 export const AppContext = createContext<undefined | AppContext>(undefined);
@@ -1160,6 +1163,32 @@ function App() {
 		await reflectDefer.promise;
 	});
 
+	const markCounterpartAsVisible = useLatestCallback((accountJID: JID, target: JID) => {
+		updateAccount(accountJID, account => {
+			const entry = account.counterparts.get(target.toString());
+			if(
+				typeof entry !== "undefined" &&
+					(entry.overrideVisibleTimestamp !== null || entry.lastMessageTimestamp !== null)
+			) {
+				return account;
+			}
+
+			const counterparts = new Map(account.counterparts);
+			if(typeof entry === "undefined") {
+				counterparts.set(target.toString(), {
+					...DEFAULT_COUNTERPART_INFO,
+					jid: target,
+					overrideVisibleTimestamp: new Date(),
+				});
+			}
+			else {
+				counterparts.set(target.toString(), {...entry, overrideVisibleTimestamp: new Date()});
+			}
+
+			return {...account, counterparts};
+		});
+	});
+
 	const portalContainerRef = useRef<HTMLDivElement>(null);
 
 	const appCtx = useMemo(
@@ -1179,6 +1208,7 @@ function App() {
 			requestArchive,
 			sendMessageToCounterpart,
 			sendMessageToRoom,
+			markCounterpartAsVisible,
 		} satisfies AppContext),
 		[
 			accounts,
@@ -1189,6 +1219,7 @@ function App() {
 			sendMessageToCounterpart,
 			sendMessageToRoom,
 			loadAccounts,
+			markCounterpartAsVisible,
 		],
 	);
 

@@ -101,6 +101,12 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 		}
 	}, [pageState, loadMore, account.connected, counterpart]);
 
+	useEffect(() => {
+		if(typeof counterpart !== "undefined") {
+			appCtx.markCounterpartAsVisible.call(undefined, account.jid, counterpart.jid);
+		}
+	}, [account.jid, appCtx.markCounterpartAsVisible, counterpart]);
+
 	const submitMessage = useLatestCallback(async (newMessage: string) => {
 		await appCtx.sendMessageToCounterpart(account.jid, counterpart!.jid, {body: newMessage});
 	});

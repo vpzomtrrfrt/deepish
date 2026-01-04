@@ -166,8 +166,14 @@ function ChatHomePage() {
 	// TODO this seems like a performance problem
 	const conversations = useMemo(() => {
 		const list = Array.from(account.counterparts.entries())
-			.filter(x => !account.rooms.has(x[0]) && x[1].lastMessageTimestamp !== null);
-		list.sort((a, b) => b[1].lastMessageTimestamp!.getTime() - a[1].lastMessageTimestamp!.getTime());
+			.filter(x => {
+				return !account.rooms.has(x[0]) &&
+					(x[1].lastMessageTimestamp !== null || x[1].overrideVisibleTimestamp !== null);
+			});
+		list.sort((a, b) => {
+			return (b[1].lastMessageTimestamp ?? b[1].overrideVisibleTimestamp)!.getTime() -
+				(a[1].lastMessageTimestamp ?? a[1].overrideVisibleTimestamp)!.getTime();
+		});
 		return list.map(x => x[0]);
 	}, [account.counterparts, account.rooms]);
 
