@@ -1000,12 +1000,12 @@ function App() {
 				) {
 					const elem = (req as unknown as {element: Element}).element; // ???
 					handleRosterUpdate(jid, elem.getChildren("item"), false);
+
+					return true; // ???
 				}
 				else {
 					console.log("ignoring roster update since from isn't me");
 				}
-
-				return null;
 			});
 		}
 
