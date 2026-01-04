@@ -290,7 +290,7 @@ function App() {
 	}
 
 	async function fetchInbox(client: xmppClient.Client) {
-		const result = await client.iqCaller.get(xml("inbox", {xmlns: "http://deepish.vpzom.click/ns/inbox"}));
+		const result = await client.iqCaller.request(xml("iq", {type: "get"}, xml("inbox", {xmlns: "http://deepish.vpzom.click/ns/inbox"})));
 		if(typeof result === "undefined") throw new Error("Missing result from summary");
 	}
 
