@@ -8,6 +8,7 @@ import { DataNonDoneView } from "../../components/DataView";
 import { pushAtSortPosition } from "array-push-at-sort-position";
 import MessageList, { LoadMoreTriggerer } from "../../components/MessageList";
 import MessageInput from "../../components/MessageInput";
+import { getNickForCounterpart } from "../../util/profileUtil";
 import { themeVars } from "../../util/theme";
 
 const styles = {
@@ -31,6 +32,15 @@ const styles = {
 
 		"&.active": {
 			visibility: "visible",
+		},
+	}),
+	header: css({
+		display: "flex",
+		gap: ".5rem",
+		alignItems: "center",
+
+		"> h1": {
+			margin: 0,
 		},
 	}),
 };
@@ -145,9 +155,12 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 		);
 
 	return <div class={styles.page}>
-		<h1>
-			{props.counterpartJID}
-		</h1>
+		<div class={styles.header}>
+			{typeof counterpart !== "undefined" && <h1>
+				{getNickForCounterpart(counterpart)}
+			</h1>}
+			<div>{props.counterpartJID}</div>
+		</div>
 		<MessageList
 			messages={messagesData.messages}
 			loaderContent={loaderContent}

@@ -16,6 +16,15 @@ const styles = {
 		display: "flex",
 		flexDirection: "column",
 	}),
+	header: css({
+		display: "flex",
+		gap: ".5rem",
+		alignItems: "center",
+
+		"> h1": {
+			margin: 0,
+		},
+	}),
 };
 
 export default function ChatRoomPage(props: {params: {roomJID: string}}) {
@@ -111,15 +120,13 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 		);
 
 	return <div class={styles.page}>
-		<h1>
+		<div class={styles.header}>
 			{
-				(
-					typeof room === "undefined" ?
-						null :
-						LoadState.ifDone(room.infoState, disco => disco.name, () => null)
-				) ?? props.roomJID
+				typeof room !== "undefined" &&
+					LoadState.ifDone(room.infoState, disco => <h1>{disco.name}</h1>, () => null)
 			}
-		</h1>
+			<div>{props.roomJID}</div>
+		</div>
 		<MessageList
 			messages={messagesData.messages}
 			loaderContent={loaderContent}

@@ -21,6 +21,7 @@ import IconButton from "../../components/IconButton";
 import * as commonStyles from "../../util/commonStyles";
 import { PresenceShowTypeExtended } from "../../util/types";
 import { getShowTypeForCounterpart } from "../../util/statusUtil";
+import { getNickForCounterpart } from "../../util/profileUtil";
 
 const styles = {
 	page: css({
@@ -119,12 +120,28 @@ const styles = {
 
 		textDecoration: "none",
 		color: "inherit",
+
+		"&:hover": {
+			".friendEntryJID": {
+				visibility: "visible",
+			},
+		},
 	})),
 	friendButtons: css({
 		display: "flex",
 		gap: ".5rem",
 		flexShrink: 0,
 	}),
+	friendEntryNameRow: css({
+		display: "flex",
+		alignItems: "center",
+		gap: ".5rem",
+	}),
+	friendEntryJID: cx("friendEntryJID", css({
+		display: "inline-block",
+		fontSize: "80%",
+		visibility: "hidden",
+	})),
 	contactsPage: css({
 		display: "flex",
 		flexDirection: "column",
@@ -227,7 +244,7 @@ function ChatHomePage() {
 				conversations.map(item => {
 					return <Link to={"~/chat/direct/" + encodeURIComponent(item)} className={active => cx(styles.spaceItem, active && "active")}>
 						<AvatarWithStatus size="md" jid={item} />
-						<span>{item}</span>
+						<span>{getNickForCounterpart(account.counterparts.get(item)!)}</span>
 					</Link>;
 				})
 			}
@@ -284,7 +301,10 @@ function ContactsPage() {
 							>
 								<AvatarWithStatus size="md" jid={info.jid} />
 								<div>
-									{info.jid.toString()}
+									<div class={styles.friendEntryNameRow}>
+										{getNickForCounterpart(info)}
+										<span class={styles.friendEntryJID}>{info.jid.toString()}</span>
+									</div>
 									{showType !== null && <div class={styles.statusText}>
 										{presenceShowTypeNames[showType]}
 									</div>}
