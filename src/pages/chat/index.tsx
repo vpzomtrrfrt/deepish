@@ -1,11 +1,12 @@
 import { css, cx } from "@emotion/css";
-import { mdiAccountMultiple, mdiCheck, mdiHome } from "@mdi/js";
+import { mdiAccountMultiple, mdiCheck, mdiHome, mdiPlus } from "@mdi/js";
 import { JID } from "@xmpp/jid";
 import { useMemo, useState } from "preact/hooks";
 import { Link, Route, Switch, useRoute } from "wouter-preact";
 
 import { Account, useAppContext } from "../..";
 import ChatRoomPage from "./rooms";
+import ChatRoomAddPage from "./rooms/add";
 import { LoadState } from "../../util/useData";
 import Avatar from "../../components/Avatar";
 import WithTooltip from "../../components/WithTooltip";
@@ -148,6 +149,7 @@ export default function ChatPage() {
 		<ChatView account={account} />
 		<Switch>
 			<Route path="/rooms/:roomJID" component={ChatRoomPage} />
+			<Route path="/rooms:add" component={ChatRoomAddPage} />
 			<Route path="/" component={ChatHomePage} nest />
 		</Switch>
 	</div>;
@@ -157,11 +159,13 @@ function ChatView(props: {account: Account}) {
 	const roomMatch = useRoute("/rooms/:roomJID");
 	const currentRoom = roomMatch[0] ? decodeURIComponent(roomMatch[1].roomJID) : null;
 
+	const addMatch = useRoute("/rooms:add");
+
 	return <div class={css({display: "flex", flexDirection: "column"})}>
 		<div class={styles.roomList}>
 			<div>
 				<Link to="~/">
-					<div class={cx(styles.roomLink, currentRoom === null && styles.currentRoomLink, styles.homeAvatar)}>
+					<div class={cx(styles.roomLink, currentRoom === null && !addMatch[0] && styles.currentRoomLink, styles.homeAvatar)}>
 						<Icon path={mdiHome} class={styles.roomLinkIcon} />
 					</div>
 				</Link>
@@ -184,6 +188,13 @@ function ChatView(props: {account: Account}) {
 					},
 				)
 			}
+			<div>
+				<Link to="~/chat/rooms:add">
+					<div class={cx(styles.roomLink, addMatch[0] && styles.currentRoomLink, styles.homeAvatar)}>
+						<Icon path={mdiPlus} class={styles.roomLinkIcon} />
+					</div>
+				</Link>
+			</div>
 		</div>
 	</div>;
 }

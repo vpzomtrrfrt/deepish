@@ -10,7 +10,7 @@ export default function useSubmitting<P extends unknown[], O>(fn: (...args: P) =
 		setSubmitting(true);
 
 		try {
-			submitInner(...args);
+			await submitInner(...args);
 		}
 		catch(err) {
 			alert(err);

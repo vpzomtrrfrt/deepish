@@ -106,6 +106,7 @@ export interface AppContext {
 	markCounterpartAsVisible(account: JID, target: JID): void;
 	acceptFriendRequest(account: JID, target: JID): void;
 	setComposingToCounterpart(account: JID, target: JID, composing: boolean): void;
+	joinRoom(account: JID, room: JID): Promise<void>;
 }
 
 export const AppContext = createContext<undefined | AppContext>(undefined);
@@ -134,6 +135,8 @@ function App() {
 	const [inited, setInited] = useState(false);
 
 	const outgoingMessagesRef = useRef<Map<string, {resolve: () => void; reject: (err: unknown) => void}>>(new Map());
+
+	const newRoomsRef = useRef<Map<string, {resolve: () => void; reject: (err: unknown) => void}>>(new Map());
 
 	const cache = useMemo(() => new IDBCache({dbName: "deepish-cache", cacheBuster: "3", cacheKey: "dummy"}), []);
 
@@ -848,7 +851,12 @@ function App() {
 						}
 					});
 
+					const callback = newRoomsRef.current.get(srcJID.bare().toString());
+					newRoomsRef.current.delete(srcJID.bare().toString());
+
 					if(success) {
+						callback?.resolve();
+
 						setAccounts(current => {
 							return current.map(item => {
 								if(item.client === client) {
@@ -875,6 +883,9 @@ function App() {
 						});
 
 						fetchRoomDisco(client, srcJID.bare());
+					}
+					else {
+						callback?.reject(new Error("Failed to join room"));
 					}
 				}
 			}
@@ -1318,6 +1329,77 @@ function App() {
 		});
 	});
 
+	const joinRoom = useLatestCallback(async (accountJID: JID, room: JID) => {
+		const account = accounts.find(x => x.jid.equals(accountJID));
+		if(typeof account === "undefined") throw new Error("No such account");
+
+		if(account.rooms.has(room.toString())) {
+			// already joined
+			return;
+		}
+
+		{
+			const elem = await account.client.iqCaller.get(
+				xml("query", {xmlns: "http://jabber.org/protocol/disco#info"}),
+				room.toString(),
+			);
+
+			console.log(elem);
+
+			if(typeof elem === "undefined") throw new Error("Missing response from disco");
+
+			let isRoom = false;
+			for(const child of elem.getChildren("feature")) {
+				if(child.getAttr("var") === "http://jabber.org/protocol/muc") {
+					isRoom = true;
+					break;
+				}
+			}
+
+			if(!isRoom) throw new Error("That doesn't appear to be a room");
+
+			updateAccount(accountJID, account => {
+				const rooms = new Map(account.rooms);
+
+				rooms.set(room.toString(), {
+					jid: room,
+					nick: null,
+					connected: false,
+					infoState: LoadState.loading,
+				});
+
+				return {...account, rooms};
+			});
+
+			const defer = Promise.withResolvers<void>();
+
+			newRoomsRef.current.set(room.toString(), defer);
+
+			connectMUC(account.client, room, undefined);
+
+			await defer.promise;
+
+			await account.client.iqCaller.set(
+				xml(
+					"pubsub",
+					{xmlns: "http://jabber.org/protocol/pubsub"},
+					xml(
+						"publish",
+						{node: "urn:xmpp:bookmarks:1"},
+						xml(
+							"item",
+							{id: room.toString()},
+							xml(
+								"conference",
+								{xmlns: "urn:xmpp:bookmarks:1", autojoin: "true"},
+							),
+						),
+					),
+				),
+			);
+		}
+	});
+
 	const portalContainerRef = useRef<HTMLDivElement>(null);
 
 	const appCtx = useMemo(
@@ -1340,6 +1422,7 @@ function App() {
 			markCounterpartAsVisible,
 			acceptFriendRequest,
 			setComposingToCounterpart,
+			joinRoom,
 		} satisfies AppContext),
 		[
 			accounts,
@@ -1353,6 +1436,7 @@ function App() {
 			markCounterpartAsVisible,
 			acceptFriendRequest,
 			setComposingToCounterpart,
+			joinRoom,
 		],
 	);
 
