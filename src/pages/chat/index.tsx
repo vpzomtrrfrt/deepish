@@ -1,5 +1,5 @@
 import { css, cx } from "@emotion/css";
-import { mdiAccountMultiple, mdiCheck, mdiHome, mdiPlus } from "@mdi/js";
+import { mdiAccountMultiple, mdiCheck, mdiClose, mdiHome, mdiPlus } from "@mdi/js";
 import { JID } from "@xmpp/jid";
 import { useMemo, useState } from "preact/hooks";
 import { Link, Route, Switch, useRoute } from "wouter-preact";
@@ -273,6 +273,10 @@ function ContactsPage() {
 		appCtx.acceptFriendRequest(account.jid, target);
 	}
 
+	function removeFriend(target: JID) {
+		appCtx.removeFriend(account.jid, target);
+	}
+
 	return <div class={styles.contactsPage}>
 		<ManualTabsContainer tab={tab} setTab={setTab}>
 			<TabsList>
@@ -318,7 +322,7 @@ function ContactsPage() {
 				tab === FriendsTab.Requests && <div>
 					<Block>
 						<h1>Outgoing</h1>
-						<ul>
+						<div>
 							{Array.from(account.counterparts.values(), info => {
 								if(
 									!(
@@ -330,11 +334,18 @@ function ContactsPage() {
 									return null;
 								}
 
-								return <li key={info.jid.toString()}>
-									{info.jid.toString()}
-								</li>;
+								return <div class={styles.friendEntry} key={info.jid.toString()}>
+									<div style={{flexGrow: 1}}>
+										{info.jid.toString()}
+									</div>
+									<div class={styles.friendButtons}>
+										<IconButton onClick={removeFriend.bind(undefined, info.jid)}>
+											<Icon path={mdiClose} />
+										</IconButton>
+									</div>
+								</div>;
 							})}
-						</ul>
+						</div>
 					</Block>
 					<Block>
 						<h1>Incoming</h1>

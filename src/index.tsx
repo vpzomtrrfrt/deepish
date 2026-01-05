@@ -105,6 +105,7 @@ export interface AppContext {
 	sendMessageToCounterpart(account: JID, target: JID, message: {body: string}): Promise<void>;
 	markCounterpartAsVisible(account: JID, target: JID): void;
 	acceptFriendRequest(account: JID, target: JID): void;
+	removeFriend(account: JID, target: JID): void;
 	setComposingToCounterpart(account: JID, target: JID, composing: boolean): void;
 	joinRoom(account: JID, room: JID): Promise<void>;
 }
@@ -1294,6 +1295,39 @@ function App() {
 		}
 	});
 
+	const removeFriend = useLatestCallback(async (accountJID: JID, target: JID) => {
+		{
+			const account = accounts.find(x => x.jid.equals(accountJID));
+			if(typeof account === "undefined") throw new Error("No such account");
+
+			await account.client.iqCaller.set(
+				xml(
+					"query",
+					{xmlns: "jabber:iq:roster"},
+					xml(
+						"item",
+						{jid: target.toString(), subscription: "remove"},
+					),
+				),
+			);
+		}
+
+		updateAccount(accountJID, account => {
+			if(!account.counterparts.has(target.toString())) return account;
+
+			const counterparts = new Map(account.counterparts);
+			counterparts.set(
+				target.toString(),
+				{
+					...counterparts.get(target.toString())!,
+					rosterEntry: null,
+				},
+			);
+
+			return {...account, counterparts};
+		});
+	});
+
 	const setComposingToCounterpart = useLatestCallback((accountJID: JID, target: JID, composing: boolean) => {
 		{
 			const account = accounts.find(x => x.jid.equals(accountJID));
@@ -1421,6 +1455,7 @@ function App() {
 			sendMessageToRoom,
 			markCounterpartAsVisible,
 			acceptFriendRequest,
+			removeFriend,
 			setComposingToCounterpart,
 			joinRoom,
 		} satisfies AppContext),
@@ -1437,6 +1472,7 @@ function App() {
 			acceptFriendRequest,
 			setComposingToCounterpart,
 			joinRoom,
+			removeFriend,
 		],
 	);
 
