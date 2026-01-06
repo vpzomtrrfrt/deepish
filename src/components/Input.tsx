@@ -6,8 +6,9 @@ import { useEffect, useRef } from "preact/hooks";
 
 const styles = {
 	input: css({
-		height: "2.5rem",
-		paddingInline: "0.75rem",
+		fontSize: "1rem",
+		paddingInline: "0.5rem",
+		paddingBlock: "0.5rem",
 		borderRadius: "0.25rem",
 		borderStyle: "solid",
 		borderColor: themeVars.outline1,
