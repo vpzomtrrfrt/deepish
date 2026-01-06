@@ -23,6 +23,7 @@ import { PresenceShowTypeExtended } from "../../util/types";
 import { getShowTypeForCounterpart } from "../../util/statusUtil";
 import { getNickForCounterpart } from "../../util/profileUtil";
 import Menu, { MenuItem } from "../../components/Menu";
+import ConfirmDialog from "../../components/ConfirmDialog";
 
 const styles = {
 	page: css({
@@ -283,6 +284,14 @@ function ContactsPage() {
 		appCtx.removeFriend(account.jid, target);
 	}
 
+	function removeFriendAfterConfirm(target: JID) {
+		appCtx.showDialog(
+			<ConfirmDialog onConfirm={removeFriend.bind(undefined, target)} confirmText="Remove Friend">
+				<p>Are you sure you want to remove <em>{target.toString()}</em> as a friend?</p>
+			</ConfirmDialog>,
+		);
+	}
+
 	const onClickFriendButtons = useCallback((evt: Event) => {
 		evt.stopPropagation();
 		evt.preventDefault();
@@ -326,7 +335,7 @@ function ContactsPage() {
 								</div>
 								<div class={styles.friendButtons} onClick={onClickFriendButtons}>
 									<Menu>
-										<MenuItem onClick={removeFriend.bind(undefined, info.jid)}>
+										<MenuItem onClick={removeFriendAfterConfirm.bind(undefined, info.jid)}>
 											Remove Friend
 										</MenuItem>
 									</Menu>

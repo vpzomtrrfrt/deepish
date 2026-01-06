@@ -8,7 +8,7 @@ import xml, { Element } from "@xmpp/xml";
 import fromBase64 from "es-arraybuffer-base64/Uint8Array.fromBase64";
 import toBase64 from "es-arraybuffer-base64/Uint8Array.prototype.toBase64";
 import toHex from "es-arraybuffer-base64/Uint8Array.prototype.toHex";
-import { createContext, RefObject, render } from "preact";
+import { createContext, RefObject, render, VNode } from "preact";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { Redirect, Route } from "wouter-preact";
 
@@ -21,6 +21,7 @@ import useEffectOnce from "./util/useEffectOnce";
 import useLatestCallback from "use-latest-callback";
 
 import "./global.css";
+import DialogContainer, { DialogContainerRef } from "./components/DialogContainer";
 
 const DEFAULT_COUNTERPART_INFO: Omit<Counterpart, "jid"> = {
 	rosterEntry: null,
@@ -108,6 +109,7 @@ export interface AppContext {
 	removeFriend(account: JID, target: JID): void;
 	setComposingToCounterpart(account: JID, target: JID, composing: boolean): void;
 	joinRoom(account: JID, room: JID): Promise<void>;
+	showDialog(content: VNode): void;
 }
 
 export const AppContext = createContext<undefined | AppContext>(undefined);
@@ -1435,6 +1437,11 @@ function App() {
 	});
 
 	const portalContainerRef = useRef<HTMLDivElement>(null);
+	const dialogContainerRef = useRef<DialogContainerRef>(null);
+
+	const showDialog = useCallback((content: VNode) => {
+		dialogContainerRef.current!.showDialog(content);
+	}, []);
 
 	const appCtx = useMemo(
 		() => ({
@@ -1458,6 +1465,7 @@ function App() {
 			removeFriend,
 			setComposingToCounterpart,
 			joinRoom,
+			showDialog,
 		} satisfies AppContext),
 		[
 			accounts,
@@ -1473,6 +1481,7 @@ function App() {
 			setComposingToCounterpart,
 			joinRoom,
 			removeFriend,
+			showDialog,
 		],
 	);
 
@@ -1498,6 +1507,7 @@ function App() {
 				<Route path="/chat" component={ChatPage} nest />
 				<Route path="/login" component={LoginPage} />
 			</Tooltip.Provider>
+			<DialogContainer ref={dialogContainerRef} />
 			<div style={{position: "absolute"}} ref={portalContainerRef} />
 		</div>
 	</AppContext.Provider>;
