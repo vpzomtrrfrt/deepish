@@ -30,6 +30,7 @@ export default function ChatRoomAddPage() {
 		<h1>Join a Room</h1>
 		<form onSubmit={submitJoin}>
 			<Input value={joinInput} onChange={linkJoinInput} />
+			{" "}
 			<Button tier="primary" disabled={submittingJoin || joinInput === ""} type="submit">Join</Button>
 		</form>
 	</Block>;
