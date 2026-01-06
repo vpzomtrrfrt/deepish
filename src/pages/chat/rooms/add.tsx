@@ -6,6 +6,7 @@ import useSubmitting from "../../../util/useSubmitting";
 import { useAppContext } from "../../..";
 import Input from "../../../components/Input";
 import { useLocation } from "wouter-preact";
+import Button from "../../../components/Button";
 
 export default function ChatRoomAddPage() {
 	const appCtx = useAppContext();
@@ -29,7 +30,7 @@ export default function ChatRoomAddPage() {
 		<h1>Join a Room</h1>
 		<form onSubmit={submitJoin}>
 			<Input value={joinInput} onChange={linkJoinInput} />
-			<button disabled={submittingJoin || joinInput === ""} type="submit">Join</button>
+			<Button tier="primary" disabled={submittingJoin || joinInput === ""} type="submit">Join</Button>
 		</form>
 	</Block>;
 }

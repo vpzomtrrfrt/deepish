@@ -1,6 +1,7 @@
 import { useCallback, useContext } from "preact/hooks";
 import Dialog, { DialogContext, DialogFooter } from "./Dialog";
 import { ComponentChildren } from "preact";
+import Button from "./Button";
 
 export default function ConfirmDialog(props: {onConfirm(): void; children: ComponentChildren; confirmText: string}) {
 	const dialogCtx = useContext(DialogContext)!;
@@ -19,8 +20,8 @@ export default function ConfirmDialog(props: {onConfirm(): void; children: Compo
 				{props.children}
 			</div>
 			<DialogFooter>
-				<button type="button" onClick={dialogCtx.close}>Cancel</button>
-				<button type="submit">{props.confirmText}</button>
+				<Button tier="secondary" onClick={dialogCtx.close}>Cancel</Button>
+				<Button tier="primary" type="submit">{props.confirmText}</Button>
 			</DialogFooter>
 		</form>
 	</Dialog>;
