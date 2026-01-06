@@ -1,7 +1,7 @@
 import { css, cx } from "@emotion/css";
 import { mdiAccountMultiple, mdiCheck, mdiClose, mdiHome, mdiPlus } from "@mdi/js";
 import { JID } from "@xmpp/jid";
-import { useMemo, useState } from "preact/hooks";
+import { useCallback, useMemo, useState } from "preact/hooks";
 import { Link, Route, Switch, useRoute } from "wouter-preact";
 
 import { Account, useAppContext } from "../..";
@@ -22,6 +22,7 @@ import * as commonStyles from "../../util/commonStyles";
 import { PresenceShowTypeExtended } from "../../util/types";
 import { getShowTypeForCounterpart } from "../../util/statusUtil";
 import { getNickForCounterpart } from "../../util/profileUtil";
+import Menu, { MenuItem } from "../../components/Menu";
 
 const styles = {
 	page: css({
@@ -131,6 +132,11 @@ const styles = {
 		display: "flex",
 		gap: ".5rem",
 		flexShrink: 0,
+		pointerEvents: "none",
+
+		"> *": {
+			pointerEvents: "auto",
+		}
 	}),
 	friendEntryNameRow: css({
 		display: "flex",
@@ -277,6 +283,11 @@ function ContactsPage() {
 		appCtx.removeFriend(account.jid, target);
 	}
 
+	const onClickFriendButtons = useCallback((evt: Event) => {
+		evt.stopPropagation();
+		evt.preventDefault();
+	}, []);
+
 	return <div class={styles.contactsPage}>
 		<ManualTabsContainer tab={tab} setTab={setTab}>
 			<TabsList>
@@ -304,7 +315,7 @@ function ContactsPage() {
 								class={styles.friendEntry}
 							>
 								<AvatarWithStatus size="md" jid={info.jid} />
-								<div>
+								<div style={{flexGrow: 1}}>
 									<div class={styles.friendEntryNameRow}>
 										{getNickForCounterpart(info)}
 										<span class={styles.friendEntryJID}>{info.jid.toString()}</span>
@@ -312,6 +323,13 @@ function ContactsPage() {
 									{showType !== null && <div class={styles.statusText}>
 										{presenceShowTypeNames[showType]}
 									</div>}
+								</div>
+								<div class={styles.friendButtons} onClick={onClickFriendButtons}>
+									<Menu>
+										<MenuItem onClick={removeFriend.bind(undefined, info.jid)}>
+											Remove Friend
+										</MenuItem>
+									</Menu>
 								</div>
 							</Link>;
 						})
