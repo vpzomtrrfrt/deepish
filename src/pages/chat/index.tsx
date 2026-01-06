@@ -297,6 +297,9 @@ function ContactsPage() {
 		evt.preventDefault();
 	}, []);
 
+	const incomingRequestCounterparts = Array.from(account.counterparts.values())
+		.filter(x => x.requestingMySubscription);
+
 	return <div class={styles.contactsPage}>
 		<ManualTabsContainer tab={tab} setTab={setTab}>
 			<TabsList>
@@ -374,27 +377,26 @@ function ContactsPage() {
 							})}
 						</div>
 					</Block>
-					<Block>
-						<h1>Incoming</h1>
-						<div>
-							{Array.from(account.counterparts.values(), info => {
-								if(!info.requestingMySubscription) {
-									return null;
-								}
-
-								return <div class={styles.friendEntry} key={info.jid.toString()}>
-									<div style={{flexGrow: 1}}>
-										{info.jid.toString()}
-									</div>
-									<div class={styles.friendButtons}>
-										<IconButton onClick={acceptFriendRequest.bind(undefined, info.jid)}>
-											<Icon path={mdiCheck} />
-										</IconButton>
-									</div>
-								</div>;
-							})}
-						</div>
-					</Block>
+					{
+						incomingRequestCounterparts.length > 0 &&
+							<Block>
+								<h1>Incoming</h1>
+								<div>
+									{incomingRequestCounterparts.map(info => {
+										return <div class={styles.friendEntry} key={info.jid.toString()}>
+											<div style={{flexGrow: 1}}>
+												{info.jid.toString()}
+											</div>
+											<div class={styles.friendButtons}>
+												<IconButton onClick={acceptFriendRequest.bind(undefined, info.jid)}>
+													<Icon path={mdiCheck} />
+												</IconButton>
+											</div>
+										</div>;
+									})}
+								</div>
+							</Block>
+					}
 				</div>
 			}
 		</ManualTabsContainer>
