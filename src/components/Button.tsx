@@ -13,6 +13,8 @@ const styles = {
 		borderColor: "transparent",
 
 		transition: "background-color 300ms",
+
+		cursor: "pointer",
 	}),
 };
 

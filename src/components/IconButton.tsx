@@ -13,6 +13,8 @@ const styles = {
 		position: "relative",
 		padding: ".5rem",
 
+		cursor: "pointer",
+
 		"> .icon": {
 			display: "block",
 		},

@@ -20,8 +20,10 @@ const styles = {
 	item: css({
 		paddingInline: ".5rem",
 		paddingBlock: ".25rem",
-		userSelect: "none",
 		whiteSpace: "nowrap",
+
+		userSelect: "none",
+		cursor: "pointer",
 
 		"&[data-highlighted]": {
 			backgroundColor: themeVars.hoverOverlay,
