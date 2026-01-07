@@ -7,6 +7,9 @@ import { DataNonDoneView } from "../../../components/DataView";
 import { pushAtSortPosition } from "array-push-at-sort-position";
 import MessageList, { LoadMoreTriggerer } from "../../../components/MessageList";
 import MessageInput from "../../../components/MessageInput";
+import Menu, { MenuItem } from "../../../components/Menu";
+import { useLocation } from "wouter-preact";
+import TaskDialog from "../../../components/TaskDialog";
 
 const styles = {
 	page: css({
@@ -18,8 +21,13 @@ const styles = {
 	}),
 	header: css({
 		display: "flex",
+		alignItems: "center",
+	}),
+	headerStart: css({
+		display: "flex",
 		gap: ".5rem",
 		alignItems: "center",
+		flexGrow: 1,
 
 		"> h1": {
 			margin: 0,
@@ -37,6 +45,8 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 	const appCtx = useAppContext();
 	const account = appCtx.accounts[0]!;
 	const room = account.rooms.get(props.roomJID);
+
+	const [, navigate] = useLocation();
 
 	const [messagesData, setMessagesData] = useState<{messages: Message[]; messageMap: Map<string, Message>}>({
 		messages: [],
@@ -111,6 +121,14 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 		await appCtx.sendMessageToRoom(account.jid, room!.jid, {body: newMessage});
 	});
 
+	const leaveRoom = useLatestCallback(() => {
+		const task = appCtx.leaveRoom.call(undefined, account.jid, room!.jid);
+
+		appCtx.showDialog(<TaskDialog task={task}>Leaving room…</TaskDialog>);
+
+		task.then(() => navigate("~/"));
+	});
+
 	const loaderContent = pageState === null ?
 		<p>Connecting…</p> :
 		LoadState.ifDone(
@@ -121,11 +139,18 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 
 	return <div class={styles.page}>
 		<div class={styles.header}>
-			{
-				typeof room !== "undefined" &&
-					LoadState.ifDone(room.infoState, disco => <h1>{disco.name}</h1>, () => null)
-			}
-			<div>{props.roomJID}</div>
+			<div class={styles.headerStart}>
+				{
+					typeof room !== "undefined" &&
+						LoadState.ifDone(room.infoState, disco => <h1>{disco.name}</h1>, () => null)
+				}
+				<div>{props.roomJID}</div>
+			</div>
+			<div>
+				<Menu>
+					<MenuItem onClick={leaveRoom}>Leave Room</MenuItem>
+				</Menu>
+			</div>
 		</div>
 		<MessageList
 			messages={messagesData.messages}

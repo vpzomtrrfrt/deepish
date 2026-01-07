@@ -126,6 +126,7 @@ export interface AppContext {
 	removeFriend(account: JID, target: JID): void;
 	setComposingToCounterpart(account: JID, target: JID, composing: boolean): void;
 	joinRoom(account: JID, room: JID): Promise<void>;
+	leaveRoom(account: JID, room: JID): Promise<void>;
 	showDialog(content: VNode): void;
 	createRoom(account: JID, room: JID, params: RoomCreateParams): void;
 }
@@ -1514,6 +1515,49 @@ function App() {
 		}
 	});
 
+	const leaveRoom = useLatestCallback(async (accountJID: JID, roomJID: JID) => {
+		{
+			const account = accounts.find(x => x.jid.equals(accountJID));
+			if(typeof account === "undefined") throw new Error("No such account");
+
+			const room = account.rooms.get(roomJID.toString());
+			if(typeof room === "undefined") return;
+
+			account.client.send(
+				xml(
+					"presence",
+					{
+						id: xid(),
+						to: new JID(roomJID.local, roomJID.domain, room.nick ?? accountJID.local),
+						type: "unavailable",
+					},
+				),
+			);
+
+			await account.client.iqCaller.set(
+				xml(
+					"pubsub",
+					{xmlns: "http://jabber.org/protocol/pubsub"},
+					xml(
+						"retract",
+						{node: "urn:xmpp:bookmarks:1", notify: "true"},
+						xml(
+							"item",
+							{id: roomJID.toString()},
+						),
+					),
+				),
+			);
+		}
+
+		updateAccount(accountJID, account => {
+			const rooms = new Map(account.rooms);
+			rooms.delete(roomJID.toString());
+
+			return {...account, rooms};
+		});
+	});
+
 	const createRoom = useLatestCallback(async (accountJID: JID, room: JID, params: RoomCreateParams) => {
 		const realParams = {
 			"muc#roomconfig_membersonly": params.membersOnly,
@@ -1648,6 +1692,7 @@ function App() {
 			removeFriend,
 			setComposingToCounterpart,
 			joinRoom,
+			leaveRoom,
 			showDialog,
 			createRoom,
 		} satisfies AppContext),
@@ -1664,6 +1709,7 @@ function App() {
 			acceptFriendRequest,
 			setComposingToCounterpart,
 			joinRoom,
+			leaveRoom,
 			removeFriend,
 			showDialog,
 			createRoom,
