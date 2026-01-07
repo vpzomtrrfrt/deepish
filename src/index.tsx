@@ -10,7 +10,7 @@ import toBase64 from "es-arraybuffer-base64/Uint8Array.prototype.toBase64";
 import toHex from "es-arraybuffer-base64/Uint8Array.prototype.toHex";
 import { createContext, RefObject, render, VNode } from "preact";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "preact/hooks";
-import { Redirect, Route } from "wouter-preact";
+import { Redirect, Route, useLocation } from "wouter-preact";
 
 import ChatPage from "./pages/chat";
 import LoginPage from "./pages/login";
@@ -46,6 +46,11 @@ export interface Room {
 	infoState: LoadState<RoomDiscoInfo>;
 }
 
+export interface ServiceInfo {
+	jid: JID;
+	features: string[];
+}
+
 export interface Account {
 	jid: JID;
 	client: xmppClient.Client;
@@ -57,6 +62,7 @@ export interface Account {
 	rooms: Map<string, Room>;
 
 	avatarStates: Map<string, LoadState<string>>;
+	servicesState: LoadState<ServiceInfo[]>;
 }
 
 export interface Message {
@@ -86,6 +92,17 @@ export interface AvatarImageCacheEntry {
 	type: string;
 }
 
+export interface RoomCreateParams {
+	name: string;
+	membersOnly: boolean;
+	publicRoom: boolean;
+	persistent: boolean;
+}
+
+interface RoomJoinCallbackInfo {
+	statuses: string[];
+}
+
 export interface AppContext {
 	accounts: Account[];
 	cache: IDBCache;
@@ -110,6 +127,7 @@ export interface AppContext {
 	setComposingToCounterpart(account: JID, target: JID, composing: boolean): void;
 	joinRoom(account: JID, room: JID): Promise<void>;
 	showDialog(content: VNode): void;
+	createRoom(account: JID, room: JID, params: RoomCreateParams): void;
 }
 
 export const AppContext = createContext<undefined | AppContext>(undefined);
@@ -131,6 +149,8 @@ const IDENTITY = {category: "client", type: "web", lang: "", name: "Deepish"};
 const NODE_URL = "https://deepish.vpzom.click";
 
 function App() {
+	const [location] = useLocation();
+
 	// eventually we might support multiple accounts
 	// just one for now though
 	const [accounts, setAccounts] = useState<Account[]>([]);
@@ -139,7 +159,7 @@ function App() {
 
 	const outgoingMessagesRef = useRef<Map<string, {resolve: () => void; reject: (err: unknown) => void}>>(new Map());
 
-	const newRoomsRef = useRef<Map<string, {resolve: () => void; reject: (err: unknown) => void}>>(new Map());
+	const newRoomsRef = useRef<Map<string, {resolve: (value: RoomJoinCallbackInfo) => void; reject: (err: unknown) => void}>>(new Map());
 
 	const cache = useMemo(() => new IDBCache({dbName: "deepish-cache", cacheBuster: "3", cacheKey: "dummy"}), []);
 
@@ -311,6 +331,62 @@ function App() {
 		if(typeof result === "undefined") throw new Error("Missing result from summary");
 	}
 
+	async function fetchServices(client: xmppClient.Client) {
+		try {
+			const listResult = await client.iqCaller.get(
+				xml(
+					"query",
+					{xmlns: "http://jabber.org/protocol/disco#items"},
+				),
+				client.jid!.domain,
+			);
+
+			if(typeof listResult === "undefined") throw new Error("Missing result");
+
+			const serviceJIDs: JID[] = [];
+
+			listResult.getChildren("item").forEach(itemElem => {
+				const jid = itemElem.getAttr("jid");
+				if(typeof jid === "string") serviceJIDs.push(parseJID(jid));
+			});
+
+			const results = await Promise.all(
+				serviceJIDs.map(async (serviceJID) => {
+					const result = await client.iqCaller.get(
+						xml(
+							"query",
+							{xmlns: "http://jabber.org/protocol/disco#info"},
+						),
+						serviceJID.toString(),
+					);
+
+					if(typeof result === "undefined") throw new Error("Missing result");
+
+					const features: string[] = [];
+
+					result.getChildren("feature").forEach(elem => {
+						const key = elem.getAttr("var");
+						if(typeof key === "string") features.push(key);
+					});
+
+					return {
+						jid: serviceJID,
+						features,
+					} satisfies ServiceInfo;
+				}),
+			);
+
+			updateAccount(client, account => {
+				return {...account, servicesState: LoadState.wrapValue(results)};
+			});
+		}
+		catch(ex) {
+			updateAccount(client, account => {
+				return {...account, servicesState: LoadState.wrapError(ex)};
+			});
+		}
+	}
+
 	const onClientOnline = useLatestCallback((client: xmppClient.Client) => {
 		const setupQuery = genVerString(
 			[IDENTITY],
@@ -338,6 +414,7 @@ function App() {
 					fetchBookmarks(client),
 					fetchRoster(client),
 					fetchInbox(client),
+					fetchServices(client),
 					client.iqCaller.set(xml("enable", {xmlns: "urn:xmpp:carbons:2"})),
 				]);
 			})
@@ -846,19 +923,19 @@ function App() {
 				if(statusElems.length > 0) {
 					// it's for this client
 
-					let success = false;
+					const statuses: string[] = [];
 
 					statusElems.forEach(statusElem => {
-						if(statusElem.getAttr("code") === "110") {
-							success = true;
-						}
+						statuses.push(statusElem.getAttr("code"));
 					});
+
+					const success = statuses.includes("110");
 
 					const callback = newRoomsRef.current.get(srcJID.bare().toString());
 					newRoomsRef.current.delete(srcJID.bare().toString());
 
 					if(success) {
-						callback?.resolve();
+						callback?.resolve({statuses});
 
 						setAccounts(current => {
 							return current.map(item => {
@@ -1066,6 +1143,7 @@ function App() {
 						counterparts: new Map(),
 						rooms: new Map(),
 						avatarStates: new Map(),
+						servicesState: LoadState.loading,
 					} satisfies Account,
 				];
 			});
@@ -1407,7 +1485,7 @@ function App() {
 				return {...account, rooms};
 			});
 
-			const defer = Promise.withResolvers<void>();
+			const defer = Promise.withResolvers<RoomJoinCallbackInfo>();
 
 			newRoomsRef.current.set(room.toString(), defer);
 
@@ -1431,6 +1509,111 @@ function App() {
 							),
 						),
 					),
+				),
+			);
+		}
+	});
+
+	const createRoom = useLatestCallback(async (accountJID: JID, room: JID, params: RoomCreateParams) => {
+		const realParams = {
+			"muc#roomconfig_membersonly": params.membersOnly,
+			"muc#roomconfig_persistentroom": params.persistent,
+			"muc#roomconfig_publicroom": params.publicRoom,
+			"muc#roomconfig_roomname": params.name,
+		};
+
+		const account = accounts.find(x => x.jid.equals(accountJID));
+		if(typeof account === "undefined") throw new Error("No such account");
+
+		if(account.rooms.has(room.toString())) throw new Error("A room by that JID already exists");
+
+		const nick = accountJID.local;
+
+		let joinInfo;
+
+		// Join room
+		{
+			const defer = Promise.withResolvers<RoomJoinCallbackInfo>();
+			newRoomsRef.current.set(room.toString(), defer);
+
+			connectMUC(account.client, room, nick);
+			joinInfo = await defer.promise;
+		}
+
+		console.log("connected to new room");
+
+		try {
+			if(!joinInfo.statuses.includes("201")) {
+				throw new Error("A room by that JID already exists");
+			}
+
+			console.log("fetching form");
+
+			const formResult = await account.client.iqCaller.get(
+				xml(
+					"query",
+					{xmlns: "http://jabber.org/protocol/muc#owner"},
+				),
+				room.toString(),
+			);
+
+			console.log("got form");
+
+			if(typeof formResult === "undefined") throw new Error("Missing form");
+
+			const formElem = formResult.getChild("x", "jabber:x:data");
+			if(typeof formElem === "undefined") throw new Error("Server is missing required functionality");
+
+			const fieldElems = formElem.getChildren("field");
+
+			const missingFields = new Set(Object.keys(realParams));
+
+			fieldElems.forEach(elem => {
+				const key = elem.getAttr("var");
+				missingFields.delete(key);
+
+				if(typeof elem.getChild("required") !== "undefined") {
+					if(!(key in realParams)) throw new Error("Server requires additional information");
+				}
+			});
+
+			if(missingFields.size > 0) throw new Error("Server is missing required functionality");
+
+			console.log("finalizing room creation");
+
+			await account.client.iqCaller.set(
+				xml(
+					"query",
+					{xmlns: "http://jabber.org/protocol/muc#owner"},
+					xml(
+						"x",
+						{xmlns: "jabber:x:data", type: "submit"},
+						xml(
+							"field",
+							{var: "FORM_TYPE"},
+							xml("value", {}, "http://jabber.org/protocol/muc#roomconfig"),
+						),
+						...Object.keys(realParams).map(key_ => {
+							const key = key_ as keyof typeof realParams;
+
+							return xml(
+								"field",
+								{var: key},
+								xml("value", {}, realParams[key].toString()),
+							);
+						}),
+					),
+				),
+				room.toString(),
+			);
+		}
+		finally {
+			// Leave room
+
+			account.client.send(
+				xml(
+					"presence",
+					{id: xid(), to: new JID(room.local, room.domain, nick), type: "unavailable"},
 				),
 			);
 		}
@@ -1466,6 +1649,7 @@ function App() {
 			setComposingToCounterpart,
 			joinRoom,
 			showDialog,
+			createRoom,
 		} satisfies AppContext),
 		[
 			accounts,
@@ -1482,6 +1666,7 @@ function App() {
 			joinRoom,
 			removeFriend,
 			showDialog,
+			createRoom,
 		],
 	);
 
@@ -1497,6 +1682,10 @@ function App() {
 	useEffect(() => {
 		return onUnmount;
 	}, [onUnmount]);
+
+	useEffect(() => {
+		if(dialogContainerRef.current !== null) dialogContainerRef.current.closeAll();
+	}, [location]);
 
 	if(!inited) return null;
 

@@ -25,6 +25,18 @@ export const LoadState = {
 	wrapValue<T>(value: T): LoadState<T> & {state: "done"} {
 		return {state: "done", value};
 	},
+
+	map<T, O>(state: LoadState<T>, fn: (value: T) => O): LoadState<O> {
+		if(state.state === "done") {
+			try {
+				return LoadState.wrapValue(fn(state.value));
+			}
+			catch(ex) {
+				return LoadState.wrapError(ex);
+			}
+		}
+		else return state;
+	},
 };
 
 export default function useData<T>(fn: () => Promise<T>, deps: unknown[]) {

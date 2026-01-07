@@ -6,6 +6,7 @@ import { DialogContext } from "./Dialog";
 
 export interface DialogContainerRef {
 	showDialog(content: VNode): void;
+	closeAll(): void;
 }
 
 interface DialogInfo {
@@ -39,6 +40,9 @@ export default forwardRef<DialogContainerRef>(function DialogContainer(_, ref) {
 	const refValue = useMemo((): DialogContainerRef => ({
 		showDialog(content) {
 			setDialogs(current => [...current, {key: Math.random().toString(), content}]);
+		},
+		closeAll() {
+			setDialogs([]);
 		},
 	}), []);
 

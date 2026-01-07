@@ -2,7 +2,8 @@ import { css, cx } from "@emotion/css";
 import { InputHTMLAttributes } from "preact";
 import unsignal from "../util/unsignal";
 import { themeVars } from "../util/theme";
-import { useEffect, useRef } from "preact/hooks";
+import { useContext, useEffect, useRef } from "preact/hooks";
+import { FieldContext } from "./Field";
 
 const styles = {
 	input: css({
@@ -22,6 +23,8 @@ const styles = {
 };
 
 export default function Input(props: InputHTMLAttributes<HTMLInputElement>) {
+	const fieldCtx = useContext(FieldContext);
+
 	const ref = useRef<HTMLInputElement>(null);
 
 	const autofocus = unsignal(props.autofocus);
@@ -32,5 +35,10 @@ export default function Input(props: InputHTMLAttributes<HTMLInputElement>) {
 		}
 	}, [autofocus]);
 
-	return <input {...props} class={cx(styles.input, unsignal(props.className), unsignal(props.class))} ref={ref} />;
+	return <input
+		id={fieldCtx?.id}
+		{...props}
+		class={cx(styles.input, unsignal(props.className), unsignal(props.class))}
+		ref={ref}
+	/>;
 }
