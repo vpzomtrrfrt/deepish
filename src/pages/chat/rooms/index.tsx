@@ -10,6 +10,7 @@ import MessageInput from "../../../components/MessageInput";
 import Menu, { MenuItem } from "../../../components/Menu";
 import { useLocation } from "wouter-preact";
 import TaskDialog from "../../../components/TaskDialog";
+import ConfirmDialog from "../../../components/ConfirmDialog";
 
 const styles = {
 	page: css({
@@ -122,11 +123,20 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 	});
 
 	const leaveRoom = useLatestCallback(() => {
-		const task = appCtx.leaveRoom.call(undefined, account.jid, room!.jid);
+		appCtx.showDialog(
+			<ConfirmDialog
+				confirmText="Leave"
+				onConfirm={() => {
+					const task = appCtx.leaveRoom.call(undefined, account.jid, room!.jid);
 
-		appCtx.showDialog(<TaskDialog task={task}>Leaving room…</TaskDialog>);
+					appCtx.showDialog(<TaskDialog task={task}>Leaving room…</TaskDialog>);
 
-		task.then(() => navigate("~/"));
+					task.then(() => navigate("~/"));
+				}}
+			>
+				<p>Are you sure you want to leave <em>{room!.jid.toString()}</em>?</p>
+			</ConfirmDialog>
+		);
 	});
 
 	const loaderContent = pageState === null ?
