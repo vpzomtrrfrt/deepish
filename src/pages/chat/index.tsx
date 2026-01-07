@@ -381,9 +381,11 @@ function ContactsPage() {
 										{info.jid.toString()}
 									</div>
 									<div class={styles.friendButtons}>
-										<IconButton onClick={removeFriend.bind(undefined, info.jid)}>
-											<Icon path={mdiClose} />
-										</IconButton>
+										<WithTooltip tooltip="Cancel Request">
+											<IconButton onClick={removeFriend.bind(undefined, info.jid)}>
+												<Icon path={mdiClose} />
+											</IconButton>
+										</WithTooltip>
 									</div>
 								</div>;
 							})}
@@ -400,12 +402,16 @@ function ContactsPage() {
 												{info.jid.toString()}
 											</div>
 											<div class={styles.friendButtons}>
-												<IconButton onClick={acceptFriendRequest.bind(undefined, info.jid)}>
-													<Icon path={mdiCheck} />
-												</IconButton>
-												<IconButton onClick={rejectFriendRequest.bind(undefined, info.jid)}>
-													<Icon path={mdiClose} />
-												</IconButton>
+												<WithTooltip tooltip="Accept Request">
+													<IconButton onClick={acceptFriendRequest.bind(undefined, info.jid)}>
+														<Icon path={mdiCheck} />
+													</IconButton>
+												</WithTooltip>
+												<WithTooltip tooltip="Reject Request">
+													<IconButton onClick={rejectFriendRequest.bind(undefined, info.jid)}>
+														<Icon path={mdiClose} />
+													</IconButton>
+												</WithTooltip>
 											</div>
 										</div>;
 									})}
