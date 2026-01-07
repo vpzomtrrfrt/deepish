@@ -284,6 +284,10 @@ function ContactsPage() {
 		appCtx.acceptFriendRequest(account.jid, target);
 	}
 
+	function rejectFriendRequest(target: JID) {
+		appCtx.rejectFriendRequest(account.jid, target);
+	}
+
 	function removeFriend(target: JID) {
 		appCtx.removeFriend(account.jid, target);
 	}
@@ -398,6 +402,9 @@ function ContactsPage() {
 											<div class={styles.friendButtons}>
 												<IconButton onClick={acceptFriendRequest.bind(undefined, info.jid)}>
 													<Icon path={mdiCheck} />
+												</IconButton>
+												<IconButton onClick={rejectFriendRequest.bind(undefined, info.jid)}>
+													<Icon path={mdiClose} />
 												</IconButton>
 											</div>
 										</div>;

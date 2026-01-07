@@ -123,6 +123,7 @@ export interface AppContext {
 	sendMessageToCounterpart(account: JID, target: JID, message: {body: string}): Promise<void>;
 	markCounterpartAsVisible(account: JID, target: JID): void;
 	acceptFriendRequest(account: JID, target: JID): void;
+	rejectFriendRequest(account: JID, target: JID): void;
 	removeFriend(account: JID, target: JID): void;
 	sendFriendRequest(account: JID, target: JID): void;
 	setComposingToCounterpart(account: JID, target: JID, composing: boolean): void;
@@ -1377,6 +1378,40 @@ function App() {
 		}
 	});
 
+	const rejectFriendRequest = useLatestCallback((accountJID: JID, target: JID) => {
+		{
+			const account = accounts.find(x => x.jid.equals(accountJID));
+			if(typeof account === "undefined") throw new Error("No such account");
+
+			const info = account.counterparts.get(target.toString());
+			if(typeof info === "undefined") throw new Error("Unknown counterpart");
+
+			if(!info.requestingMySubscription) throw new Error("No such friend request");
+
+			account.client.send(
+				xml(
+					"presence",
+					{to: target.toString(), type: "unsubscribed"},
+				),
+			);
+		}
+
+		updateAccount(accountJID, account => {
+			const counterparts = new Map(account.counterparts);
+
+			const entry = counterparts.get(target.toString());
+
+			if(typeof entry !== "undefined") {
+				counterparts.set(target.toString(), {
+					...entry,
+					requestingMySubscription: false,
+				});
+			}
+
+			return {...account, counterparts};
+		});
+	});
+
 	const removeFriend = useLatestCallback(async (accountJID: JID, target: JID) => {
 		{
 			const account = accounts.find(x => x.jid.equals(accountJID));
@@ -1733,6 +1768,7 @@ function App() {
 			sendMessageToRoom,
 			markCounterpartAsVisible,
 			acceptFriendRequest,
+			rejectFriendRequest,
 			removeFriend,
 			setComposingToCounterpart,
 			joinRoom,
@@ -1752,6 +1788,7 @@ function App() {
 			loadAccounts,
 			markCounterpartAsVisible,
 			acceptFriendRequest,
+			rejectFriendRequest,
 			setComposingToCounterpart,
 			joinRoom,
 			leaveRoom,
