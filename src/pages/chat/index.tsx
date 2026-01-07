@@ -308,6 +308,13 @@ function ContactsPage() {
 	const incomingRequestCounterparts = Array.from(account.counterparts.values())
 		.filter(x => x.requestingMySubscription);
 
+	const outgoingRequestCounterparts = Array.from(account.counterparts.values())
+		.filter(info => {
+			return info.rosterEntry !== null &&
+				!info.rosterEntry.subscriptionTo &&
+				info.rosterEntry.requestingSubscriptionTo;
+		});
+
 	return <div class={styles.contactsPage}>
 		<ManualTabsContainer tab={tab} setTab={setTab}>
 			<TabsList>
@@ -362,35 +369,27 @@ function ContactsPage() {
 						<h1>Add Friend</h1>
 						<AddFriendForm />
 					</Block>
-					<Block>
-						<h1>Outgoing</h1>
-						<div>
-							{Array.from(account.counterparts.values(), info => {
-								if(
-									!(
-										info.rosterEntry !== null &&
-											!info.rosterEntry.subscriptionTo &&
-											info.rosterEntry.requestingSubscriptionTo
-									)
-								) {
-									return null;
-								}
-
-								return <div class={styles.friendEntry} key={info.jid.toString()}>
-									<div style={{flexGrow: 1}}>
-										{info.jid.toString()}
-									</div>
-									<div class={styles.friendButtons}>
-										<WithTooltip tooltip="Cancel Request">
-											<IconButton onClick={removeFriend.bind(undefined, info.jid)}>
-												<Icon path={mdiClose} />
-											</IconButton>
-										</WithTooltip>
-									</div>
-								</div>;
-							})}
-						</div>
-					</Block>
+					{outgoingRequestCounterparts.length > 0 &&
+						<Block>
+							<h1>Outgoing</h1>
+							<div>
+								{outgoingRequestCounterparts.map(info => {
+									return <div class={styles.friendEntry} key={info.jid.toString()}>
+										<div style={{flexGrow: 1}}>
+											{info.jid.toString()}
+										</div>
+										<div class={styles.friendButtons}>
+											<WithTooltip tooltip="Cancel Request">
+												<IconButton onClick={removeFriend.bind(undefined, info.jid)}>
+													<Icon path={mdiClose} />
+												</IconButton>
+											</WithTooltip>
+										</div>
+									</div>;
+								})}
+							</div>
+						</Block>
+					}
 					{
 						incomingRequestCounterparts.length > 0 &&
 							<Block>
