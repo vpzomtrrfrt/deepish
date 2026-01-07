@@ -124,6 +124,7 @@ export interface AppContext {
 	markCounterpartAsVisible(account: JID, target: JID): void;
 	acceptFriendRequest(account: JID, target: JID): void;
 	removeFriend(account: JID, target: JID): void;
+	sendFriendRequest(account: JID, target: JID): void;
 	setComposingToCounterpart(account: JID, target: JID, composing: boolean): void;
 	joinRoom(account: JID, room: JID): Promise<void>;
 	leaveRoom(account: JID, room: JID): Promise<void>;
@@ -1409,6 +1410,49 @@ function App() {
 		});
 	});
 
+	const sendFriendRequest = useLatestCallback((accountJID: JID, target: JID) => {
+		{
+			const account = accounts.find(x => x.jid.equals(accountJID));
+			if(typeof account === "undefined") throw new Error("No such account");
+
+			const entry = account.counterparts.get(target.toString());
+
+			if(typeof entry !== "undefined" && entry.rosterEntry !== null && entry.rosterEntry.subscriptionTo) {
+				throw new Error("That user is already your friend");
+			}
+
+			// should trigger server to add target to roster
+			account.client.send(
+				xml(
+					"presence",
+					{to: target.toString(), type: "subscribe"},
+				),
+			);
+
+			account.client.send(
+				xml(
+					"presence",
+					{to: target.toString(), type: "subscribed"},
+				),
+			);
+		}
+
+		updateAccount(accountJID, account => {
+			const counterparts = new Map(account.counterparts);
+
+			counterparts.set(target.toString(), {
+				...(counterparts.get(target.toString()) ?? {...DEFAULT_COUNTERPART_INFO, jid: target}),
+				rosterEntry: {
+					subscriptionFrom: true,
+					subscriptionTo: false,
+					requestingSubscriptionTo: true,
+				},
+			});
+
+			return {...account, counterparts};
+		});
+	});
+
 	const setComposingToCounterpart = useLatestCallback((accountJID: JID, target: JID, composing: boolean) => {
 		{
 			const account = accounts.find(x => x.jid.equals(accountJID));
@@ -1695,6 +1739,7 @@ function App() {
 			leaveRoom,
 			showDialog,
 			createRoom,
+			sendFriendRequest,
 		} satisfies AppContext),
 		[
 			accounts,
@@ -1713,6 +1758,7 @@ function App() {
 			removeFriend,
 			showDialog,
 			createRoom,
+			sendFriendRequest,
 		],
 	);
 

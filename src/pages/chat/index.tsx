@@ -1,6 +1,6 @@
 import { css, cx } from "@emotion/css";
 import { mdiAccountMultiple, mdiCheck, mdiClose, mdiHome, mdiPlus } from "@mdi/js";
-import { JID } from "@xmpp/jid";
+import { JID, parse as parseJID } from "@xmpp/jid";
 import { useCallback, useMemo, useState } from "preact/hooks";
 import { Link, Route, Switch, useRoute } from "wouter-preact";
 
@@ -24,6 +24,10 @@ import { getShowTypeForCounterpart } from "../../util/statusUtil";
 import { getNickForCounterpart } from "../../util/profileUtil";
 import Menu, { MenuItem } from "../../components/Menu";
 import ConfirmDialog from "../../components/ConfirmDialog";
+import Input from "../../components/Input";
+import useLinkState from "linkstate/hook";
+import Button from "../../components/Button";
+import useSubmitting from "../../util/useSubmitting";
 
 const styles = {
 	page: css({
@@ -351,6 +355,10 @@ function ContactsPage() {
 			{
 				tab === FriendsTab.Requests && <div>
 					<Block>
+						<h1>Add Friend</h1>
+						<AddFriendForm />
+					</Block>
+					<Block>
 						<h1>Outgoing</h1>
 						<div>
 							{Array.from(account.counterparts.values(), info => {
@@ -426,3 +434,26 @@ const presenceShowTypeNames: Record<PresenceShowTypeExtended, string> = {
 	[PresenceShowTypeExtended.Available]: "Online",
 	[PresenceShowTypeExtended.Unavailable]: "Offline",
 };
+
+function AddFriendForm() {
+	const appCtx = useAppContext();
+	const account = appCtx.accounts[0];
+
+	const [input, linkInput, setInput] = useLinkState("");
+
+	const [submitting, submit] = useSubmitting((evt: Event) => {
+		evt.preventDefault();
+
+		appCtx.sendFriendRequest(account.jid, parseJID(input));
+
+		setInput("");
+
+		return Promise.resolve();
+	});
+
+	return <form onSubmit={submit}>
+		<Input type="text" value={input} onChange={linkInput} placeholder="user@server.example" pattern=".*@.*" />
+		{" "}
+		<Button tier="primary" type="submit" disabled={submitting}>Add</Button>
+	</form>
+}
