@@ -17,6 +17,7 @@ const styles = {
 		padding: ".5rem",
 		position: "relative",
 		textDecoration: "none",
+		lineHeight: 1.35,
 
 		"&::after": {
 			content: "\"\"",

@@ -19,7 +19,7 @@ import { ManualTabsContainer, TabLink, TabsList } from "../../components/Tabs";
 import Block from "../../components/Block";
 import IconButton from "../../components/IconButton";
 import * as commonStyles from "../../util/commonStyles";
-import { PresenceShowTypeExtended } from "../../util/types";
+import { Counterpart, PresenceShowTypeExtended } from "../../util/types";
 import { getShowTypeForCounterpart } from "../../util/statusUtil";
 import { getNickForCounterpart } from "../../util/profileUtil";
 import Menu, { MenuItem } from "../../components/Menu";
@@ -28,6 +28,7 @@ import Input from "../../components/Input";
 import useLinkState from "linkstate/hook";
 import Button from "../../components/Button";
 import useSubmitting from "../../util/useSubmitting";
+import PriorityUnreadIndicator from "../../components/PriorityUnreadIndicator";
 
 const styles = {
 	page: css({
@@ -56,8 +57,16 @@ const styles = {
 		borderColor: "transparent",
 		transition: "border-color 300ms",
 
+		position: "relative",
+
 		"&:hover": {
 			borderColor: "#7f7f7f",
+		},
+
+		"> .unreadIndicator": {
+			position: "absolute",
+			bottom: 0,
+			right: 0,
 		},
 	}),
 	roomLinkIcon: css({
@@ -189,12 +198,19 @@ function ChatView(props: {account: Account}) {
 
 	const addMatch = useRoute("/rooms:add");
 
+	const incomingRequestCounterparts = Array.from(props.account.counterparts.values())
+		.filter(counterpartIsIncomingRequest);
+
 	return <div class={css({display: "flex", flexDirection: "column"})}>
 		<div class={styles.roomList}>
 			<div>
 				<Link to="~/">
 					<div class={cx(styles.roomLink, currentRoom === null && !addMatch[0] && styles.currentRoomLink, styles.homeAvatar)}>
 						<Icon path={mdiHome} class={styles.roomLinkIcon} />
+						{
+							incomingRequestCounterparts.length > 0 &&
+								<PriorityUnreadIndicator count={incomingRequestCounterparts.length} />
+						}
 					</div>
 				</Link>
 			</div>
@@ -306,7 +322,7 @@ function ContactsPage() {
 	}, []);
 
 	const incomingRequestCounterparts = Array.from(account.counterparts.values())
-		.filter(x => x.requestingMySubscription);
+		.filter(counterpartIsIncomingRequest);
 
 	const outgoingRequestCounterparts = Array.from(account.counterparts.values())
 		.filter(info => {
@@ -320,7 +336,15 @@ function ContactsPage() {
 			<TabsList>
 				<TabLink tab={FriendsTab.Online}>Online</TabLink>
 				<TabLink tab={FriendsTab.All}>All</TabLink>
-				<TabLink tab={FriendsTab.Requests}>Requests</TabLink>
+				<TabLink tab={FriendsTab.Requests}>
+					Requests
+					{incomingRequestCounterparts.length > 0 &&
+						<>
+							{" "}
+							<PriorityUnreadIndicator count={incomingRequestCounterparts.length} />
+						</>
+					}
+				</TabLink>
 			</TabsList>
 
 			{
@@ -468,4 +492,8 @@ function AddFriendForm() {
 		{" "}
 		<Button tier="primary" type="submit" disabled={submitting}>Add</Button>
 	</form>
+}
+
+function counterpartIsIncomingRequest(info: Counterpart) {
+	return info.requestingMySubscription;
 }
