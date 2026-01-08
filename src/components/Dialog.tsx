@@ -1,9 +1,10 @@
-import { css } from "@emotion/css";
+import { css, cx } from "@emotion/css";
 import { mdiClose } from "@mdi/js";
-import { ComponentChildren, createContext } from "preact";
+import { ComponentChildren, createContext, JSX } from "preact";
 import { useContext } from "preact/hooks";
 
 import { themeVars } from "../util/theme";
+import unsignal from "../util/unsignal";
 import Icon from "./Icon";
 import IconButton from "./IconButton";
 
@@ -41,12 +42,16 @@ const styles = {
 export default function Dialog(props: {children: ComponentChildren}) {
 	const dialogCtx = useContext(DialogContext)!;
 
-	return <div class={styles.dialog}>
+	return <DialogLike>
 		<div class={styles.dialogHeader}>
 			<IconButton onClick={dialogCtx.close}><Icon path={mdiClose} /></IconButton>
 		</div>
 		{props.children}
-	</div>;
+	</DialogLike>;
+}
+
+export function DialogLike(props: JSX.HTMLAttributes<HTMLDivElement>) {
+	return <div {...props} class={cx(styles.dialog, unsignal(props.class), unsignal(props.className))} />;
 }
 
 export function DialogFooter(props: {children: ComponentChildren}) {

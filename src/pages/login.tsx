@@ -3,6 +3,10 @@ import { xml } from "@xmpp/client";
 import useLinkState from "linkstate/hook";
 import { useLocation } from "wouter-preact";
 
+import Button from "../components/Button";
+import { DialogFooter, DialogLike } from "../components/Dialog";
+import Field, { FieldLabel } from "../components/Field";
+import Input from "../components/Input";
 import { useConnectionContext } from "../util/connection";
 import useSubmitting from "../util/useSubmitting";
 
@@ -63,11 +67,30 @@ export default function LoginPage() {
 
 	console.log("what", jid);
 
-	return <div>
-		<form onSubmit={submit}>
-			<input type="text" value={jid} onChange={linkJid} />
-			<input type="password" value={password} onChange={linkPassword} />
-			<button type="submit" disabled={submitting}>Continue</button>
-		</form>
+	return <div
+		style={{
+			display: "flex",
+			flexDirection: "column",
+			alignItems: "center",
+			justifyContent: "center",
+			height: "100%",
+		}}
+	>
+		<DialogLike>
+			<form onSubmit={submit}>
+				<h1>Log In</h1>
+				<Field>
+					<FieldLabel>XMPP Address</FieldLabel>
+					<Input type="text" value={jid} onChange={linkJid} />
+				</Field>
+				<Field>
+					<FieldLabel>Password</FieldLabel>
+					<Input type="password" value={password} onChange={linkPassword} />
+				</Field>
+				<DialogFooter>
+					<Button tier="primary" type="submit" disabled={submitting}>Log In</Button>
+				</DialogFooter>
+			</form>
+		</DialogLike>
 	</div>;
 }
