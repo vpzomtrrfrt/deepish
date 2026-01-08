@@ -1,5 +1,5 @@
-import { ButtonHTMLAttributes } from "preact";
 import { css, cx } from "@emotion/css";
+import { ButtonHTMLAttributes } from "preact";
 
 import * as commonStyles from "../util/commonStyles";
 import unsignal from "../util/unsignal";

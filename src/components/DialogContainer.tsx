@@ -1,7 +1,8 @@
 import { css } from "@emotion/css";
 import { VNode } from "preact";
-import { useCallback, useEffect, useMemo, useState } from "preact/hooks";
 import { forwardRef } from "preact/compat";
+import { useCallback, useEffect, useMemo, useState } from "preact/hooks";
+
 import { DialogContext } from "./Dialog";
 
 export interface DialogContainerRef {

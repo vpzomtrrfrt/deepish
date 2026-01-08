@@ -1,6 +1,6 @@
-import checker from "vite-plugin-checker";
 import preact from "@preact/preset-vite";
 import * as pathUtil from "path";
+import checker from "vite-plugin-checker";
 
 export default {
 	plugins: [

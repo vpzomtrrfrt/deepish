@@ -2,9 +2,9 @@ import { css, cx } from "@emotion/css";
 import { JID, parse as parseJID } from "@xmpp/jid";
 
 import { useAppContext } from "..";
+import { getShowTypeForCounterpart } from "../util/statusUtil";
 import Avatar, { AvatarSize } from "./Avatar";
 import StatusIndicator from "./StatusIndicator";
-import { getShowTypeForCounterpart } from "../util/statusUtil";
 
 const styles = {
 	avatarWithStatus: css({

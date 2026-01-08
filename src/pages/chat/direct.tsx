@@ -1,15 +1,16 @@
 import { css, cx } from "@emotion/css";
 import { JID, parse as parseJID } from "@xmpp/jid";
-import { useEffect, useRef, useState } from "preact/hooks";
-import { Message, MessageEvent, ResultSetInfo, useAppContext } from "../..";
-import useLatestCallback from "use-latest-callback";
-import { LoadState } from "../../util/useData";
-import { DataNonDoneView } from "../../components/DataView";
 import { pushAtSortPosition } from "array-push-at-sort-position";
-import MessageList, { LoadMoreTriggerer } from "../../components/MessageList";
+import { useEffect, useRef, useState } from "preact/hooks";
+import useLatestCallback from "use-latest-callback";
+
+import { Message, MessageEvent, ResultSetInfo, useAppContext } from "../..";
+import { DataNonDoneView } from "../../components/DataView";
 import MessageInput from "../../components/MessageInput";
+import MessageList, { LoadMoreTriggerer } from "../../components/MessageList";
 import { getNickForCounterpart } from "../../util/profileUtil";
 import { themeVars } from "../../util/theme";
+import { LoadState } from "../../util/useData";
 
 const styles = {
 	page: css({

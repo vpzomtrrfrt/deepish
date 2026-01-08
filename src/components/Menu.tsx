@@ -1,12 +1,13 @@
 import { Menu as BaseMenu } from "@base-ui-components/react/menu";
-import { ComponentChildren } from "preact";
-import IconButton from "./IconButton";
-import { mdiDotsVertical } from "@mdi/js";
-import Icon from "./Icon";
-import unsignal from "../util/unsignal";
 import { css, cx } from "@emotion/css";
-import { themeVars } from "../util/theme";
+import { mdiDotsVertical } from "@mdi/js";
+import { ComponentChildren } from "preact";
+
 import { useAppContext } from "..";
+import { themeVars } from "../util/theme";
+import unsignal from "../util/unsignal";
+import Icon from "./Icon";
+import IconButton from "./IconButton";
 
 const styles = {
 	popup: css({

@@ -1,8 +1,9 @@
-import { useContext, useEffect, useState } from "preact/hooks";
-import Dialog, { DialogContext } from "./Dialog";
 import { ComponentChildren } from "preact";
+import { useContext, useEffect, useState } from "preact/hooks";
 import useLatestCallback from "use-latest-callback";
+
 import { ErrorAlert } from "./DataView";
+import Dialog, { DialogContext } from "./Dialog";
 
 export default function TaskDialog(props: {task: Promise<void>; children: ComponentChildren}) {
 	const dialogCtx = useContext(DialogContext)!;

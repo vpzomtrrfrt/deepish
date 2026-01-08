@@ -1,7 +1,8 @@
-import { useCallback, useContext } from "preact/hooks";
-import Dialog, { DialogContext, DialogFooter } from "./Dialog";
 import { ComponentChildren } from "preact";
+import { useCallback, useContext } from "preact/hooks";
+
 import Button from "./Button";
+import Dialog, { DialogContext, DialogFooter } from "./Dialog";
 
 export default function ConfirmDialog(props: {onConfirm(): void; children: ComponentChildren; confirmText: string}) {
 	const dialogCtx = useContext(DialogContext)!;

@@ -2,8 +2,8 @@ import { Tooltip } from "@base-ui-components/react";
 import { css } from "@emotion/css";
 import { ComponentChildren, JSX } from "preact";
 
-import { themeVars } from "../util/theme";
 import { useAppContext } from "..";
+import { themeVars } from "../util/theme";
 
 const styles = {
 	popup: css({

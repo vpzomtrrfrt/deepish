@@ -1,8 +1,9 @@
 import * as xmppClient from "@xmpp/client";
 import { xml } from "@xmpp/client";
 import useLinkState from "linkstate/hook";
-import useSubmitting from "../util/useSubmitting";
+
 import { useAppContext } from "..";
+import useSubmitting from "../util/useSubmitting";
 
 export default function LoginPage() {
 	const appCtx = useAppContext();

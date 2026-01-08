@@ -1,16 +1,17 @@
 import { css } from "@emotion/css";
-import { useEffect, useRef, useState } from "preact/hooks";
-import { Message, MessageEvent, ResultSetInfo, useAppContext } from "../../..";
-import useLatestCallback from "use-latest-callback";
-import { LoadState } from "../../../util/useData";
-import { DataNonDoneView } from "../../../components/DataView";
 import { pushAtSortPosition } from "array-push-at-sort-position";
-import MessageList, { LoadMoreTriggerer } from "../../../components/MessageList";
-import MessageInput from "../../../components/MessageInput";
-import Menu, { MenuItem } from "../../../components/Menu";
+import { useEffect, useRef, useState } from "preact/hooks";
+import useLatestCallback from "use-latest-callback";
 import { useLocation } from "wouter-preact";
-import TaskDialog from "../../../components/TaskDialog";
+
+import { Message, MessageEvent, ResultSetInfo, useAppContext } from "../../..";
 import ConfirmDialog from "../../../components/ConfirmDialog";
+import { DataNonDoneView } from "../../../components/DataView";
+import Menu, { MenuItem } from "../../../components/Menu";
+import MessageInput from "../../../components/MessageInput";
+import MessageList, { LoadMoreTriggerer } from "../../../components/MessageList";
+import TaskDialog from "../../../components/TaskDialog";
+import { LoadState } from "../../../util/useData";
 
 const styles = {
 	page: css({

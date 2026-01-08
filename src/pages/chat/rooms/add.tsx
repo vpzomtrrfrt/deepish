@@ -1,17 +1,17 @@
 import { JID, parse as parseJID } from "@xmpp/jid";
 import useLinkState from "linkstate/hook";
-
-import Block from "../../../components/Block";
-import useSubmitting from "../../../util/useSubmitting";
-import { ServiceInfo, useAppContext } from "../../..";
-import Input from "../../../components/Input";
-import { useLocation } from "wouter-preact";
-import Button from "../../../components/Button";
 import { useCallback, useContext } from "preact/hooks";
-import { LoadState } from "../../../util/useData";
-import Dialog, { DialogContext, DialogFooter } from "../../../components/Dialog";
+import { useLocation } from "wouter-preact";
+
+import { ServiceInfo, useAppContext } from "../../..";
+import Block from "../../../components/Block";
+import Button from "../../../components/Button";
 import { DataNonDoneView } from "../../../components/DataView";
+import Dialog, { DialogContext, DialogFooter } from "../../../components/Dialog";
 import Field, { FieldLabel } from "../../../components/Field";
+import Input from "../../../components/Input";
+import { LoadState } from "../../../util/useData";
+import useSubmitting from "../../../util/useSubmitting";
 
 export default function ChatRoomAddPage() {
 	const appCtx = useAppContext();

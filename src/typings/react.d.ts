@@ -3,8 +3,8 @@ declare module "react" {
 	export {
 		AriaAttributes,
 		ComponentProps,
-		ComponentPropsWithRef,
 		ComponentPropsWithoutRef,
+		ComponentPropsWithRef,
 		ComponentType,
 		Context,
 		CSSProperties,

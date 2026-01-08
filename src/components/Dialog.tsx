@@ -1,10 +1,11 @@
 import { css } from "@emotion/css";
-import { ComponentChildren, createContext } from "preact";
-import { themeVars } from "../util/theme";
-import IconButton from "./IconButton";
 import { mdiClose } from "@mdi/js";
+import { ComponentChildren, createContext } from "preact";
 import { useContext } from "preact/hooks";
+
+import { themeVars } from "../util/theme";
 import Icon from "./Icon";
+import IconButton from "./IconButton";
 
 export interface DialogContext {
 	close(): void;

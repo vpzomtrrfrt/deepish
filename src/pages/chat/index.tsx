@@ -1,34 +1,34 @@
 import { css, cx } from "@emotion/css";
 import { mdiAccountMultiple, mdiCheck, mdiClose, mdiHome, mdiPlus } from "@mdi/js";
 import { JID, parse as parseJID } from "@xmpp/jid";
+import useLinkState from "linkstate/hook";
 import { useCallback, useMemo, useState } from "preact/hooks";
 import { Link, Route, Switch, useRoute } from "wouter-preact";
 
 import { Account, useAppContext } from "../..";
+import Avatar from "../../components/Avatar";
+import AvatarWithStatus from "../../components/AvatarWithStatus";
+import Block from "../../components/Block";
+import Button from "../../components/Button";
+import ConfirmDialog from "../../components/ConfirmDialog";
+import { ErrorAlert } from "../../components/DataView";
+import Icon from "../../components/Icon";
+import IconButton from "../../components/IconButton";
+import Input from "../../components/Input";
+import Menu, { MenuItem } from "../../components/Menu";
+import PriorityUnreadIndicator from "../../components/PriorityUnreadIndicator";
+import { ManualTabsContainer, TabLink, TabsList } from "../../components/Tabs";
+import WithTooltip from "../../components/WithTooltip";
+import * as commonStyles from "../../util/commonStyles";
+import { getNickForCounterpart } from "../../util/profileUtil";
+import { getShowTypeForCounterpart } from "../../util/statusUtil";
+import { themeVars } from "../../util/theme";
+import { Counterpart, PresenceShowTypeExtended } from "../../util/types";
+import { LoadState } from "../../util/useData";
+import useSubmitting from "../../util/useSubmitting";
+import DirectChatPage from "./direct";
 import ChatRoomPage from "./rooms";
 import ChatRoomAddPage from "./rooms/add";
-import { LoadState } from "../../util/useData";
-import Avatar from "../../components/Avatar";
-import WithTooltip from "../../components/WithTooltip";
-import { themeVars } from "../../util/theme";
-import Icon from "../../components/Icon";
-import DirectChatPage from "./direct";
-import AvatarWithStatus from "../../components/AvatarWithStatus";
-import { ErrorAlert } from "../../components/DataView";
-import { ManualTabsContainer, TabLink, TabsList } from "../../components/Tabs";
-import Block from "../../components/Block";
-import IconButton from "../../components/IconButton";
-import * as commonStyles from "../../util/commonStyles";
-import { Counterpart, PresenceShowTypeExtended } from "../../util/types";
-import { getShowTypeForCounterpart } from "../../util/statusUtil";
-import { getNickForCounterpart } from "../../util/profileUtil";
-import Menu, { MenuItem } from "../../components/Menu";
-import ConfirmDialog from "../../components/ConfirmDialog";
-import Input from "../../components/Input";
-import useLinkState from "linkstate/hook";
-import Button from "../../components/Button";
-import useSubmitting from "../../util/useSubmitting";
-import PriorityUnreadIndicator from "../../components/PriorityUnreadIndicator";
 
 const styles = {
 	page: css({

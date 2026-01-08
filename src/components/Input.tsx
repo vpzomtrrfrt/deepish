@@ -1,8 +1,9 @@
 import { css, cx } from "@emotion/css";
 import { InputHTMLAttributes } from "preact";
-import unsignal from "../util/unsignal";
-import { themeVars } from "../util/theme";
 import { useContext, useEffect, useRef } from "preact/hooks";
+
+import { themeVars } from "../util/theme";
+import unsignal from "../util/unsignal";
 import { FieldContext } from "./Field";
 
 const styles = {

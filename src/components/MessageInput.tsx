@@ -1,12 +1,12 @@
 import { css } from "@emotion/css";
+import { mdiSend } from "@mdi/js";
 import useLinkState from "linkstate/hook";
+import { useEffect } from "preact/hooks";
 
 import useSubmitting from "../util/useSubmitting";
-import Input from "./Input";
-import IconButton from "./IconButton";
-import { mdiSend } from "@mdi/js";
 import Icon from "./Icon";
-import { useEffect } from "preact/hooks";
+import IconButton from "./IconButton";
+import Input from "./Input";
 
 const styles = {
 	messageInput: css({

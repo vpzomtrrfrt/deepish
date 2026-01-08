@@ -1,3 +1,5 @@
+import "./global.css";
+
 import { Tooltip } from "@base-ui-components/react";
 import { IDBCache } from "@instructure/idb-cache";
 import * as xmppClient from "@xmpp/client";
@@ -10,18 +12,16 @@ import toBase64 from "es-arraybuffer-base64/Uint8Array.prototype.toBase64";
 import toHex from "es-arraybuffer-base64/Uint8Array.prototype.toHex";
 import { createContext, RefObject, render, VNode } from "preact";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "preact/hooks";
+import useLatestCallback from "use-latest-callback";
 import { Redirect, Route, useLocation } from "wouter-preact";
 
+import DialogContainer, { DialogContainerRef } from "./components/DialogContainer";
 import ChatPage from "./pages/chat";
 import LoginPage from "./pages/login";
 import { themeCSS } from "./util/theme";
 import { Counterpart, Presence, PresenceShowType, RosterEntry } from "./util/types";
 import { LoadState } from "./util/useData";
 import useEffectOnce from "./util/useEffectOnce";
-import useLatestCallback from "use-latest-callback";
-
-import "./global.css";
-import DialogContainer, { DialogContainerRef } from "./components/DialogContainer";
 
 const DEFAULT_COUNTERPART_INFO: Omit<Counterpart, "jid"> = {
 	rosterEntry: null,

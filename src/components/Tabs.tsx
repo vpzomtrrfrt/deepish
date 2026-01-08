@@ -1,8 +1,9 @@
 import { css, cx } from "@emotion/css";
 import { ComponentChild, ComponentChildren, createContext } from "preact";
 import { useContext, useMemo, useState } from "preact/hooks";
-import CallbackLink from "./CallbackLink";
+
 import { themeVars } from "../util/theme";
+import CallbackLink from "./CallbackLink";
 
 const styles = {
 	tabsList: css({

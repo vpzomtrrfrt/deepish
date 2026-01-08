@@ -2,8 +2,8 @@ import { css, cx } from "@emotion/css";
 import { JID, parse as parseJID } from "@xmpp/jid";
 import { useMemo } from "preact/hooks";
 
-import { generateColorForID } from "../util/xmpp/colorGeneration";
 import { useAppContext } from "..";
+import { generateColorForID } from "../util/xmpp/colorGeneration";
 
 const styles = {
 	avatar: css({
