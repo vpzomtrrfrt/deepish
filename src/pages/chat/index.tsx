@@ -3,7 +3,8 @@ import { mdiAccountMultiple, mdiCheck, mdiClose, mdiHome, mdiPlus } from "@mdi/j
 import { JID, parse as parseJID } from "@xmpp/jid";
 import useLinkState from "linkstate/hook";
 import { useCallback, useMemo, useState } from "preact/hooks";
-import { Link, Route, Switch, useRoute } from "wouter-preact";
+import useLatestCallback from "use-latest-callback";
+import { Link, Route, Switch, useLocation, useRoute } from "wouter-preact";
 
 import { useAppContext } from "../..";
 import Avatar from "../../components/Avatar";
@@ -82,6 +83,40 @@ const styles = {
 		alignItems: "center",
 
 		borderRadius: "100%",
+	}),
+	selfBox: css({
+		position: "absolute",
+		left: 0,
+		bottom: 0,
+		width: "calc(250px + 50px + 4px + .5rem + 2px)",
+		height: "calc(35px + 1rem)",
+
+		borderStyle: "solid",
+		borderWidth: "1px",
+		borderColor: themeVars.outline1,
+		backgroundColor: themeVars.bg1,
+
+		display: "flex",
+		alignItems: "center",
+		padding: ".5rem",
+		gap: ".5rem",
+		boxSizing: "border-box",
+
+		"&:hover": {
+			".friendEntryJID": {
+				visibility: "visible",
+			},
+		},
+	}),
+	selfBoxNameSegment: css({
+		flexGrow: 1,
+
+		display: "flex",
+		flexDirection: "column",
+		minWidth: 0,
+	}),
+	sidebarSegment: css({
+		height: "calc(100% - 35px - 1rem)",
 	}),
 	spaceItemsList: css({
 		width: "250px",
@@ -162,6 +197,8 @@ const styles = {
 		display: "inline-block",
 		fontSize: "80%",
 		visibility: "hidden",
+		overflowX: "hidden",
+		textOverflow: "ellipsis",
 	})),
 	contactsPage: css({
 		display: "flex",
@@ -182,6 +219,7 @@ export default function ChatPage() {
 	}
 
 	return <div class={styles.page}>
+		<SelfBox />
 		<ChatView />
 		<Switch>
 			<Route path="/rooms/:roomJID" component={ChatRoomPage} />
@@ -202,7 +240,7 @@ function ChatView() {
 	const incomingRequestCounterparts = Array.from(account.counterparts.values())
 		.filter(counterpartIsIncomingRequest);
 
-	return <div class={css({display: "flex", flexDirection: "column"})}>
+	return <div class={cx(styles.sidebarSegment, css({display: "flex", flexDirection: "column"}))}>
 		<div class={styles.roomList}>
 			<div>
 				<Link to="~/">
@@ -262,7 +300,7 @@ function ChatHomePage() {
 	}, [account.counterparts, account.rooms]);
 
 	return <div style={{display: "flex", flexGrow: 1}}>
-		<div class={styles.spaceItemsList}>
+		<div class={cx(styles.sidebarSegment, styles.spaceItemsList)}>
 			<Link to="/" className={active => cx(styles.spaceItem, active && "active")}>
 				<Icon path={mdiAccountMultiple} class={styles.bigSpaceItemIcon} />
 				<span>Friends</span>
@@ -490,6 +528,27 @@ function AddFriendForm() {
 		{" "}
 		<Button tier="primary" type="submit" disabled={submitting}>Add</Button>
 	</form>
+}
+
+function SelfBox() {
+	const [, navigate] = useLocation();
+
+	const account = useAccount();
+
+	const logout = useLatestCallback(() => {
+		navigate("~/logout/" + encodeURIComponent(account.jid.toString()));
+	});
+
+	return <div class={styles.selfBox}>
+		<Avatar jid={account.jid} size="md" />
+		<div class={styles.selfBoxNameSegment}>
+			{account.jid.local}
+			<div class={styles.friendEntryJID}>{account.jid.toString()}</div>
+		</div>
+		<Menu>
+			<MenuItem onClick={logout}>Log out</MenuItem>
+		</Menu>
+	</div>;
 }
 
 function counterpartIsIncomingRequest(info: Counterpart) {

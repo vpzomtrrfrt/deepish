@@ -2,6 +2,7 @@ import "./global.css";
 
 import { Tooltip } from "@base-ui-components/react/tooltip";
 import { IDBCache } from "@instructure/idb-cache";
+import { parse as parseJID } from "@xmpp/jid";
 import { createContext, RefObject, render, VNode } from "preact";
 import { useCallback, useContext, useEffect, useMemo, useRef } from "preact/hooks";
 import { Redirect, Route, useLocation } from "wouter-preact";
@@ -11,6 +12,7 @@ import ChatPage from "./pages/chat";
 import LoginPage from "./pages/login";
 import { ConnectionContext, useConnectionContext, useCreateConnection } from "./util/connection";
 import { themeCSS } from "./util/theme";
+import useEffectOnce from "./util/useEffectOnce";
 
 export interface AppContext {
 	cache: IDBCache;
@@ -67,6 +69,7 @@ function App() {
 					<Route path="/" component={RootPage} />
 					<Route path="/chat" component={ChatPage} nest />
 					<Route path="/login" component={LoginPage} />
+					<Route path="/logout/:jid" component={LogoutPage} />
 				</Tooltip.Provider>
 				<DialogContainer ref={dialogContainerRef} />
 				<div style={{position: "absolute"}} ref={portalContainerRef} />
@@ -86,4 +89,17 @@ function RootPage() {
 	else {
 		return <Redirect to="~/login" />;
 	}
+}
+
+function LogoutPage(props: {params: {jid: string}}) {
+	const [, navigate] = useLocation();
+	const conn = useConnectionContext();
+
+	useEffectOnce(() => {
+		conn.logout(parseJID(decodeURIComponent(props.params.jid)));
+
+		navigate("~/login");
+	});
+
+	return null;
 }

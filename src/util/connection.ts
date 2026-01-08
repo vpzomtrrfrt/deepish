@@ -108,6 +108,7 @@ export interface ConnectionContext {
 	inited: boolean;
 
 	saveToken(jid: JID, token: unknown, userAgent: string): void;
+	logout(jid: JID): void;
 	addEventListener<K extends keyof AppEventMap>(
 		event: K,
 		listener: (evt: AppEventMap[K]) => void,
@@ -1815,6 +1816,12 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 			saveToken(jid, token, userAgent) {
 				localStorage.setItem("deepishAccount", JSON.stringify({jid: jid.toString(), token, userAgent}));
 				loadAccounts();
+			},
+			logout(jid) {
+				if(accounts.length > 0 && accounts[0].jid.equals(jid)) {
+					localStorage.removeItem("deepishAccount");
+					loadAccounts();
+				}
 			},
 
 			addEventListener,
