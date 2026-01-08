@@ -3,7 +3,7 @@ import useLinkState from "linkstate/hook";
 import { useCallback, useContext } from "preact/hooks";
 import { useLocation } from "wouter-preact";
 
-import { ServiceInfo, useAppContext } from "../../..";
+import { RoomDiscoInfo, ServiceInfo, useAppContext } from "../../..";
 import Block from "../../../components/Block";
 import Button from "../../../components/Button";
 import { DataNonDoneView } from "../../../components/DataView";
@@ -17,8 +17,6 @@ export default function ChatRoomAddPage() {
 	const appCtx = useAppContext();
 	const account = appCtx.accounts[0]!;
 
-	const [, navigate] = useLocation();
-
 	const [joinInput, linkJoinInput] = useLinkState("");
 
 	const [submittingJoin, submitJoin] = useSubmitting(async (evt: Event) => {
@@ -26,9 +24,9 @@ export default function ChatRoomAddPage() {
 
 		const room = parseJID(joinInput);
 
-		await appCtx.joinRoom(account.jid, room);
+		const info = await appCtx.fetchRoomInfo(account.jid, room);
 
-		navigate("~/chat/rooms/" + encodeURIComponent(room.toString()));
+		appCtx.showDialog(<JoinRoomDialog roomJID={room} roomInfo={info} />);
 	});
 
 	const createRoom = useCallback(() => {
@@ -141,6 +139,42 @@ function CreateRoomDialogInner(props: {service: ServiceInfo}) {
 			<DialogFooter>
 				<Button tier="secondary" onClick={dialogCtx.close}>Cancel</Button>
 				<Button tier="primary" type="submit" disabled={submitting}>Create</Button>
+			</DialogFooter>
+		</form>
+	</Dialog>;
+}
+
+function JoinRoomDialog(props: {roomJID: JID; roomInfo: RoomDiscoInfo}) {
+	const appCtx = useAppContext();
+	const account = appCtx.accounts[0]!;
+
+	const [, navigate] = useLocation();
+
+	const dialogCtx = useContext(DialogContext)!;
+
+	const [nick, linkNick] = useLinkState(account.jid.local);
+
+	const [submitting, submit] = useSubmitting(async (evt: Event) => {
+		evt.preventDefault();
+
+		await appCtx.joinRoom(account.jid, props.roomJID, nick);
+
+		navigate("~/chat/rooms/" + encodeURIComponent(props.roomJID.toString()));
+	});
+
+	return <Dialog>
+		<form onSubmit={submit}>
+			<h1>{props.roomInfo.name}</h1>
+			<p>{props.roomJID.toString()}</p>
+
+			<Field>
+				<FieldLabel>Nickname</FieldLabel>
+				<Input value={nick} onChange={linkNick} />
+			</Field>
+
+			<DialogFooter>
+				<Button tier="secondary" onClick={dialogCtx.close}>Cancel</Button>
+				<Button tier="primary" type="submit" disabled={submitting}>Join</Button>
 			</DialogFooter>
 		</form>
 	</Dialog>;

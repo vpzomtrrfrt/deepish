@@ -127,10 +127,11 @@ export interface AppContext {
 	removeFriend(account: JID, target: JID): void;
 	sendFriendRequest(account: JID, target: JID): void;
 	setComposingToCounterpart(account: JID, target: JID, composing: boolean): void;
-	joinRoom(account: JID, room: JID): Promise<void>;
+	joinRoom(account: JID, room: JID, nick?: string): Promise<void>;
 	leaveRoom(account: JID, room: JID): Promise<void>;
 	showDialog(content: VNode): void;
 	createRoom(account: JID, room: JID, params: RoomCreateParams): void;
+	fetchRoomInfo(account: JID, room: JID): Promise<RoomDiscoInfo>;
 }
 
 export const AppContext = createContext<undefined | AppContext>(undefined);
@@ -846,28 +847,23 @@ function App() {
 			});
 	});
 
-	const fetchRoomDisco = useLatestCallback((client: xmppClient.Client, roomJID: JID) => {
-		updateAccount(client, account => {
-			const info = account.rooms.get(roomJID.toString());
-			if(typeof info === "undefined") {
-				console.warn("trying to fetch disco for unknown room");
-				return account;
-			}
-
-			if(info.infoState.state !== "done") {
-				const newRooms = new Map(account.rooms);
-				newRooms.set(roomJID.toString(), {...info, infoState: LoadState.loading});
-				return {...account, rooms: newRooms};
-			}
-			else return account;
-		});
-
-		client.iqCaller.get(
+	async function fetchRoomDisco(client: xmppClient.Client, roomJID: JID): Promise<RoomDiscoInfo> {
+		return client.iqCaller.get(
 			xml("query", {xmlns: "http://jabber.org/protocol/disco#info"}),
 			roomJID.toString(),
 		)
 			.then((result): RoomDiscoInfo => {
 				if(typeof result === "undefined") throw new Error("Missing result from MUC disco");
+
+				let isRoom = false;
+
+				result.getChildren("feature").forEach(featureElem => {
+					if(featureElem.getAttr("var") === "http://jabber.org/protocol/muc") isRoom = true;
+				});
+
+				if(!isRoom) {
+					throw new Error("That doesn't appear to be a room");
+				}
 
 				const info: RoomDiscoInfo = {
 					name: null,
@@ -892,6 +888,28 @@ function App() {
 					}
 				});
 
+				return info;
+			});
+	}
+
+	const fetchAndStoreRoomDisco = useLatestCallback((client: xmppClient.Client, roomJID: JID) => {
+		updateAccount(client, account => {
+			const info = account.rooms.get(roomJID.toString());
+			if(typeof info === "undefined") {
+				console.warn("trying to fetch disco for unknown room");
+				return account;
+			}
+
+			if(info.infoState.state !== "done") {
+				const newRooms = new Map(account.rooms);
+				newRooms.set(roomJID.toString(), {...info, infoState: LoadState.loading});
+				return {...account, rooms: newRooms};
+			}
+			else return account;
+		});
+
+		fetchRoomDisco(client, roomJID)
+			.then(info => {
 				if(info.avatarHashes.length > 0) {
 					startRequestingAvatar(client, roomJID, info.avatarHashes);
 				}
@@ -965,7 +983,7 @@ function App() {
 							});
 						});
 
-						fetchRoomDisco(client, srcJID.bare());
+						fetchAndStoreRoomDisco(client, srcJID.bare());
 					}
 					else {
 						callback?.reject(new Error("Failed to join room"));
@@ -1522,6 +1540,13 @@ function App() {
 		});
 	});
 
+	const fetchRoomInfo = useLatestCallback(async (accountJID: JID, roomJID: JID) => {
+		const account = accounts.find(x => x.jid.equals(accountJID));
+		if(typeof account === "undefined") throw new Error("No such account");
+
+		return fetchRoomDisco(account.client, roomJID);
+	});
+
 	const setComposingToCounterpart = useLatestCallback((accountJID: JID, target: JID, composing: boolean) => {
 		{
 			const account = accounts.find(x => x.jid.equals(accountJID));
@@ -1557,7 +1582,7 @@ function App() {
 		});
 	});
 
-	const joinRoom = useLatestCallback(async (accountJID: JID, room: JID) => {
+	const joinRoom = useLatestCallback(async (accountJID: JID, room: JID, nick?: string) => {
 		const account = accounts.find(x => x.jid.equals(accountJID));
 		if(typeof account === "undefined") throw new Error("No such account");
 
@@ -1591,7 +1616,7 @@ function App() {
 
 				rooms.set(room.toString(), {
 					jid: room,
-					nick: null,
+					nick: nick ?? null,
 					connected: false,
 					infoState: LoadState.loading,
 				});
@@ -1604,7 +1629,7 @@ function App() {
 
 				newRoomsRef.current.set(room.toString(), defer);
 
-				connectMUC(account.client, room, undefined);
+				connectMUC(account.client, room, nick);
 
 				await defer.promise;
 			}
@@ -1631,6 +1656,11 @@ function App() {
 							xml(
 								"conference",
 								{xmlns: "urn:xmpp:bookmarks:1", autojoin: "true"},
+								...(
+									typeof nick === "undefined" ?
+										[] :
+										[xml("nick", {}, nick)]
+								),
 							),
 						),
 					),
@@ -1821,6 +1851,7 @@ function App() {
 			showDialog,
 			createRoom,
 			sendFriendRequest,
+			fetchRoomInfo,
 		} satisfies AppContext),
 		[
 			accounts,
@@ -1841,6 +1872,7 @@ function App() {
 			showDialog,
 			createRoom,
 			sendFriendRequest,
+			fetchRoomInfo,
 		],
 	);
 

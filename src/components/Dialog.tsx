@@ -34,6 +34,7 @@ const styles = {
 		display: "flex",
 		justifyContent: "flex-end",
 		gap: ".5rem",
+		marginBlockStart: ".5rem",
 	}),
 };
 
