@@ -3,19 +3,21 @@ import useLinkState from "linkstate/hook";
 import { useCallback, useContext } from "preact/hooks";
 import { useLocation } from "wouter-preact";
 
-import { RoomDiscoInfo, ServiceInfo, useAppContext } from "../../..";
+import { useAppContext } from "../../..";
 import Block from "../../../components/Block";
 import Button from "../../../components/Button";
 import { DataNonDoneView } from "../../../components/DataView";
 import Dialog, { DialogContext, DialogFooter } from "../../../components/Dialog";
 import Field, { FieldLabel } from "../../../components/Field";
 import Input from "../../../components/Input";
+import { RoomDiscoInfo, ServiceInfo, useAccount, useConnectionContext } from "../../../util/connection";
 import { LoadState } from "../../../util/useData";
 import useSubmitting from "../../../util/useSubmitting";
 
 export default function ChatRoomAddPage() {
 	const appCtx = useAppContext();
-	const account = appCtx.accounts[0]!;
+	const conn = useConnectionContext();
+	const account = useAccount();
 
 	const [joinInput, linkJoinInput] = useLinkState("");
 
@@ -37,7 +39,7 @@ export default function ChatRoomAddPage() {
 
 		const room = parseJID(roomStr);
 
-		const info = await appCtx.fetchRoomInfo(account.jid, room);
+		const info = await conn.fetchRoomInfo(account.jid, room);
 
 		appCtx.showDialog(<JoinRoomDialog roomJID={room} roomInfo={info} />);
 	});
@@ -63,8 +65,7 @@ export default function ChatRoomAddPage() {
 }
 
 function CreateRoomDialog() {
-	const appCtx = useAppContext();
-	const account = appCtx.accounts[0]!;
+	const account = useAccount();
 
 	const dialogCtx = useContext(DialogContext)!;
 
@@ -91,8 +92,8 @@ function CreateRoomDialog() {
 }
 
 function CreateRoomDialogInner(props: {service: ServiceInfo}) {
-	const appCtx = useAppContext();
-	const account = appCtx.accounts[0]!;
+	const conn = useConnectionContext();
+	const account = useAccount();
 
 	const [, navigate] = useLocation();
 
@@ -107,7 +108,7 @@ function CreateRoomDialogInner(props: {service: ServiceInfo}) {
 
 		const roomJID = new JID(local, props.service.jid.domain);
 
-		await appCtx.createRoom(
+		await conn.createRoom(
 			account.jid,
 			roomJID,
 			{
@@ -120,7 +121,7 @@ function CreateRoomDialogInner(props: {service: ServiceInfo}) {
 
 		console.log("created room");
 
-		await appCtx.joinRoom(account.jid, roomJID);
+		await conn.joinRoom(account.jid, roomJID);
 
 		navigate("~/chat/rooms/" + encodeURIComponent(roomJID.toString()));
 	});
@@ -158,8 +159,8 @@ function CreateRoomDialogInner(props: {service: ServiceInfo}) {
 }
 
 function JoinRoomDialog(props: {roomJID: JID; roomInfo: RoomDiscoInfo}) {
-	const appCtx = useAppContext();
-	const account = appCtx.accounts[0]!;
+	const conn = useConnectionContext();
+	const account = useAccount();
 
 	const [, navigate] = useLocation();
 
@@ -170,7 +171,7 @@ function JoinRoomDialog(props: {roomJID: JID; roomInfo: RoomDiscoInfo}) {
 	const [submitting, submit] = useSubmitting(async (evt: Event) => {
 		evt.preventDefault();
 
-		await appCtx.joinRoom(account.jid, props.roomJID, nick);
+		await conn.joinRoom(account.jid, props.roomJID, nick);
 
 		navigate("~/chat/rooms/" + encodeURIComponent(props.roomJID.toString()));
 	});

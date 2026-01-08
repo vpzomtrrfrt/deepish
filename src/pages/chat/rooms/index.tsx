@@ -4,13 +4,14 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import useLatestCallback from "use-latest-callback";
 import { useLocation } from "wouter-preact";
 
-import { Message, MessageEvent, ResultSetInfo, useAppContext } from "../../..";
+import { useAppContext } from "../../..";
 import ConfirmDialog from "../../../components/ConfirmDialog";
 import { DataNonDoneView } from "../../../components/DataView";
 import Menu, { MenuItem } from "../../../components/Menu";
 import MessageInput from "../../../components/MessageInput";
 import MessageList, { LoadMoreTriggerer } from "../../../components/MessageList";
 import TaskDialog from "../../../components/TaskDialog";
+import { Message, MessageEvent, ResultSetInfo, useAccount, useConnectionContext } from "../../../util/connection";
 import { LoadState } from "../../../util/useData";
 
 const styles = {
@@ -45,7 +46,8 @@ export default function ChatRoomPage(props: {params: {roomJID: string}}) {
 
 function ChatRoomPageInner(props: {roomJID: string}) {
 	const appCtx = useAppContext();
-	const account = appCtx.accounts[0]!;
+	const conn = useConnectionContext();
+	const account = useAccount();
 	const room = account.rooms.get(props.roomJID);
 
 	const [, navigate] = useLocation();
@@ -89,12 +91,12 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 	});
 
 	useEffect(() => {
-		appCtx.addEventListener.call(undefined, "message", onMessage);
+		conn.addEventListener.call(undefined, "message", onMessage);
 
 		return () => {
-			appCtx.removeEventListener.call(undefined, "message", onMessage);
+			conn.removeEventListener.call(undefined, "message", onMessage);
 		};
-	}, [onMessage, appCtx.addEventListener, appCtx.removeEventListener]);
+	}, [onMessage, conn.addEventListener, conn.removeEventListener]);
 
 	const [pageState, setPageState] = useState<LoadState<ResultSetInfo | null> | null>(null);
 
@@ -103,7 +105,7 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 	const loadMore = useLatestCallback(() => {
 		setPageState(LoadState.loading);
 
-		appCtx.requestArchive(account.jid, room!.jid, {}, nextPageRef.current ?? undefined)
+		conn.requestArchive(account.jid, room!.jid, {}, nextPageRef.current ?? undefined)
 			.then(value => {
 				nextPageRef.current = value === null ? null : value.firstItem;
 				setPageState(LoadState.wrapValue(value));
@@ -120,7 +122,7 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 	}, [room?.connected, pageState, loadMore]);
 
 	const submitMessage = useLatestCallback(async (newMessage: string) => {
-		await appCtx.sendMessageToRoom(account.jid, room!.jid, {body: newMessage});
+		await conn.sendMessageToRoom(account.jid, room!.jid, {body: newMessage});
 	});
 
 	const leaveRoom = useLatestCallback(() => {
@@ -128,7 +130,7 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 			<ConfirmDialog
 				confirmText="Leave"
 				onConfirm={() => {
-					const task = appCtx.leaveRoom.call(undefined, account.jid, room!.jid);
+					const task = conn.leaveRoom.call(undefined, account.jid, room!.jid);
 
 					appCtx.showDialog(<TaskDialog task={task}>Leaving room…</TaskDialog>);
 

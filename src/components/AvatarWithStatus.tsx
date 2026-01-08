@@ -1,7 +1,7 @@
 import { css, cx } from "@emotion/css";
 import { JID, parse as parseJID } from "@xmpp/jid";
 
-import { useAppContext } from "..";
+import { useAccount } from "../util/connection";
 import { getShowTypeForCounterpart } from "../util/statusUtil";
 import Avatar, { AvatarSize } from "./Avatar";
 import StatusIndicator from "./StatusIndicator";
@@ -26,8 +26,7 @@ export default function AvatarWithStatus(props: {
 }) {
 	const jid = typeof props.jid === "object" ? props.jid : parseJID(props.jid);
 
-	const appCtx = useAppContext();
-	const account = appCtx.accounts[0];
+	const account = useAccount();
 
 	const counterpart = account.counterparts.get(jid.toString());
 	const showType = typeof counterpart === "undefined" ? null : getShowTypeForCounterpart(counterpart);

@@ -3,7 +3,7 @@ import { JSX, VNode } from "preact";
 import { useCallback, useEffect, useLayoutEffect, useRef } from "preact/hooks";
 import { List, ListImperativeAPI, RowComponentProps, useDynamicRowHeight } from "react-window";
 
-import { Message } from "..";
+import { Message } from "../util/connection";
 import Avatar from "./Avatar";
 
 const DEFAULT_ROW_HEIGHT = 70;

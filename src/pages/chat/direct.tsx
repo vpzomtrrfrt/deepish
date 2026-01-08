@@ -4,10 +4,10 @@ import { pushAtSortPosition } from "array-push-at-sort-position";
 import { useEffect, useRef, useState } from "preact/hooks";
 import useLatestCallback from "use-latest-callback";
 
-import { Message, MessageEvent, ResultSetInfo, useAppContext } from "../..";
 import { DataNonDoneView } from "../../components/DataView";
 import MessageInput from "../../components/MessageInput";
 import MessageList, { LoadMoreTriggerer } from "../../components/MessageList";
+import { Message, MessageEvent, ResultSetInfo, useAccount, useConnectionContext } from "../../util/connection";
 import { getNickForCounterpart } from "../../util/profileUtil";
 import { themeVars } from "../../util/theme";
 import { LoadState } from "../../util/useData";
@@ -53,8 +53,8 @@ export default function DirectChatPage(props: {params: {counterpartJID: string}}
 }
 
 function DirectChatPageInner(props: {counterpartJID: string}) {
-	const appCtx = useAppContext();
-	const account = appCtx.accounts[0]!;
+	const conn = useConnectionContext();
+	const account = useAccount();
 	const counterpart = account.counterparts.get(props.counterpartJID);
 
 	const [messagesData, setMessagesData] = useState<{messages: Message[]; messageMap: Map<string, Message>}>({
@@ -99,12 +99,12 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 	});
 
 	useEffect(() => {
-		appCtx.addEventListener.call(undefined, "message", onMessage);
+		conn.addEventListener.call(undefined, "message", onMessage);
 
 		return () => {
-			appCtx.removeEventListener.call(undefined, "message", onMessage);
+			conn.removeEventListener.call(undefined, "message", onMessage);
 		};
-	}, [onMessage, appCtx.addEventListener, appCtx.removeEventListener]);
+	}, [onMessage, conn.addEventListener, conn.removeEventListener]);
 
 	const [pageState, setPageState] = useState<LoadState<ResultSetInfo | null> | null>(null);
 
@@ -113,7 +113,7 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 	const loadMore = useLatestCallback(() => {
 		setPageState(LoadState.loading);
 
-		appCtx.requestArchive(account.jid, account.jid, {with: counterpart!.jid}, nextPageRef.current ?? undefined)
+		conn.requestArchive(account.jid, account.jid, {with: counterpart!.jid}, nextPageRef.current ?? undefined)
 			.then(value => {
 				nextPageRef.current = value === null ? null : value.firstItem;
 				setPageState(LoadState.wrapValue(value));
@@ -131,16 +131,16 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 
 	useEffect(() => {
 		if(typeof counterpart !== "undefined") {
-			appCtx.markCounterpartAsVisible.call(undefined, account.jid, counterpart.jid);
+			conn.markCounterpartAsVisible.call(undefined, account.jid, counterpart.jid);
 		}
-	}, [account.jid, appCtx.markCounterpartAsVisible, counterpart]);
+	}, [account.jid, conn.markCounterpartAsVisible, counterpart]);
 
 	const submitMessage = useLatestCallback(async (newMessage: string) => {
-		await appCtx.sendMessageToCounterpart(account.jid, counterpart!.jid, {body: newMessage});
+		await conn.sendMessageToCounterpart(account.jid, counterpart!.jid, {body: newMessage});
 	});
 
 	const onChangeComposing = useLatestCallback((composing: boolean) => {
-		appCtx.setComposingToCounterpart(account.jid, parseJID(props.counterpartJID), composing);
+		conn.setComposingToCounterpart(account.jid, parseJID(props.counterpartJID), composing);
 	});
 
 	useEffect(() => {

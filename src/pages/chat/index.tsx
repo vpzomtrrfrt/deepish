@@ -5,7 +5,7 @@ import useLinkState from "linkstate/hook";
 import { useCallback, useMemo, useState } from "preact/hooks";
 import { Link, Route, Switch, useRoute } from "wouter-preact";
 
-import { Account, useAppContext } from "../..";
+import { useAppContext } from "../..";
 import Avatar from "../../components/Avatar";
 import AvatarWithStatus from "../../components/AvatarWithStatus";
 import Block from "../../components/Block";
@@ -20,6 +20,7 @@ import PriorityUnreadIndicator from "../../components/PriorityUnreadIndicator";
 import { ManualTabsContainer, TabLink, TabsList } from "../../components/Tabs";
 import WithTooltip from "../../components/WithTooltip";
 import * as commonStyles from "../../util/commonStyles";
+import { useAccount, useConnectionContext } from "../../util/connection";
 import { getNickForCounterpart } from "../../util/profileUtil";
 import { getShowTypeForCounterpart } from "../../util/statusUtil";
 import { themeVars } from "../../util/theme";
@@ -174,16 +175,14 @@ const styles = {
 };
 
 export default function ChatPage() {
-	const appCtx = useAppContext();
-	const account = appCtx.accounts[0];
-	if(typeof account === "undefined") throw new Error("Missing account");
+	const account = useAccount();
 
 	if(!account.connected) {
 		return <ConnectingView />;
 	}
 
 	return <div class={styles.page}>
-		<ChatView account={account} />
+		<ChatView />
 		<Switch>
 			<Route path="/rooms/:roomJID" component={ChatRoomPage} />
 			<Route path="/rooms:add" component={ChatRoomAddPage} />
@@ -192,13 +191,15 @@ export default function ChatPage() {
 	</div>;
 }
 
-function ChatView(props: {account: Account}) {
+function ChatView() {
+	const account = useAccount();
+
 	const roomMatch = useRoute("/rooms/:roomJID");
 	const currentRoom = roomMatch[0] ? decodeURIComponent(roomMatch[1].roomJID) : null;
 
 	const addMatch = useRoute("/rooms:add");
 
-	const incomingRequestCounterparts = Array.from(props.account.counterparts.values())
+	const incomingRequestCounterparts = Array.from(account.counterparts.values())
 		.filter(counterpartIsIncomingRequest);
 
 	return <div class={css({display: "flex", flexDirection: "column"})}>
@@ -216,7 +217,7 @@ function ChatView(props: {account: Account}) {
 			</div>
 			{
 				Array.from(
-					props.account.rooms,
+					account.rooms,
 					([roomJID, info]) => {
 						const name = LoadState.ifDone(info.infoState, disco => disco.name, () => null) ?? roomJID;
 
@@ -244,8 +245,7 @@ function ChatView(props: {account: Account}) {
 }
 
 function ChatHomePage() {
-	const appCtx = useAppContext();
-	const account = appCtx.accounts[0];
+	const account = useAccount();
 
 	// TODO this seems like a performance problem
 	const conversations = useMemo(() => {
@@ -291,21 +291,21 @@ enum FriendsTab {
 
 function ContactsPage() {
 	const appCtx = useAppContext();
-	const account = appCtx.accounts[0];
-	if(typeof account === "undefined") throw new Error("Missing account");
+	const conn = useConnectionContext();
+	const account = useAccount();
 
 	const [tab, setTab] = useState<FriendsTab>(FriendsTab.All);
 
 	function acceptFriendRequest(target: JID) {
-		appCtx.acceptFriendRequest(account.jid, target);
+		conn.acceptFriendRequest(account.jid, target);
 	}
 
 	function rejectFriendRequest(target: JID) {
-		appCtx.rejectFriendRequest(account.jid, target);
+		conn.rejectFriendRequest(account.jid, target);
 	}
 
 	function removeFriend(target: JID) {
-		appCtx.removeFriend(account.jid, target);
+		conn.removeFriend(account.jid, target);
 	}
 
 	function removeFriendAfterConfirm(target: JID) {
@@ -448,9 +448,7 @@ function ContactsPage() {
 }
 
 function ConnectingView() {
-	const appCtx = useAppContext();
-	const account = appCtx.accounts[0];
-	if(typeof account === "undefined") throw new Error("Missing account");
+	const account = useAccount();
 
 	return <div class={styles.connectingView}>
 		<div>
@@ -472,15 +470,15 @@ const presenceShowTypeNames: Record<PresenceShowTypeExtended, string> = {
 };
 
 function AddFriendForm() {
-	const appCtx = useAppContext();
-	const account = appCtx.accounts[0];
+	const conn = useConnectionContext();
+	const account = useAccount();
 
 	const [input, linkInput, setInput] = useLinkState("");
 
 	const [submitting, submit] = useSubmitting((evt: Event) => {
 		evt.preventDefault();
 
-		appCtx.sendFriendRequest(account.jid, parseJID(input));
+		conn.sendFriendRequest(account.jid, parseJID(input));
 
 		setInput("");
 

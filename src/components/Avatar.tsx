@@ -2,7 +2,7 @@ import { css, cx } from "@emotion/css";
 import { JID, parse as parseJID } from "@xmpp/jid";
 import { useMemo } from "preact/hooks";
 
-import { useAppContext } from "..";
+import { useAccount } from "../util/connection";
 import { generateColorForID } from "../util/xmpp/colorGeneration";
 
 const styles = {
@@ -40,8 +40,7 @@ const styles = {
 export type AvatarSize = "lg" | "md";
 
 export default function Avatar(props: {size: AvatarSize; jid: string | JID; class?: string}) {
-	const appCtx = useAppContext();
-	const account = appCtx.accounts[0];
+	const account = useAccount();
 
 	const parsedJID = useMemo(() => typeof props.jid === "string" ? parseJID(props.jid) : props.jid, [props.jid]);
 

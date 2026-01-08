@@ -2,11 +2,11 @@ import * as xmppClient from "@xmpp/client";
 import { xml } from "@xmpp/client";
 import useLinkState from "linkstate/hook";
 
-import { useAppContext } from "..";
+import { useConnectionContext } from "../util/connection";
 import useSubmitting from "../util/useSubmitting";
 
 export default function LoginPage() {
-	const appCtx = useAppContext();
+	const conn = useConnectionContext();
 
 	const [jid, linkJid] = useLinkState("");
 	const [password, linkPassword] = useLinkState("");
@@ -39,7 +39,7 @@ export default function LoginPage() {
 		(client as unknown as {fast: {
 			saveToken(t: unknown): Promise<void>;
 		}}).fast.saveToken = async token => {
-			appCtx.saveToken.call(undefined, client.jid!, token, userAgent);
+			conn.saveToken.call(undefined, client.jid!, token, userAgent);
 
 			authCallback.resolve();
 		};
