@@ -1,11 +1,14 @@
 import * as xmppClient from "@xmpp/client";
 import { xml } from "@xmpp/client";
 import useLinkState from "linkstate/hook";
+import { useLocation } from "wouter-preact";
 
 import { useConnectionContext } from "../util/connection";
 import useSubmitting from "../util/useSubmitting";
 
 export default function LoginPage() {
+	const [, navigate] = useLocation();
+
 	const conn = useConnectionContext();
 
 	const [jid, linkJid] = useLinkState("");
@@ -36,19 +39,26 @@ export default function LoginPage() {
 			}),
 		});
 
-		(client as unknown as {fast: {
-			saveToken(t: unknown): Promise<void>;
-		}}).fast.saveToken = async token => {
-			conn.saveToken.call(undefined, client.jid!, token, userAgent);
+		try {
+			(client as unknown as {fast: {
+				saveToken(t: unknown): Promise<void>;
+			}}).fast.saveToken = async token => {
+				conn.saveToken.call(undefined, client.jid!, token, userAgent);
 
-			authCallback.resolve();
-		};
+				authCallback.resolve();
+			};
 
-		await client.start();
+			await client.start();
 
-		await authCallback.promise;
+			await authCallback.promise;
 
-		console.log("connected");
+			console.log("connected");
+
+			navigate("~/");
+		}
+		finally {
+			client.stop();
+		}
 	});
 
 	console.log("what", jid);
