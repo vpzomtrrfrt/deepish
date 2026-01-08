@@ -22,7 +22,20 @@ export default function ChatRoomAddPage() {
 	const [submittingJoin, submitJoin] = useSubmitting(async (evt: Event) => {
 		evt.preventDefault();
 
-		const room = parseJID(joinInput);
+		let roomStr = joinInput;
+		if(joinInput.startsWith("xmpp:")) {
+			try {
+				const url = new URL(joinInput);
+				if(url.search === "" || url.search === "?join") {
+					roomStr = url.pathname;
+				}
+			}
+			catch {
+				// not a valid URL, don't try to do URI things
+			}
+		}
+
+		const room = parseJID(roomStr);
 
 		const info = await appCtx.fetchRoomInfo(account.jid, room);
 
