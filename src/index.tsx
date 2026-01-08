@@ -977,7 +977,41 @@ function App() {
 
 			const type = elem.getAttr("type");
 
-			if(type === "unavailable") {
+			if(type === "error") {
+				if(srcJID.resource !== "") {
+					// Might be a failure to join a room
+
+					const roomJID = srcJID.bare();
+
+					const errorElem = elem.getChild("error");
+
+					if(typeof errorElem !== "undefined" && errorElem.getAttr("by") === roomJID.toString()) {
+						const errorType = errorElem.getAttr("type");
+
+						if(errorType !== "continue") {
+							console.error("Got error from room:", errorElem);
+
+							let error;
+							if(
+								typeof errorElem.getChild("conflict", "urn:ietf:params:xml:ns:xmpp-stanzas") !==
+									"undefined"
+							) {
+								error = new NickConflictError("That nick is already in use");
+							}
+							else {
+								error = new Error("Failed to join room");
+							}
+
+							const callback = newRoomsRef.current.get(roomJID.toString());
+
+							if(typeof callback !== "undefined") {
+								callback.reject(error);
+							}
+						}
+					}
+				}
+			}
+			else if(type === "unavailable") {
 				updateAccount(client, account => {
 					const counterparts = new Map(account.counterparts);
 
@@ -1565,13 +1599,24 @@ function App() {
 				return {...account, rooms};
 			});
 
-			const defer = Promise.withResolvers<RoomJoinCallbackInfo>();
+			try {
+				const defer = Promise.withResolvers<RoomJoinCallbackInfo>();
 
-			newRoomsRef.current.set(room.toString(), defer);
+				newRoomsRef.current.set(room.toString(), defer);
 
-			connectMUC(account.client, room, undefined);
+				connectMUC(account.client, room, undefined);
 
-			await defer.promise;
+				await defer.promise;
+			}
+			catch(ex) {
+				updateAccount(accountJID, account => {
+					const rooms = new Map(account.rooms);
+					rooms.delete(room.toString());
+					return {...account, rooms};
+				});
+
+				throw ex;
+			}
 
 			await account.client.iqCaller.set(
 				xml(
@@ -1947,4 +1992,7 @@ function expectValue<T>(value: T | null | undefined): T {
 	if(value === null) throw new Error("Unexpected null");
 	else if(typeof value === "undefined") throw new Error("Unexpected undefined");
 	else return value;
+}
+
+class NickConflictError extends Error {
 }
