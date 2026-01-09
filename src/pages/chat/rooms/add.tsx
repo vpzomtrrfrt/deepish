@@ -9,6 +9,7 @@ import Button from "../../../components/Button";
 import { DataNonDoneView } from "../../../components/DataView";
 import Dialog, { DialogContext, DialogFooter } from "../../../components/Dialog";
 import Field, { FieldLabel } from "../../../components/Field";
+import FieldList from "../../../components/FieldList";
 import Input from "../../../components/Input";
 import { RoomDiscoInfo, ServiceInfo, useAccount, useConnectionContext } from "../../../util/connection";
 import { LoadState } from "../../../util/useData";
@@ -128,27 +129,29 @@ function CreateRoomDialogInner(props: {service: ServiceInfo}) {
 
 	return <Dialog>
 		<form onSubmit={submit}>
-			<Field>
-				<FieldLabel>Address</FieldLabel>
-				<div style={{display: "flex", alignItems: "center"}}>
-					<Input value={local} onChange={linkLocal} style={{flexGrow: 1}} />
-					@{props.service.jid.domain}
-				</div>
-			</Field>
+			<FieldList>
+				<Field>
+					<FieldLabel>Address</FieldLabel>
+					<div style={{display: "flex", alignItems: "center"}}>
+						<Input value={local} onChange={linkLocal} style={{flexGrow: 1}} />
+						@{props.service.jid.domain}
+					</div>
+				</Field>
 
-			<Field>
-				<FieldLabel>Name</FieldLabel>
-				<Input value={name} onChange={linkName} />
-			</Field>
+				<Field>
+					<FieldLabel>Name</FieldLabel>
+					<Input value={name} onChange={linkName} />
+				</Field>
 
-			<Field>
-				<FieldLabel>Publishing</FieldLabel>
-				<select value={publishing} onChange={linkPublishing}>
-					<option value="private">Private</option>
-					<option value="unlisted">Unlisted</option>
-					<option value="public">Public</option>
-				</select>
-			</Field>
+				<Field>
+					<FieldLabel>Publishing</FieldLabel>
+					<select value={publishing} onChange={linkPublishing}>
+						<option value="private">Private</option>
+						<option value="unlisted">Unlisted</option>
+						<option value="public">Public</option>
+					</select>
+				</Field>
+			</FieldList>
 
 			<DialogFooter>
 				<Button tier="secondary" onClick={dialogCtx.close}>Cancel</Button>
@@ -181,10 +184,12 @@ function JoinRoomDialog(props: {roomJID: JID; roomInfo: RoomDiscoInfo}) {
 			<h1>{props.roomInfo.name}</h1>
 			<p>{props.roomJID.toString()}</p>
 
-			<Field>
-				<FieldLabel>Nickname</FieldLabel>
-				<Input value={nick} onChange={linkNick} />
-			</Field>
+			<FieldList>
+				<Field>
+					<FieldLabel>Nickname</FieldLabel>
+					<Input value={nick} onChange={linkNick} />
+				</Field>
+			</FieldList>
 
 			<DialogFooter>
 				<Button tier="secondary" onClick={dialogCtx.close}>Cancel</Button>

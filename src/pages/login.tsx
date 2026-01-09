@@ -6,6 +6,7 @@ import { useLocation } from "wouter-preact";
 import Button from "../components/Button";
 import { DialogFooter, DialogLike } from "../components/Dialog";
 import Field, { FieldLabel } from "../components/Field";
+import FieldList from "../components/FieldList";
 import Input from "../components/Input";
 import { useConnectionContext } from "../util/connection";
 import useSubmitting from "../util/useSubmitting";
@@ -79,14 +80,16 @@ export default function LoginPage() {
 		<DialogLike>
 			<form onSubmit={submit}>
 				<h1>Log In</h1>
-				<Field>
-					<FieldLabel>XMPP Address</FieldLabel>
-					<Input type="text" value={jid} onChange={linkJid} />
-				</Field>
-				<Field>
-					<FieldLabel>Password</FieldLabel>
-					<Input type="password" value={password} onChange={linkPassword} />
-				</Field>
+				<FieldList>
+					<Field>
+						<FieldLabel>XMPP Address</FieldLabel>
+						<Input type="text" value={jid} onChange={linkJid} />
+					</Field>
+					<Field>
+						<FieldLabel>Password</FieldLabel>
+						<Input type="password" value={password} onChange={linkPassword} />
+					</Field>
+				</FieldList>
 				<DialogFooter>
 					<Button tier="primary" type="submit" disabled={submitting}>Log In</Button>
 				</DialogFooter>
