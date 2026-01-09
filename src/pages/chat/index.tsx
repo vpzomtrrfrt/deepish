@@ -486,7 +486,13 @@ function ContactsPage() {
 }
 
 function ConnectingView() {
+	const [, navigate] = useLocation();
+
 	const account = useAccount();
+
+	const logout = useLatestCallback(() => {
+		navigate("~/logout/" + encodeURIComponent(account.jid.toString()));
+	});
 
 	return <div class={styles.connectingView}>
 		<div>
@@ -495,6 +501,7 @@ function ConnectingView() {
 		{account.lastError !== null &&
 			<ErrorAlert error={account.lastError} />
 		}
+		<Button tier="secondary" onClick={logout}>Log out</Button>
 	</div>;
 }
 
