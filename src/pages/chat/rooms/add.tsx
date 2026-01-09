@@ -10,7 +10,7 @@ import { DataNonDoneView } from "../../../components/DataView";
 import Dialog, { DialogContext, DialogFooter } from "../../../components/Dialog";
 import Field, { FieldLabel } from "../../../components/Field";
 import FieldList from "../../../components/FieldList";
-import Input from "../../../components/Input";
+import Input, { InputSuffixWrapper } from "../../../components/Input";
 import { RoomDiscoInfo, ServiceInfo, useAccount, useConnectionContext } from "../../../util/connection";
 import { LoadState } from "../../../util/useData";
 import useSubmitting from "../../../util/useSubmitting";
@@ -132,10 +132,14 @@ function CreateRoomDialogInner(props: {service: ServiceInfo}) {
 			<FieldList>
 				<Field>
 					<FieldLabel>Address</FieldLabel>
-					<div style={{display: "flex", alignItems: "center"}}>
-						<Input value={local} onChange={linkLocal} style={{flexGrow: 1}} />
-						@{props.service.jid.domain}
-					</div>
+					<InputSuffixWrapper
+						suffix={"@" + props.service.jid.domain}
+						inputProps={{
+							value: local,
+							onChange: linkLocal,
+							style: {flexGrow: 1},
+						}}
+					/>
 				</Field>
 
 				<Field>
