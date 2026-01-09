@@ -24,8 +24,6 @@ export default function LoginPage() {
 		const atIdx = jid.indexOf("@");
 		if(atIdx < 0) throw new Error("Invalid JID");
 
-		const authCallback = Promise.withResolvers<void>();
-
 		const domain = jid.substring(atIdx + 1);
 
 		const userAgent = crypto.randomUUID();
@@ -44,19 +42,21 @@ export default function LoginPage() {
 		});
 
 		try {
+			let gotToken = false;
+
 			(client as unknown as {fast: {
 				saveToken(t: unknown): Promise<void>;
 			}}).fast.saveToken = async token => {
-				conn.saveToken.call(undefined, client.jid!, token, userAgent);
+				gotToken = true;
 
-				authCallback.resolve();
+				conn.saveToken.call(undefined, client.jid!, token, userAgent);
 			};
 
 			await client.start();
 
-			await authCallback.promise;
-
-			console.log("connected");
+			if(!gotToken) {
+				throw new Error("Didn't get token from server");
+			}
 
 			navigate("~/");
 		}
