@@ -11,6 +11,7 @@ import Dialog, { DialogContext, DialogFooter } from "../../../components/Dialog"
 import Field, { FieldLabel } from "../../../components/Field";
 import FieldList from "../../../components/FieldList";
 import Input, { InputSuffixWrapper } from "../../../components/Input";
+import Select from "../../../components/Select";
 import { RoomDiscoInfo, ServiceInfo, useAccount, useConnectionContext } from "../../../util/connection";
 import { LoadState } from "../../../util/useData";
 import useSubmitting from "../../../util/useSubmitting";
@@ -149,11 +150,11 @@ function CreateRoomDialogInner(props: {service: ServiceInfo}) {
 
 				<Field>
 					<FieldLabel>Publishing</FieldLabel>
-					<select value={publishing} onChange={linkPublishing}>
+					<Select value={publishing} onChange={linkPublishing}>
 						<option value="private">Private</option>
 						<option value="unlisted">Unlisted</option>
 						<option value="public">Public</option>
-					</select>
+					</Select>
 				</Field>
 			</FieldList>
 
