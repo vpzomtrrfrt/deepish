@@ -1,5 +1,5 @@
+import { Button as BaseButton, ButtonProps as BaseButtonProps } from "@base-ui/react/button";
 import { css, cx } from "@emotion/css";
-import { JSX } from "preact";
 
 import { themeVars } from "../util/theme";
 import unsignal from "../util/unsignal";
@@ -43,18 +43,18 @@ const tierStyles: Record<ButtonTier, string> = {
 
 export default function Button(
 	props: (
-		({href: string} & JSX.AnchorHTMLAttributes<HTMLAnchorElement>) |
-			({href?: undefined} & JSX.ButtonHTMLAttributes<HTMLButtonElement>)
-	) & {
+		({href: string}) |
+			({href?: undefined})
+	) & BaseButtonProps & {
 		tier: ButtonTier,
 	},
 ) {
-	const className = cx(styles.button, tierStyles[props.tier], unsignal(props.className), unsignal(props.class));
+	const className = cx(styles.button, tierStyles[props.tier], unsignal(props.class));
 
 	if(typeof props.href === "undefined") {
-		return <button type="button" {...props} className={className} />;
+		return <BaseButton focusableWhenDisabled {...props} className={className} />;
 	}
 	else {
-		return <a {...props} className={className} />;
+		return <BaseButton focusableWhenDisabled nativeButton={false} render={<a />} {...props} className={className} />;
 	}
 }

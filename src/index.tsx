@@ -1,6 +1,6 @@
 import "./global.css";
 
-import { Tooltip } from "@base-ui-components/react/tooltip";
+import { Tooltip } from "@base-ui/react/tooltip";
 import { IDBCache } from "@instructure/idb-cache";
 import { parse as parseJID } from "@xmpp/jid";
 import { createContext, RefObject, render, VNode } from "preact";

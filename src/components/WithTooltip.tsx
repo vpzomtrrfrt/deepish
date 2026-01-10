@@ -1,4 +1,4 @@
-import { Tooltip } from "@base-ui-components/react";
+import { Tooltip } from "@base-ui/react/tooltip";
 import { css } from "@emotion/css";
 import { ComponentChildren, JSX } from "preact";
 
@@ -26,7 +26,7 @@ export default function WithTooltip(props: {
 }) {
 	const appCtx = useAppContext();
 
-	return <Tooltip.Root delay={0} hoverable={false}>
+	return <Tooltip.Root>
 		<Tooltip.Trigger render={<span>{props.children}</span>} />
 		<Tooltip.Portal container={appCtx.portalContainerRef}>
 			<Tooltip.Positioner side={props.side}>

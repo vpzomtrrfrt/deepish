@@ -1,7 +1,7 @@
 import { css } from "@emotion/css";
 import { VNode } from "preact";
 import { forwardRef } from "preact/compat";
-import { useCallback, useEffect, useMemo, useState } from "preact/hooks";
+import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 
 import { DialogContext } from "./Dialog";
 
@@ -13,6 +13,7 @@ export interface DialogContainerRef {
 interface DialogInfo {
 	key: string;
 	content: VNode;
+	lastFocusBefore: Element | null;
 }
 
 const styles = {
@@ -40,7 +41,9 @@ export default forwardRef<DialogContainerRef>(function DialogContainer(_, ref) {
 
 	const refValue = useMemo((): DialogContainerRef => ({
 		showDialog(content) {
-			setDialogs(current => [...current, {key: Math.random().toString(), content}]);
+			setDialogs(current => {
+				return [...current, {key: Math.random().toString(), content, lastFocusBefore: document.activeElement}];
+			});
 		},
 		closeAll() {
 			setDialogs([]);
@@ -59,13 +62,13 @@ export default forwardRef<DialogContainerRef>(function DialogContainer(_, ref) {
 	return <div>
 		{
 			dialogs.map(info => {
-				return <DialogWrapper dialog={info} close={close} />;
+				return <DialogWrapper dialog={info} close={close} lastFocusBefore={info.lastFocusBefore} />;
 			})
 		}
 	</div>;
 });
 
-function DialogWrapper(props: {dialog: DialogInfo; close(key: string): void}) {
+function DialogWrapper(props: {dialog: DialogInfo; close(key: string): void; lastFocusBefore: Element | null}) {
 	const close = useMemo(() => props.close.bind(undefined, props.dialog.key), [props.close, props.dialog.key]);
 
 	const ctx = useMemo((): DialogContext => ({
@@ -78,7 +81,48 @@ function DialogWrapper(props: {dialog: DialogInfo; close(key: string): void}) {
 		}
 	}, [close]);
 
-	return <div key={props.dialog.key} class={styles.wrapper} onClick={onClick}>
+	const onKeyDown = useCallback((evt: KeyboardEvent) => {
+		console.log("dialog key down", evt);
+
+		if(evt.code === "Escape" && !evt.defaultPrevented) {
+			close();
+		}
+	}, [close]);
+
+	const dialogRef = useRef<HTMLDivElement>(null);
+
+	useEffect(() => {
+		const elem = dialogRef.current!;
+		const lastFocusBefore = props.lastFocusBefore;
+
+		if(!elem.contains(document.activeElement)) {
+			elem.focus();
+		}
+
+		return () => {
+			console.log("last focus was", lastFocusBefore);
+
+			if(
+				(document.activeElement === null || elem.contains(document.activeElement)) &&
+					lastFocusBefore !== null &&
+					"focus" in lastFocusBefore
+			) {
+				setTimeout(() => {
+					(lastFocusBefore as unknown as HTMLOrSVGElement).focus();
+				});
+
+			}
+		};
+	}, [props.lastFocusBefore]);
+
+	return <div
+		tabindex={-1}
+		key={props.dialog.key}
+		class={styles.wrapper}
+		onClick={onClick}
+		ref={dialogRef}
+		onKeyDown={onKeyDown}
+	>
 		<DialogContext.Provider value={ctx}>
 			{props.dialog.content}
 		</DialogContext.Provider>
