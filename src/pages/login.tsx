@@ -1,10 +1,12 @@
 import * as xmppClient from "@xmpp/client";
 import { xml } from "@xmpp/client";
 import useLinkState from "linkstate/hook";
+import { useContext } from "preact/hooks";
 import { useLocation } from "wouter-preact";
 
+import { useAppContext } from "..";
 import Button from "../components/Button";
-import { DialogFooter, DialogLike } from "../components/Dialog";
+import Dialog, { DialogContext, DialogFooter, DialogLike } from "../components/Dialog";
 import Field, { FieldLabel } from "../components/Field";
 import FieldList from "../components/FieldList";
 import Input from "../components/Input";
@@ -14,6 +16,7 @@ import useSubmitting from "../util/useSubmitting";
 export default function LoginPage() {
 	const [, navigate] = useLocation();
 
+	const appCtx = useAppContext();
 	const conn = useConnectionContext();
 
 	const [jid, linkJid] = useLinkState("");
@@ -55,11 +58,12 @@ export default function LoginPage() {
 
 			await client.start();
 
-			if(!gotToken) {
-				throw new Error("Didn't get token from server");
+			if(gotToken) {
+				navigate("~/");
 			}
-
-			navigate("~/");
+			else {
+				appCtx.showDialog(<IncompatibleDialog />);
+			}
 		}
 		finally {
 			client.stop();
@@ -96,4 +100,17 @@ export default function LoginPage() {
 			</form>
 		</DialogLike>
 	</div>;
+}
+
+function IncompatibleDialog() {
+	const dialogCtx = useContext(DialogContext)!;
+
+	return <Dialog>
+		<div>
+			Your server is not compatible with Deepish.
+		</div>
+		<DialogFooter>
+			<Button tier="secondary" onClick={dialogCtx.close}>Close</Button>
+		</DialogFooter>
+	</Dialog>;
 }
