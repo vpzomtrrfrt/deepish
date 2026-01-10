@@ -1,8 +1,8 @@
 import { IDBCache } from "@instructure/idb-cache";
-import * as xmppClient from "@xmpp/client";
 import Connection from "@xmpp/connection";
 import xid from "@xmpp/id";
 import { JID, parse as parseJID } from "@xmpp/jid";
+import SASLError from "@xmpp/sasl/lib/SASLError";
 import xml, { Element } from "@xmpp/xml";
 import fromBase64 from "es-arraybuffer-base64/Uint8Array.fromBase64";
 import toBase64 from "es-arraybuffer-base64/Uint8Array.prototype.toBase64";
@@ -14,6 +14,7 @@ import useLatestCallback from "use-latest-callback";
 import { Counterpart, Presence, PresenceShowType, RosterEntry } from "./types";
 import { LoadState } from "./useData";
 import useEffectOnce from "./useEffectOnce";
+import * as xmppClient from "./xmpp/client";
 
 const FEATURES: string[] = [
 	"urn:xmpp:bookmarks:1+notify",
@@ -56,6 +57,7 @@ export interface Account {
 	client: xmppClient.Client;
 	connected: boolean;
 	lastError: unknown;
+	stopped: boolean;
 	setupQuery: Promise<void> | null;
 
 	counterparts: Map<string, Counterpart>;
@@ -422,7 +424,11 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 	const onClientError = useLatestCallback((client: xmppClient.Client, err: unknown) => {
 		console.error(err);
 
-		updateAccount(client, account => ({...account, lastError: err}));
+		const stop = err instanceof SASLError;
+
+		if(stop) client.stop();
+
+		updateAccount(client, account => ({...account, lastError: err, stopped: stop}));
 	});
 
 	function handleMessageStanza(client: xmppClient.Client, elem: Element, idFromWrapper?: string, timestampFromWrapper?: Date) {
@@ -1177,6 +1183,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 						rooms: new Map(),
 						avatarStates: new Map(),
 						servicesState: LoadState.loading,
+						stopped: false,
 					} satisfies Account,
 				];
 			});
@@ -1914,10 +1921,9 @@ function createXMPPClientForAccount(
 		credentials: {
 			username: jid.local,
 			token,
-		} as never, // TODO change after types are fixed
-		...({
-			userAgent: xml("user-agent", {id: userAgent}),
-		}),
+		},
+		userAgent: xml("user-agent", {id: userAgent}),
+		mechanisms: [],
 	});
 
 	for(const key_ in listeners) {

@@ -3,7 +3,7 @@ import { mdiAccountMultiple, mdiCheck, mdiClose, mdiHome, mdiPlus } from "@mdi/j
 import { JID, parse as parseJID } from "@xmpp/jid";
 import useLinkState from "linkstate/hook";
 import { JSX } from "preact";
-import { useCallback, useMemo, useState } from "preact/hooks";
+import { useCallback, useEffect, useMemo, useState } from "preact/hooks";
 import useLatestCallback from "use-latest-callback";
 import { Link, Route, Switch, useLocation, useRoute } from "wouter-preact";
 
@@ -503,10 +503,20 @@ function ConnectingView() {
 		navigate("~/logout/" + encodeURIComponent(account.jid.toString()));
 	});
 
+	useEffect(() => {
+		if(account.stopped) {
+			// Assume that means expired login
+
+			logout();
+		}
+	}, [account.stopped, logout]);
+
 	return <div class={styles.connectingView}>
-		<div>
-			Connecting…
-		</div>
+		{!account.stopped &&
+			<div>
+				Connecting…
+			</div>
+		}
 		{account.lastError !== null &&
 			<ErrorAlert error={account.lastError} />
 		}
