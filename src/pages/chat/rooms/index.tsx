@@ -1,6 +1,7 @@
 import { css } from "@emotion/css";
 import { pushAtSortPosition } from "array-push-at-sort-position";
 import { useEffect, useRef, useState } from "preact/hooks";
+import { Fragment } from "preact/jsx-runtime";
 import useLatestCallback from "use-latest-callback";
 import { useLocation } from "wouter-preact";
 
@@ -13,6 +14,7 @@ import MessageList, { LoadMoreTriggerer } from "../../../components/MessageList"
 import TaskDialog from "../../../components/TaskDialog";
 import { Message, MessageEvent, ResultSetInfo, useAccount, useConnectionContext } from "../../../util/connection";
 import { LoadState } from "../../../util/useData";
+import { SpaceItemsList } from "..";
 
 const styles = {
 	page: css({
@@ -150,26 +152,29 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 			pageState => <DataNonDoneView state={pageState} />,
 		);
 
-	return <div class={styles.page}>
-		<div class={styles.header}>
-			<div class={styles.headerStart}>
-				{
-					typeof room !== "undefined" &&
-						LoadState.ifDone(room.infoState, disco => <h1>{disco.name}</h1>, () => null)
-				}
-				<div>{props.roomJID}</div>
+	return <Fragment>
+		<SpaceItemsList />
+		<div class={styles.page}>
+			<div class={styles.header}>
+				<div class={styles.headerStart}>
+					{
+						typeof room !== "undefined" &&
+							LoadState.ifDone(room.infoState, disco => <h1>{disco.name}</h1>, () => null)
+					}
+					<div>{props.roomJID}</div>
+				</div>
+				<div>
+					<Menu>
+						<MenuItem onClick={leaveRoom}>Leave Room</MenuItem>
+					</Menu>
+				</div>
 			</div>
-			<div>
-				<Menu>
-					<MenuItem onClick={leaveRoom}>Leave Room</MenuItem>
-				</Menu>
-			</div>
+			<MessageList
+				messages={messagesData.messages}
+				loaderContent={loaderContent}
+			/>
+			<MessageInput submitMessage={submitMessage} autofocus />
 		</div>
-		<MessageList
-			messages={messagesData.messages}
-			loaderContent={loaderContent}
-		/>
-		<MessageInput submitMessage={submitMessage} autofocus />
-	</div>;
+	</Fragment>;
 }
 

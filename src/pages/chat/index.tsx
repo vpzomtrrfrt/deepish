@@ -2,6 +2,7 @@ import { css, cx } from "@emotion/css";
 import { mdiAccountMultiple, mdiCheck, mdiClose, mdiHome, mdiPlus } from "@mdi/js";
 import { JID, parse as parseJID } from "@xmpp/jid";
 import useLinkState from "linkstate/hook";
+import { JSX } from "preact";
 import { useCallback, useMemo, useState } from "preact/hooks";
 import useLatestCallback from "use-latest-callback";
 import { Link, Route, Switch, useLocation, useRoute } from "wouter-preact";
@@ -26,6 +27,7 @@ import { getNickForCounterpart } from "../../util/profileUtil";
 import { getShowTypeForCounterpart } from "../../util/statusUtil";
 import { themeVars } from "../../util/theme";
 import { Counterpart, PresenceShowTypeExtended } from "../../util/types";
+import unsignal from "../../util/unsignal";
 import { LoadState } from "../../util/useData";
 import useSubmitting from "../../util/useSubmitting";
 import DirectChatPage from "./direct";
@@ -229,6 +231,13 @@ export default function ChatPage() {
 	</div>;
 }
 
+export function SpaceItemsList(props: JSX.HTMLAttributes<HTMLDivElement>) {
+	return <div
+		{...props}
+		className={cx(styles.sidebarSegment, styles.spaceItemsList, unsignal(props.class), unsignal(props.className))}
+	/>;
+}
+
 function ChatView() {
 	const account = useAccount();
 
@@ -300,7 +309,7 @@ function ChatHomePage() {
 	}, [account.counterparts, account.rooms]);
 
 	return <div style={{display: "flex", flexGrow: 1}}>
-		<div class={cx(styles.sidebarSegment, styles.spaceItemsList)}>
+		<SpaceItemsList>
 			<Link to="/" className={active => cx(styles.spaceItem, active && "active")}>
 				<Icon path={mdiAccountMultiple} class={styles.bigSpaceItemIcon} />
 				<span>Friends</span>
@@ -313,7 +322,7 @@ function ChatHomePage() {
 					</Link>;
 				})
 			}
-		</div>
+		</SpaceItemsList>
 		<Switch>
 			<Route path="/direct/:counterpartJID" component={DirectChatPage} />
 			<Route path="/" component={ContactsPage} />
