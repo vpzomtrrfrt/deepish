@@ -139,6 +139,7 @@ function CreateRoomDialogInner(props: {service: ServiceInfo}) {
 							value: local,
 							onChange: linkLocal,
 							style: {flexGrow: 1},
+							autofocus: true,
 						}}
 					/>
 				</Field>
