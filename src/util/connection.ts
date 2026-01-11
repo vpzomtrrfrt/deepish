@@ -79,6 +79,7 @@ export interface Message {
 	to: JID | null;
 	content: string;
 	id: string | null;
+	localID: string;
 	timestamp: Date;
 }
 
@@ -602,6 +603,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 						to: null,
 						content,
 						id,
+						localID: id ?? xid(),
 						timestamp: timestamp ?? new Date(),
 					},
 				});
@@ -729,6 +731,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 						to,
 						content,
 						id,
+						localID: id ?? xid(),
 						timestamp,
 					},
 				});
@@ -1426,7 +1429,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 	});
 
 	const sendMessageToCounterpart = useLatestCallback(async (accountJID: JID, targetJID: JID, message: {body: string}) => {
-		const id = xid();
+		const localID = xid();
 
 		const account = accounts.find(x => x.jid.equals(accountJID));
 		if(typeof account === "undefined") throw new Error("No such account");
@@ -1434,7 +1437,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 		await account.client.send(
 			xml(
 				"message",
-				{id, to: targetJID.toString(), type: "chat"},
+				{id: localID, to: targetJID.toString(), type: "chat"},
 				xml(
 					"body",
 					{},
@@ -1449,7 +1452,8 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 				from: accountJID,
 				to: targetJID,
 				content: message.body,
-				id,
+				id: null,
+				localID,
 				timestamp: new Date(),
 			},
 		});
