@@ -36,6 +36,7 @@ export interface Counterpart {
 	presences: Map<string, Presence> | null;
 	lastReportedComposing: boolean;
 	composingFrom: boolean | null;
+	nick: string | null;
 
 	lastReadMessageID: string | null;
 }

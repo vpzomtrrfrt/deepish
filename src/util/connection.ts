@@ -22,6 +22,7 @@ const FEATURES: string[] = [
 	"urn:xmpp:bookmarks:1+notify",
 	"urn:xmpp:avatar:metadata+notify",
 	"urn:xmpp:mds:displayed:0+notify",
+	"http://jabber.org/protocol/nick+notify",
 	"http://jabber.org/protocol/chatstates",
 ];
 const IDENTITY = {category: "client", type: "web", lang: "", name: "Deepish"};
@@ -37,6 +38,7 @@ const DEFAULT_COUNTERPART_INFO: Omit<Counterpart, "jid"> = {
 	presences: null,
 	lastReportedComposing: false,
 	composingFrom: null,
+	nick: null,
 
 	lastReadMessageID: null,
 };
@@ -398,7 +400,30 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 		(client: xmppClient.Client, from: JID | undefined, node: string, item: PubsubItemInfo) => {
 			console.log("handling pubsub item", from, node, item);
 
-			if(node === "urn:xmpp:avatar:metadata") {
+			if(node === "http://jabber.org/protocol/nick") {
+				if(typeof from !== "undefined") {
+					const nickElem = item.element.getChild("nick", "http://jabber.org/protocol/nick");
+					if(typeof nickElem !== "undefined") {
+						const nick = nickElem.getText();
+
+						updateAccount(client, account => {
+							const counterparts = new Map(account.counterparts);
+							counterparts.set(
+								from.toString(),
+								{
+									...(
+										counterparts.get(from.toString()) ?? {...DEFAULT_COUNTERPART_INFO, jid: from}
+									),
+									nick,
+								},
+							);
+
+							return {...account, counterparts};
+						});
+					}
+				}
+			}
+			else if(node === "urn:xmpp:avatar:metadata") {
 				const avatarHashes: string[] = [item.id]; // TODO Fetch other hashes from metadata
 
 				if(typeof from !== "undefined") {
