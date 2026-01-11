@@ -65,7 +65,7 @@ function App() {
 	return <AppContext.Provider value={appCtx}>
 		<ConnectionContext.Provider value={connection}>
 			<div class="appWrapper" style={themeCSS.light}>
-				<Tooltip.Provider>
+				<Tooltip.Provider delay={0}>
 					<Route path="/" component={RootPage} />
 					<Route path="/chat" component={ChatPage} nest />
 					<Route path="/login" component={LoginPage} />
