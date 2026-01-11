@@ -60,6 +60,7 @@ const styles = {
 		borderStyle: "solid",
 		borderColor: "transparent",
 		transition: "border-color 300ms",
+		borderRadius: "100%",
 
 		position: "relative",
 
@@ -83,8 +84,6 @@ const styles = {
 		display: "flex",
 		justifyContent: "center",
 		alignItems: "center",
-
-		borderRadius: "100%",
 	}),
 	selfBox: css({
 		position: "absolute",
@@ -218,6 +217,17 @@ const styles = {
 		borderRadius: "50%",
 		backgroundColor: themeVars.textOn1,
 	}),
+	roomUnreadIndicator: cx("unreadIndicator", css({
+		fontSize: ".8rem",
+		width: "1.5em",
+		height: "1.5em",
+		borderRadius: "50%",
+		backgroundColor: themeVars.textOn1,
+
+		display: "inline-flex",
+		justifyContent: "center",
+		alignItems: "center",
+	})),
 };
 
 export default function ChatPage() {
@@ -275,12 +285,21 @@ function ChatView() {
 					([roomJID, info]) => {
 						const name = LoadState.ifDone(info.infoState, disco => disco.name, () => null) ?? roomJID;
 
+						const counterpart = account.counterparts.get(roomJID);
+						const unread = typeof counterpart !== "undefined" &&
+							counterpart.lastMessageID !== null &&
+							counterpart.lastReadMessageID !== counterpart.lastMessageID;
+
 						return <div key={roomJID}>
 							<WithTooltip tooltip={name} side="inline-end">
 								<Link
 									to={"~/chat/rooms/" + encodeURIComponent(roomJID)}
+									class={cx(styles.roomLink, currentRoom === roomJID && styles.currentRoomLink)}
 								>
-									<Avatar size="lg" jid={roomJID} class={cx(styles.roomLink, currentRoom === roomJID && styles.currentRoomLink)} />
+									<Avatar size="lg" jid={roomJID} />
+									{
+										unread && <div class={styles.roomUnreadIndicator} />
+									}
 								</Link>
 							</WithTooltip>
 						</div>;

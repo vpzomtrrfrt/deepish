@@ -51,6 +51,7 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 	const conn = useConnectionContext();
 	const account = useAccount();
 	const room = account.rooms.get(props.roomJID);
+	const counterpart = account.counterparts.get(props.roomJID);
 
 	const [, navigate] = useLocation();
 
@@ -122,6 +123,21 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 			loadMore();
 		}
 	}, [room?.connected, pageState, loadMore]);
+
+	useEffect(() => {
+		// TODO skip marking when scrolled up
+		if(
+			pageState !== null &&
+				pageState.state === "done" &&
+				messagesData.messages.length > 0 &&
+				typeof counterpart !== "undefined"
+		) {
+			const lastMessage = messagesData.messages[messagesData.messages.length - 1];
+			if(lastMessage.id !== null && counterpart.lastReadMessageID !== lastMessage.id) {
+				conn.markCounterpartAsRead.call(undefined, account.jid, counterpart.jid, lastMessage.id, false);
+			}
+		}
+	}, [account.jid, conn.markCounterpartAsRead, counterpart, messagesData.messages, pageState]);
 
 	const submitMessage = useLatestCallback(async (newMessage: string) => {
 		await conn.sendMessageToRoom(account.jid, room!.jid, {body: newMessage});

@@ -145,7 +145,7 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 		) {
 			const lastMessage = messagesData.messages[messagesData.messages.length - 1];
 			if(lastMessage.id !== null && counterpart.lastReadMessageID !== lastMessage.id) {
-				conn.markCounterpartAsRead.call(undefined, account.jid, counterpart.jid, lastMessage.id);
+				conn.markCounterpartAsRead.call(undefined, account.jid, counterpart.jid, lastMessage.id, false);
 			}
 		}
 	}, [account.jid, conn.markCounterpartAsRead, counterpart, messagesData.messages, pageState]);

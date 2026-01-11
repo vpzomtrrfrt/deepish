@@ -141,7 +141,7 @@ export interface ConnectionContext {
 	leaveRoom(account: JID, room: JID): Promise<void>;
 	createRoom(account: JID, room: JID, params: RoomCreateParams): void;
 	fetchRoomInfo(account: JID, room: JID): Promise<RoomDiscoInfo>;
-	markCounterpartAsRead(account: JID, target: JID, lastReadMessageID: string): void;
+	markCounterpartAsRead(account: JID, target: JID, lastReadMessageID: string, isRoom: boolean): void;
 }
 
 export const ConnectionContext = createContext<ConnectionContext | undefined>(undefined);
@@ -621,16 +621,49 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 					timestamp = new Date(delayElem.getAttr("stamp"));
 				}
 
+				timestamp ??= new Date();
+
+				const room = from.bare();
+
 				emit("message", {
 					message: {
-						room: from.bare(), // TODO is this correct for non-anonymous MUCs?
+						room, // TODO is this correct for non-anonymous MUCs?
 						from: from,
 						to: null,
 						content,
 						id,
 						localID: id ?? xid(),
-						timestamp: timestamp ?? new Date(),
+						timestamp,
 					},
+				});
+
+				updateAccount(client, account => {
+					const entry = account.counterparts.get(room.toString());
+					if(
+						typeof entry === "undefined" ||
+							entry.lastMessageTimestamp === null ||
+							entry.lastMessageTimestamp.getTime() < timestamp.getTime()
+					) {
+						const counterparts = new Map(account.counterparts);
+						if(typeof entry === "undefined") {
+							counterparts.set(room.toString(), {
+								...DEFAULT_COUNTERPART_INFO,
+								jid: room,
+								lastMessageTimestamp: timestamp,
+								lastMessageID: id,
+							});
+						}
+						else {
+							counterparts.set(room.toString(), {
+								...entry,
+								lastMessageTimestamp: timestamp,
+								lastMessageID: id ?? entry.lastMessageID,
+							});
+						}
+
+						return {...account, counterparts};
+					}
+					else return account;
 				});
 			}
 
@@ -1949,7 +1982,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 	const currentDisplayedUpdatesRef = useRef(new Map<string, string>());
 
 	const submitDisplayedUpdateInner = useLatestCallback(
-		async (accountJID: JID, targetJID: JID, lastReadMessageID: string) => {
+		async (accountJID: JID, targetJID: JID, lastReadMessageID: string, isRoom: boolean) => {
 			const account = accounts.find(x => x.jid.equals(accountJID));
 			if(typeof account === "undefined") throw new Error("No such account");
 
@@ -1964,7 +1997,10 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 						{xmlns: "urn:xmpp:mds:displayed:0"},
 						xml(
 							"stanza-id",
-							{xmlns: "urn:xmpp:sid:0", by: accountJID.toString(), id: lastReadMessageID},
+							{
+								xmlns: "urn:xmpp:sid:0",
+								by: (isRoom ? targetJID : accountJID).toString(), id: lastReadMessageID,
+							},
 						),
 					),
 				),
@@ -1978,55 +2014,60 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 		},
 	);
 
-	const submitDisplayedUpdate = useCallback((accountJID: JID, targetJID: JID, lastReadMessageID: string) => {
-		const key = encodeURIComponent(accountJID.toString()) + "/" + encodeURIComponent(targetJID.toString());
-		const running = currentDisplayedUpdatesRef.current.has(key);
-		currentDisplayedUpdatesRef.current.set(key, lastReadMessageID);
+	const submitDisplayedUpdate = useCallback(
+		(accountJID: JID, targetJID: JID, lastReadMessageID: string, isRoom: boolean) => {
+			const key = encodeURIComponent(accountJID.toString()) + "/" + encodeURIComponent(targetJID.toString());
+			const running = currentDisplayedUpdatesRef.current.has(key);
+			currentDisplayedUpdatesRef.current.set(key, lastReadMessageID);
 
-		if(running) {
-			// Will submit after current run finishes
-			return;
-		}
-
-		function task(value: string) {
-			submitDisplayedUpdateInner(accountJID, targetJID, value)
-				.catch(console.error)
-				.then(() => {
-					if(currentDisplayedUpdatesRef.current.get(key) !== value) {
-						task(currentDisplayedUpdatesRef.current.get(key)!);
-					}
-					else {
-						currentDisplayedUpdatesRef.current.delete(key);
-					}
-				});
-		}
-
-		task(lastReadMessageID);
-	}, [submitDisplayedUpdateInner]);
-
-	const markCounterpartAsRead = useLatestCallback((accountJID: JID, targetJID: JID, lastReadMessageID: string) => {
-		updateAccount(accountJID, account => {
-			const counterparts = new Map(account.counterparts);
-			const entry = account.counterparts.get(targetJID.toString());
-			if(typeof entry === "undefined") {
-				counterparts.set(targetJID.toString(), {
-					...DEFAULT_COUNTERPART_INFO,
-					jid: targetJID,
-					lastReadMessageID,
-				});
-			}
-			else {
-				counterparts.set(targetJID.toString(), {
-					...entry,
-					lastReadMessageID,
-				});
+			if(running) {
+				// Will submit after current run finishes
+				return;
 			}
 
-			return {...account, counterparts};
-		});
+			function task(value: string) {
+				submitDisplayedUpdateInner(accountJID, targetJID, value, isRoom)
+					.catch(console.error)
+					.then(() => {
+						if(currentDisplayedUpdatesRef.current.get(key) !== value) {
+							task(currentDisplayedUpdatesRef.current.get(key)!);
+						}
+						else {
+							currentDisplayedUpdatesRef.current.delete(key);
+						}
+					});
+			}
 
-		submitDisplayedUpdate(accountJID, targetJID, lastReadMessageID);
-	});
+			task(lastReadMessageID);
+		},
+		[submitDisplayedUpdateInner],
+	);
+
+	const markCounterpartAsRead = useLatestCallback(
+		(accountJID: JID, targetJID: JID, lastReadMessageID: string, isRoom: boolean) => {
+			updateAccount(accountJID, account => {
+				const counterparts = new Map(account.counterparts);
+				const entry = account.counterparts.get(targetJID.toString());
+				if(typeof entry === "undefined") {
+					counterparts.set(targetJID.toString(), {
+						...DEFAULT_COUNTERPART_INFO,
+						jid: targetJID,
+						lastReadMessageID,
+					});
+				}
+				else {
+					counterparts.set(targetJID.toString(), {
+						...entry,
+						lastReadMessageID,
+					});
+				}
+
+				return {...account, counterparts};
+			});
+
+			submitDisplayedUpdate(accountJID, targetJID, lastReadMessageID, isRoom);
+		},
+	);
 
 	useEffectOnce(() => {
 		loadAccounts();
