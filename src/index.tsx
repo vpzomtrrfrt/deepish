@@ -60,6 +60,9 @@ function App() {
 
 	const connection = useCreateConnection(cache);
 
+	// eslint-disable-next-line react-hooks/immutability
+	(window as unknown as {deepishConnection: unknown}).deepishConnection = connection;
+
 	if(!connection.inited) return null;
 
 	return <AppContext.Provider value={appCtx}>
