@@ -1128,6 +1128,8 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 			const type = elem.getAttr("type");
 
 			if(type === "error") {
+				console.log("got error presence");
+
 				if(srcJID.resource !== "") {
 					// Might be a failure to join a room
 
@@ -1135,7 +1137,10 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 
 					const errorElem = elem.getChild("error");
 
-					if(typeof errorElem !== "undefined" && errorElem.getAttr("by") === roomJID.toString()) {
+					if(
+						typeof errorElem !== "undefined" &&
+							(errorElem.getAttr("by") === roomJID.toString() || errorElem.getAttr("by") === roomJID.domain)
+					) {
 						const errorType = errorElem.getAttr("type");
 
 						if(errorType !== "continue") {
@@ -1149,7 +1154,12 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 								error = new NickConflictError("That nick is already in use");
 							}
 							else {
-								error = new Error("Failed to join room");
+								const textElem = errorElem.getChild("text", "urn:ietf:params:xml:ns:xmpp-stanzas");
+
+								error = new Error(
+									"Failed to join room" +
+										(typeof textElem === "undefined" ? "" : (": " + textElem.getText()))
+								);
 							}
 
 							const callback = newRoomsRef.current.get(roomJID.toString());
