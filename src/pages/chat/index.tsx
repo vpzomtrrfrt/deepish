@@ -256,7 +256,7 @@ function ChatView() {
 	const incomingRequestCounterparts = Array.from(account.counterparts.values())
 		.filter(counterpartIsIncomingRequest);
 
-	return <div class={cx(styles.sidebarSegment, css({display: "flex", flexDirection: "column"}))}>
+	return <div class={cx(styles.sidebarSegment, css({display: "flex", flexDirection: "column", overflowY: "auto"}))}>
 		<div class={styles.roomList}>
 			<div>
 				<Link to="~/">
