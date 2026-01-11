@@ -594,6 +594,8 @@ function SelfBox() {
 
 	const account = useAccount();
 
+	const counterpart = account.counterparts.get(account.jid.toString());
+
 	const logout = useLatestCallback(() => {
 		navigate("~/logout/" + encodeURIComponent(account.jid.toString()));
 	});
@@ -601,7 +603,7 @@ function SelfBox() {
 	return <div class={styles.selfBox}>
 		<Avatar jid={account.jid} size="md" />
 		<div class={styles.selfBoxNameSegment}>
-			{account.jid.local}
+			{typeof counterpart === "undefined" ? account.jid.local : getNickForCounterpart(counterpart)}
 			<div class={styles.friendEntryJID}>{account.jid.toString()}</div>
 		</div>
 		<Menu>
