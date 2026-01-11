@@ -40,6 +40,7 @@ const styles = {
 		height: "100%",
 	}),
 	roomList: css({
+		boxSizing: "border-box",
 		padding: ".25rem",
 		lineHeight: 0,
 		display: "flex",
@@ -49,7 +50,7 @@ const styles = {
 		borderRightWidth: "1px",
 		borderRightColor: themeVars.outline1,
 		backgroundColor: themeVars.bg1,
-		flexGrow: 1,
+		overflowY: "auto",
 	}),
 	currentRoomLink: css({
 		borderColor: themeVars.highlightOutline,
@@ -118,6 +119,7 @@ const styles = {
 	}),
 	sidebarSegment: css({
 		height: "calc(100% - 35px - 1rem)",
+		flexShrink: 0,
 	}),
 	spaceItemsList: css({
 		width: "250px",
@@ -266,53 +268,51 @@ function ChatView() {
 	const incomingRequestCounterparts = Array.from(account.counterparts.values())
 		.filter(counterpartIsIncomingRequest);
 
-	return <div class={cx(styles.sidebarSegment, css({display: "flex", flexDirection: "column", overflowY: "auto"}))}>
-		<div class={styles.roomList}>
-			<div>
-				<Link to="~/">
-					<div class={cx(styles.roomLink, currentRoom === null && !addMatch[0] && styles.currentRoomLink, styles.homeAvatar)}>
-						<Icon path={mdiHome} class={styles.roomLinkIcon} />
-						{
-							incomingRequestCounterparts.length > 0 &&
-								<PriorityUnreadIndicator count={incomingRequestCounterparts.length} />
-						}
-					</div>
-				</Link>
-			</div>
-			{
-				Array.from(
-					account.rooms,
-					([roomJID, info]) => {
-						const name = LoadState.ifDone(info.infoState, disco => disco.name, () => null) ?? roomJID;
+	return <div class={cx(styles.sidebarSegment, styles.roomList)}>
+		<div>
+			<Link to="~/">
+				<div class={cx(styles.roomLink, currentRoom === null && !addMatch[0] && styles.currentRoomLink, styles.homeAvatar)}>
+					<Icon path={mdiHome} class={styles.roomLinkIcon} />
+					{
+						incomingRequestCounterparts.length > 0 &&
+							<PriorityUnreadIndicator count={incomingRequestCounterparts.length} />
+					}
+				</div>
+			</Link>
+		</div>
+		{
+			Array.from(
+				account.rooms,
+				([roomJID, info]) => {
+					const name = LoadState.ifDone(info.infoState, disco => disco.name, () => null) ?? roomJID;
 
-						const counterpart = account.counterparts.get(roomJID);
-						const unread = typeof counterpart !== "undefined" &&
-							counterpart.lastMessageID !== null &&
-							counterpart.lastReadMessageID !== counterpart.lastMessageID;
+					const counterpart = account.counterparts.get(roomJID);
+					const unread = typeof counterpart !== "undefined" &&
+						counterpart.lastMessageID !== null &&
+						counterpart.lastReadMessageID !== counterpart.lastMessageID;
 
-						return <div key={roomJID}>
-							<WithTooltip tooltip={name} side="inline-end">
-								<Link
-									to={"~/chat/rooms/" + encodeURIComponent(roomJID)}
-									class={cx(styles.roomLink, currentRoom === roomJID && styles.currentRoomLink)}
-								>
-									<Avatar size="lg" jid={roomJID} />
-									{
-										unread && <div class={styles.roomUnreadIndicator} />
-									}
-								</Link>
-							</WithTooltip>
-						</div>;
-					},
-				)
-			}
-			<div>
-				<Link to="~/chat/rooms:add">
-					<div class={cx(styles.roomLink, addMatch[0] && styles.currentRoomLink, styles.homeAvatar)}>
-						<Icon path={mdiPlus} class={styles.roomLinkIcon} />
-					</div>
-				</Link>
-			</div>
+					return <div key={roomJID}>
+						<WithTooltip tooltip={name} side="inline-end">
+							<Link
+								to={"~/chat/rooms/" + encodeURIComponent(roomJID)}
+								class={cx(styles.roomLink, currentRoom === roomJID && styles.currentRoomLink)}
+							>
+								<Avatar size="lg" jid={roomJID} />
+								{
+									unread && <div class={styles.roomUnreadIndicator} />
+								}
+							</Link>
+						</WithTooltip>
+					</div>;
+				},
+			)
+		}
+		<div>
+			<Link to="~/chat/rooms:add">
+				<div class={cx(styles.roomLink, addMatch[0] && styles.currentRoomLink, styles.homeAvatar)}>
+					<Icon path={mdiPlus} class={styles.roomLinkIcon} />
+				</div>
+			</Link>
 		</div>
 	</div>;
 }
