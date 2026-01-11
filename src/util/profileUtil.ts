@@ -1,10 +1,21 @@
+import { JID } from "@xmpp/jid";
+
 import { Counterpart } from "./types";
 
 export function getNickForCounterpart(counterpart: Counterpart) {
 	if(counterpart.nick !== null) return counterpart.nick;
 
-	if(counterpart.jid.resource !== "") return counterpart.jid.resource;
-	if(counterpart.jid.local !== "") return counterpart.jid.local;
+	return getDefaultNickForJID(counterpart.jid);
+}
 
-	return counterpart.jid.domain;
+export function maybeGetNickForCounterpart(jid: JID, counterpart: Counterpart | undefined) {
+	if(typeof counterpart === "undefined") return getDefaultNickForJID(jid);
+	else return getNickForCounterpart(counterpart);
+}
+
+function getDefaultNickForJID(jid: JID) {
+	if(jid.resource !== "") return jid.resource;
+	if(jid.local !== "") return jid.local;
+
+	return jid.domain;
 }

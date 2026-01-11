@@ -3,7 +3,8 @@ import { JSX, VNode } from "preact";
 import { useCallback, useEffect, useLayoutEffect, useRef } from "preact/hooks";
 import { List, ListImperativeAPI, RowComponentProps, useDynamicRowHeight } from "react-window";
 
-import { Message } from "../util/connection";
+import { Message, useAccount } from "../util/connection";
+import { maybeGetNickForCounterpart } from "../util/profileUtil";
 import Avatar from "./Avatar";
 
 const DEFAULT_ROW_HEIGHT = 70;
@@ -143,7 +144,16 @@ function MessageRow(props: RowComponentProps<{messages: Message[]; loaderContent
 
 	const message = props.messages[index];
 
+	return <RealMessageRow {...props} message={message} />;
+}
+
+function RealMessageRow(props: RowComponentProps<{message: Message}>) {
+	const message = props.message;
+
+	const account = useAccount();
+
 	const from = message.room === null ? message.from.bare() : message.from;
+	const counterpart = account.counterparts.get(from.toString());
 
 	return <div style={props.style} class={styles.message}>
 		<div>
@@ -151,7 +161,7 @@ function MessageRow(props: RowComponentProps<{messages: Message[]; loaderContent
 		</div>
 		<div>
 			<div>
-				<span>{from.resource === "" ? from.local : from.resource}</span>
+				<span>{maybeGetNickForCounterpart(from, counterpart)}</span>
 				<span class={styles.messageTimestamp}>{message.timestamp.toLocaleString()}</span>
 			</div>
 			<div>
