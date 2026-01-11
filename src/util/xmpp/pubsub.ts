@@ -4,12 +4,12 @@ import xml, { Element } from "@xmpp/xml";
 
 import { Client } from "./client";
 
-interface ItemInfo {
+export interface PubsubItemInfo {
 	id: string;
 	element: Element;
 }
 
-export async function fetchPubsubItems(client: Client, node: string): Promise<{items: ItemInfo[]}> {
+export async function fetchPubsubItems(client: Client, node: string): Promise<{items: PubsubItemInfo[]}> {
 	const result = await client.iqCaller.get(
 		xml(
 			"pubsub",

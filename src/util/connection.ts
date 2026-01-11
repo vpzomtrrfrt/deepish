@@ -15,7 +15,7 @@ import { Counterpart, Presence, PresenceShowType, RosterEntry } from "./types";
 import { LoadState } from "./useData";
 import useEffectOnce from "./useEffectOnce";
 import * as xmppClient from "./xmpp/client";
-import { fetchPubsubItems, publishPubsubItem, retractPubsubItem } from "./xmpp/pubsub";
+import { fetchPubsubItems, publishPubsubItem, PubsubItemInfo, retractPubsubItem } from "./xmpp/pubsub";
 
 const FEATURES: string[] = [
 	"urn:xmpp:bookmarks:1+notify",
@@ -159,43 +159,45 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 		});
 	}, []);
 
-	async function fetchBookmarks(client: xmppClient.Client) {
-		const initBookmarks = await fetchPubsubItems(client, "urn:xmpp:bookmarks:1");
-
-		const targetRooms: Array<{
+	const handleBookmarksUpdate = useLatestCallback((
+		client: xmppClient.Client,
+		mode: "add" | "remove" | "all",
+		newItems?: PubsubItemInfo[],
+		removedItems?: string[],
+	) => {
+		const wantedRooms: Array<{
 			jid: string;
 			nick?: string;
 		}> = [];
 
-		initBookmarks.items.forEach(item => {
-			const jid = item.id;
+		if(typeof newItems !== "undefined") {
+			newItems.forEach(item => {
+				const jid = item.id;
 
-			const conf = item.element.getChild("conference", "urn:xmpp:bookmarks:1");
-			if(typeof conf !== "undefined") {
-				const autojoinValue = conf.getAttr("autojoin");
-				if(autojoinValue === "true" || autojoinValue === "1") {
-					const entry: typeof targetRooms[0] = {jid};
+				const conf = item.element.getChild("conference", "urn:xmpp:bookmarks:1");
+				if(typeof conf !== "undefined") {
+					const autojoinValue = conf.getAttr("autojoin");
+					if(autojoinValue === "true" || autojoinValue === "1") {
+						const entry: typeof wantedRooms[0] = {jid};
 
-					const nickNode = conf.getChild("nick");
-					if(typeof nickNode !== "undefined") {
-						entry.nick = nickNode.getText();
+						const nickNode = conf.getChild("nick");
+						if(typeof nickNode !== "undefined") {
+							entry.nick = nickNode.getText();
+						}
+
+						wantedRooms.push(entry);
 					}
-
-					targetRooms.push(entry);
 				}
-			}
-		});
+			});
+		}
 
-		updateAccount(client, item => {
-			const extraRooms = new Set<string>(item.rooms.keys());
+		updateAccount(client, account => {
+			const extraRooms = new Set<string>(account.rooms.keys());
 
-			const rooms = new Map<string, Room>();
+			const rooms = new Map<string, Room>(account.rooms);
 
-			targetRooms.forEach(entry => {
-				if(extraRooms.delete(entry.jid)) {
-					rooms.set(entry.jid, item.rooms.get(entry.jid)!);
-				}
-				else {
+			wantedRooms.forEach(entry => {
+				if(!extraRooms.delete(entry.jid)) {
 					const jid = parseJID(entry.jid);
 
 					rooms.set(entry.jid, {
@@ -208,11 +210,37 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 				}
 			});
 
+			let unwantedRooms: string[];
+			if(mode === "add") unwantedRooms = [];
+			else if(mode === "remove") unwantedRooms = removedItems ?? [];
+			else if(mode === "all") unwantedRooms = Array.from(extraRooms)
+			else {
+				const _: never = mode;
+
+				throw new Error("Unknown mode");
+			}
+
+			if(unwantedRooms.length > 0) {
+				unwantedRooms.forEach(roomJID => {
+					const entry = rooms.get(roomJID);
+					if(typeof entry !== "undefined") {
+						rooms.delete(roomJID);
+						disconnectRoom(account, entry);
+					}
+				});
+			}
+
 			return {
-				...item,
+				...account,
 				rooms,
 			};
 		});
+	});
+
+	async function fetchBookmarks(client: xmppClient.Client) {
+		const initBookmarks = await fetchPubsubItems(client, "urn:xmpp:bookmarks:1");
+
+		handleBookmarksUpdate(client, "all", initBookmarks.items);
 	}
 
 	const handleRosterUpdate = useCallback((accountJID: JID, items: Element[], isAll: boolean) => {
@@ -419,6 +447,48 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 		updateAccount(client, account => ({...account, lastError: err, stopped: stop}));
 	});
 
+	function handlePubsubItem(client: xmppClient.Client, from: JID | undefined, node: string, item: PubsubItemInfo) {
+		console.log("handling pubsub item", from, node, item);
+
+		if(node === "urn:xmpp:avatar:metadata") {
+			const avatarHashes: string[] = [item.id]; // TODO Fetch other hashes from metadata
+
+			if(typeof from !== "undefined") {
+				const contact = from;
+
+				updateAccount(client, account => {
+					const counterparts = new Map(account.counterparts);
+
+					const entry = counterparts.get(contact.toString());
+					if(typeof entry === "undefined") {
+						counterparts.set(contact.toString(), {
+							...DEFAULT_COUNTERPART_INFO,
+							jid: contact,
+							avatarHashes,
+						});
+					}
+					else {
+						counterparts.set(contact.toString(), {
+							...entry,
+							avatarHashes,
+						});
+					}
+
+					return {...account, counterparts};
+				});
+			}
+		}
+		else if(node === "urn:xmpp:bookmarks:1") {
+			handleBookmarksUpdate(client, "add", [item]);
+		}
+	}
+
+	function handlePubsubRetract(client: xmppClient.Client, from: JID | undefined, node: string, itemID: string) {
+		if(node === "urn:xmpp:bookmarks:1") {
+			handleBookmarksUpdate(client, "remove", undefined, [itemID]);
+		}
+	}
+
 	function handleMessageStanza(client: xmppClient.Client, elem: Element, idFromWrapper?: string, timestampFromWrapper?: Date) {
 		const fromStr = elem.getAttr("from");
 		const from = typeof fromStr === "undefined" ? undefined : parseJID(fromStr);
@@ -619,37 +689,30 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 			const eventElem = elem.getChild("event", "http://jabber.org/protocol/pubsub#event");
 			if(typeof eventElem !== "undefined") {
 				eventElem.getChildren("items").forEach(itemsElem => {
-					if(itemsElem.getAttr("node") === "urn:xmpp:avatar:metadata") {
-						const avatarHashes: string[] = [];
+					const node = itemsElem.getAttr("node");
+					if(typeof node === "string") {
 						itemsElem.getChildren("item").forEach(itemElem => {
-							const hash = itemElem.getAttr("id");
-							if(typeof hash === "string") avatarHashes.push(hash);
+							const id = itemElem.getAttr("id");
+							if(typeof id === "string") {
+								handlePubsubItem(
+									client,
+									from,
+									node,
+									{
+										id,
+										element: itemElem,
+									},
+								);
+							}
 						});
 
-						if(typeof from !== "undefined") {
-							const contact = from;
+						itemsElem.getChildren("retract").forEach(retractElem => {
+							const id = retractElem.getAttr("id");
 
-							updateAccount(client, account => {
-								const counterparts = new Map(account.counterparts);
-
-								const entry = counterparts.get(contact.toString());
-								if(typeof entry === "undefined") {
-									counterparts.set(contact.toString(), {
-										...DEFAULT_COUNTERPART_INFO,
-										jid: contact,
-										avatarHashes,
-									});
-								}
-								else {
-									counterparts.set(contact.toString(), {
-										...entry,
-										avatarHashes,
-									});
-								}
-
-								return {...account, counterparts};
-							});
-						}
+							if(typeof id === "string") {
+								handlePubsubRetract(client, from, node, id);
+							}
+						});
 					}
 				});
 			}
@@ -1636,6 +1699,19 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 		}
 	});
 
+	function disconnectRoom(account: Account, room: Room) {
+		return account.client.send(
+			xml(
+				"presence",
+				{
+					id: xid(),
+					to: new JID(room.jid.local, room.jid.domain, room.nick ?? account.jid.local),
+					type: "unavailable",
+				},
+			),
+		);
+	}
+
 	const leaveRoom = useLatestCallback(async (accountJID: JID, roomJID: JID) => {
 		{
 			const account = accounts.find(x => x.jid.equals(accountJID));
@@ -1644,16 +1720,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 			const room = account.rooms.get(roomJID.toString());
 			if(typeof room === "undefined") return;
 
-			account.client.send(
-				xml(
-					"presence",
-					{
-						id: xid(),
-						to: new JID(roomJID.local, roomJID.domain, room.nick ?? accountJID.local),
-						type: "unavailable",
-					},
-				),
-			);
+			disconnectRoom(account, room);
 
 			await retractPubsubItem(account.client, "urn:xmpp:bookmarks:1", roomJID.toString(), true);
 		}

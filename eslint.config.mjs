@@ -14,7 +14,7 @@ export default defineConfig(
 			"simple-import-sort": simpleImportSort,
 		},
 		rules: {
-			"@typescript-eslint/no-unused-vars": ["warn", {argsIgnorePattern: "^_"}],
+			"@typescript-eslint/no-unused-vars": ["warn", {argsIgnorePattern: "^_", varsIgnorePattern: "^_"}],
 			"simple-import-sort/imports": "warn",
 			"simple-import-sort/exports": "warn",
 		},
