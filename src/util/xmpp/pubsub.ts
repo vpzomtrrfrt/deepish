@@ -78,6 +78,11 @@ export async function publishPubsubItem(
 				xml(
 					"x",
 					{xmlns: "jabber:x:data", type: "submit"},
+					xml(
+						"field",
+						{var: "FORM_TYPE", type: "hidden"},
+						xml("value", {}, "http://jabber.org/protocol/pubsub#publish-options"),
+					),
 					...Object.entries(publishOptions).map(([key, value]) => {
 						return xml(
 							"field",

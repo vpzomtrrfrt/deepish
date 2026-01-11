@@ -1933,6 +1933,12 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 						),
 					),
 				),
+				{
+					persistItems: true,
+					maxItems: "max",
+					sendLastPublishedItem: "never",
+					accessModel: "whitelist",
+				},
 			);
 		},
 	);
