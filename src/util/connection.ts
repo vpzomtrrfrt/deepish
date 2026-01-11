@@ -2,6 +2,7 @@ import { IDBCache } from "@instructure/idb-cache";
 import Connection from "@xmpp/connection";
 import xid from "@xmpp/id";
 import { JID, parse as parseJID } from "@xmpp/jid";
+import StanzaError from "@xmpp/middleware/lib/StanzaError";
 import SASLError from "@xmpp/sasl/lib/SASLError";
 import xml, { Element } from "@xmpp/xml";
 import fromBase64 from "es-arraybuffer-base64/Uint8Array.fromBase64";
@@ -20,6 +21,7 @@ import { fetchPubsubItems, publishPubsubItem, PubsubItemInfo, retractPubsubItem 
 const FEATURES: string[] = [
 	"urn:xmpp:bookmarks:1+notify",
 	"urn:xmpp:avatar:metadata+notify",
+	"urn:xmpp:mds:displayed:0+notify",
 	"http://jabber.org/protocol/chatstates",
 ];
 const IDENTITY = {category: "client", type: "web", lang: "", name: "Deepish"};
@@ -28,12 +30,15 @@ const NODE_URL = "https://deepish.vpzom.click";
 const DEFAULT_COUNTERPART_INFO: Omit<Counterpart, "jid"> = {
 	rosterEntry: null,
 	requestingMySubscription: false,
+	lastMessageID: null,
 	lastMessageTimestamp: null,
 	overrideVisibleTimestamp: null,
 	avatarHashes: [],
 	presences: null,
 	lastReportedComposing: false,
 	composingFrom: null,
+
+	lastReadMessageID: null,
 };
 
 export interface RoomDiscoInfo {
@@ -133,6 +138,7 @@ export interface ConnectionContext {
 	leaveRoom(account: JID, room: JID): Promise<void>;
 	createRoom(account: JID, room: JID, params: RoomCreateParams): void;
 	fetchRoomInfo(account: JID, room: JID): Promise<RoomDiscoInfo>;
+	markCounterpartAsRead(account: JID, target: JID, lastReadMessageID: string): void;
 }
 
 export const ConnectionContext = createContext<ConnectionContext | undefined>(undefined);
@@ -387,6 +393,95 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 		}
 	}
 
+	const handlePubsubItem = useLatestCallback(
+		(client: xmppClient.Client, from: JID | undefined, node: string, item: PubsubItemInfo) => {
+			console.log("handling pubsub item", from, node, item);
+
+			if(node === "urn:xmpp:avatar:metadata") {
+				const avatarHashes: string[] = [item.id]; // TODO Fetch other hashes from metadata
+
+				if(typeof from !== "undefined") {
+					const contact = from;
+
+					updateAccount(client, account => {
+						const counterparts = new Map(account.counterparts);
+
+						const entry = counterparts.get(contact.toString());
+						if(typeof entry === "undefined") {
+							counterparts.set(contact.toString(), {
+								...DEFAULT_COUNTERPART_INFO,
+								jid: contact,
+								avatarHashes,
+							});
+						}
+						else {
+							counterparts.set(contact.toString(), {
+								...entry,
+								avatarHashes,
+							});
+						}
+
+						return {...account, counterparts};
+					});
+				}
+			}
+			else if(node === "urn:xmpp:bookmarks:1") {
+				handleBookmarksUpdate(client, "add", [item]);
+			}
+			else if(node === "urn:xmpp:mds:displayed:0") {
+				const jid = parseJID(item.id);
+
+				const displayedElem = item.element.getChild("displayed", "urn:xmpp:mds:displayed:0");
+				if(typeof displayedElem !== "undefined") {
+					const stanzaIDElem = displayedElem.getChild("stanza-id", "urn:xmpp:sid:0");
+					if(typeof stanzaIDElem !== "undefined") {
+						const messageID = stanzaIDElem.getAttr("id");
+						if(typeof messageID === "string") {
+							updateAccount(client, account => {
+								const counterparts = new Map(account.counterparts);
+								const entry = account.counterparts.get(jid.toString());
+
+								if(typeof entry === "undefined") {
+									counterparts.set(jid.toString(), {
+										...DEFAULT_COUNTERPART_INFO,
+										jid,
+										lastReadMessageID: messageID,
+									});
+								}
+								else {
+									counterparts.set(jid.toString(), {
+										...entry,
+										lastReadMessageID: messageID,
+									});
+								}
+
+								return {...account, counterparts};
+							});
+						}
+					}
+				}
+			}
+		},
+	);
+
+	async function catchupPubsub(client: xmppClient.Client, node: string) {
+		try {
+			const items = await fetchPubsubItems(client, node);
+
+			items.items.forEach(item => {
+				handlePubsubItem(client, undefined, node, item);
+			});
+		}
+		catch(ex) {
+			if(ex instanceof StanzaError && ex.condition === "item-not-found") {
+				// no items
+			}
+			else {
+				throw ex;
+			}
+		}
+	}
+
 	const onClientOnline = useLatestCallback((client: xmppClient.Client) => {
 		const setupQuery = genVerString(
 			[IDENTITY],
@@ -415,6 +510,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 					fetchRoster(client),
 					fetchInbox(client),
 					fetchServices(client),
+					catchupPubsub(client, "urn:xmpp:mds:displayed:0"),
 					client.iqCaller.set(xml("enable", {xmlns: "urn:xmpp:carbons:2"})),
 				]);
 			})
@@ -446,42 +542,6 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 
 		updateAccount(client, account => ({...account, lastError: err, stopped: stop}));
 	});
-
-	function handlePubsubItem(client: xmppClient.Client, from: JID | undefined, node: string, item: PubsubItemInfo) {
-		console.log("handling pubsub item", from, node, item);
-
-		if(node === "urn:xmpp:avatar:metadata") {
-			const avatarHashes: string[] = [item.id]; // TODO Fetch other hashes from metadata
-
-			if(typeof from !== "undefined") {
-				const contact = from;
-
-				updateAccount(client, account => {
-					const counterparts = new Map(account.counterparts);
-
-					const entry = counterparts.get(contact.toString());
-					if(typeof entry === "undefined") {
-						counterparts.set(contact.toString(), {
-							...DEFAULT_COUNTERPART_INFO,
-							jid: contact,
-							avatarHashes,
-						});
-					}
-					else {
-						counterparts.set(contact.toString(), {
-							...entry,
-							avatarHashes,
-						});
-					}
-
-					return {...account, counterparts};
-				});
-			}
-		}
-		else if(node === "urn:xmpp:bookmarks:1") {
-			handleBookmarksUpdate(client, "add", [item]);
-		}
-	}
 
 	function handlePubsubRetract(client: xmppClient.Client, from: JID | undefined, node: string, itemID: string) {
 		if(node === "urn:xmpp:bookmarks:1") {
@@ -628,8 +688,13 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 
 				timestamp = timestamp ?? new Date();
 
+				console.log("got a message", timestamp, id);
+
+				// Messages might be from me, should count against the recipient in that case
+				const conversation = from.bare().equals(client.jid!.bare()) ? to : from.bare();
+
 				updateAccount(client, account => {
-					const entry = account.counterparts.get(from.bare().toString());
+					const entry = account.counterparts.get(conversation.toString());
 					if(
 						typeof entry === "undefined" ||
 							entry.lastMessageTimestamp === null ||
@@ -637,16 +702,18 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 					) {
 						const counterparts = new Map(account.counterparts);
 						if(typeof entry === "undefined") {
-							counterparts.set(from.bare().toString(), {
+							counterparts.set(conversation.toString(), {
 								...DEFAULT_COUNTERPART_INFO,
-								jid: from.bare(),
+								jid: conversation,
 								lastMessageTimestamp: timestamp,
+								lastMessageID: id,
 							});
 						}
 						else {
-							counterparts.set(from.bare().toString(), {
+							counterparts.set(conversation.toString(), {
 								...entry,
 								lastMessageTimestamp: timestamp,
+								lastMessageID: id ?? entry.lastMessageID,
 							});
 						}
 
@@ -738,6 +805,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 								...DEFAULT_COUNTERPART_INFO,
 								jid: itemJID,
 								lastMessageTimestamp: timestamp,
+								lastMessageID: stanzaID,
 							});
 						}
 						else {
@@ -745,6 +813,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 								counterparts.set(itemJID.toString(), {
 									...entry,
 									lastMessageTimestamp: timestamp,
+									lastMessageID: stanzaID,
 								});
 							}
 						}
@@ -1838,6 +1907,82 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 		}
 	});
 
+	const currentDisplayedUpdatesRef = useRef(new Map<string, string>());
+
+	const submitDisplayedUpdateInner = useLatestCallback(
+		async (accountJID: JID, targetJID: JID, lastReadMessageID: string) => {
+			const account = accounts.find(x => x.jid.equals(accountJID));
+			if(typeof account === "undefined") throw new Error("No such account");
+
+			publishPubsubItem(
+				account.client,
+				"urn:xmpp:mds:displayed:0",
+				xml(
+					"item",
+					{id: targetJID.toString()},
+					xml(
+						"displayed",
+						{xmlns: "urn:xmpp:mds:displayed:0"},
+						xml(
+							"stanza-id",
+							{xmlns: "urn:xmpp:sid:0", by: accountJID.toString(), id: lastReadMessageID},
+						),
+					),
+				),
+			);
+		},
+	);
+
+	const submitDisplayedUpdate = useCallback((accountJID: JID, targetJID: JID, lastReadMessageID: string) => {
+		const key = encodeURIComponent(accountJID.toString()) + "/" + encodeURIComponent(targetJID.toString());
+		const running = currentDisplayedUpdatesRef.current.has(key);
+		currentDisplayedUpdatesRef.current.set(key, lastReadMessageID);
+
+		if(running) {
+			// Will submit after current run finishes
+			return;
+		}
+
+		function task(value: string) {
+			submitDisplayedUpdateInner(accountJID, targetJID, value)
+				.catch(console.error)
+				.then(() => {
+					if(currentDisplayedUpdatesRef.current.get(key) !== value) {
+						task(currentDisplayedUpdatesRef.current.get(key)!);
+					}
+					else {
+						currentDisplayedUpdatesRef.current.delete(key);
+					}
+				});
+		}
+
+		task(lastReadMessageID);
+	}, [submitDisplayedUpdateInner]);
+
+	const markCounterpartAsRead = useLatestCallback((accountJID: JID, targetJID: JID, lastReadMessageID: string) => {
+		updateAccount(accountJID, account => {
+			const counterparts = new Map(account.counterparts);
+			const entry = account.counterparts.get(targetJID.toString());
+			if(typeof entry === "undefined") {
+				counterparts.set(targetJID.toString(), {
+					...DEFAULT_COUNTERPART_INFO,
+					jid: targetJID,
+					lastReadMessageID,
+				});
+			}
+			else {
+				counterparts.set(targetJID.toString(), {
+					...entry,
+					lastReadMessageID,
+				});
+			}
+
+			return {...account, counterparts};
+		});
+
+		submitDisplayedUpdate(accountJID, targetJID, lastReadMessageID);
+	});
+
 	useEffectOnce(() => {
 		loadAccounts();
 	});
@@ -1874,6 +2019,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 			sendMessageToCounterpart,
 			sendMessageToRoom,
 			markCounterpartAsVisible,
+			markCounterpartAsRead,
 			acceptFriendRequest,
 			rejectFriendRequest,
 			removeFriend,
@@ -1894,6 +2040,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 			sendMessageToRoom,
 			loadAccounts,
 			markCounterpartAsVisible,
+			markCounterpartAsRead,
 			acceptFriendRequest,
 			rejectFriendRequest,
 			setComposingToCounterpart,

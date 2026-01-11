@@ -29,10 +29,13 @@ export interface Counterpart {
 	jid: JID;
 	rosterEntry: null | RosterEntry;
 	requestingMySubscription: boolean;
+	lastMessageID: string | null;
 	lastMessageTimestamp: Date | null;
 	overrideVisibleTimestamp: Date | null;
 	avatarHashes: string[];
 	presences: Map<string, Presence> | null;
 	lastReportedComposing: boolean;
 	composingFrom: boolean | null;
+
+	lastReadMessageID: string | null;
 }

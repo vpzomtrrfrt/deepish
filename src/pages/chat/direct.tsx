@@ -135,6 +135,21 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 		}
 	}, [account.jid, conn.markCounterpartAsVisible, counterpart]);
 
+	useEffect(() => {
+		// TODO skip marking when scrolled up
+		if(
+			pageState !== null &&
+				pageState.state === "done" &&
+				messagesData.messages.length > 0 &&
+				typeof counterpart !== "undefined"
+		) {
+			const lastMessage = messagesData.messages[messagesData.messages.length - 1];
+			if(lastMessage.id !== null && counterpart.lastReadMessageID !== lastMessage.id) {
+				conn.markCounterpartAsRead.call(undefined, account.jid, counterpart.jid, lastMessage.id);
+			}
+		}
+	}, [account.jid, conn.markCounterpartAsRead, counterpart, messagesData.messages, pageState]);
+
 	const submitMessage = useLatestCallback(async (newMessage: string) => {
 		await conn.sendMessageToCounterpart(account.jid, counterpart!.jid, {body: newMessage});
 	});

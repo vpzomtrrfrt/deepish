@@ -41,9 +41,28 @@ export async function fetchPubsubItems(client: Client, node: string): Promise<{i
 	};
 }
 
+export interface PubsubPublishOptions {
+	persistItems?: boolean;
+	maxItems?: number | "max";
+	accessModel?: "whitelist";
+	sendLastPublishedItem?: "never";
+}
+
+const PUBLISH_OPTIONS_MAP: Record<keyof PubsubPublishOptions, string> = {
+	persistItems: "pubsub#persist_items",
+	maxItems: "pubsub#max_items",
+	sendLastPublishedItem: "pubsub#send_last_published_item",
+	accessModel: "pubsub#access_model",
+};
+
 // XEP-0060 has conflicting information about whether batch publishing is possible,
 // so only publish one item at a time to be safe
-export async function publishPubsubItem(client: Client, node: string, item: Element) {
+export async function publishPubsubItem(
+	client: Client,
+	node: string,
+	item: Element,
+	publishOptions: PubsubPublishOptions = {},
+) {
 	await client.iqCaller.set(
 		xml(
 			"pubsub",
@@ -52,6 +71,21 @@ export async function publishPubsubItem(client: Client, node: string, item: Elem
 				"publish",
 				{node},
 				item,
+			),
+			xml(
+				"publish-options",
+				{},
+				xml(
+					"x",
+					{xmlns: "jabber:x:data", type: "submit"},
+					...Object.entries(publishOptions).map(([key, value]) => {
+						return xml(
+							"field",
+							{var: PUBLISH_OPTIONS_MAP[key as keyof typeof publishOptions]},
+							xml("value", {}, String(value)),
+						);
+					}),
+				),
 			),
 		),
 	);

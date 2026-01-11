@@ -211,6 +211,13 @@ const styles = {
 		opacity: 0.65,
 		fontSize: "80%",
 	}),
+	counterpartUnreadIndicator: css({
+		display: "inline-block",
+		width: "1rem",
+		height: "1rem",
+		borderRadius: "50%",
+		backgroundColor: themeVars.textOn1,
+	}),
 };
 
 export default function ChatPage() {
@@ -316,9 +323,16 @@ function ChatHomePage() {
 			</Link>
 			{
 				conversations.map(item => {
+					const counterpart = account.counterparts.get(item)!;
+
 					return <Link to={"~/chat/direct/" + encodeURIComponent(item)} className={active => cx(styles.spaceItem, active && "active")}>
 						<AvatarWithStatus size="md" jid={item} />
-						<span>{getNickForCounterpart(account.counterparts.get(item)!)}</span>
+						<span style={{flexGrow: 1}}>{getNickForCounterpart(counterpart)}</span>
+						{
+							counterpart.lastMessageID !== null &&
+								counterpart.lastReadMessageID !== counterpart.lastMessageID &&
+								<div class={styles.counterpartUnreadIndicator} />
+						}
 					</Link>;
 				})
 			}
