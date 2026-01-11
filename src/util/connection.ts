@@ -15,6 +15,7 @@ import { Counterpart, Presence, PresenceShowType, RosterEntry } from "./types";
 import { LoadState } from "./useData";
 import useEffectOnce from "./useEffectOnce";
 import * as xmppClient from "./xmpp/client";
+import { fetchPubsubItems, publishPubsubItem, retractPubsubItem } from "./xmpp/pubsub";
 
 const FEATURES: string[] = [
 	"urn:xmpp:bookmarks:1+notify",
@@ -159,30 +160,17 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 	}, []);
 
 	async function fetchBookmarks(client: xmppClient.Client) {
-		const initBookmarks = await client.iqCaller.get(
-			xml(
-				"pubsub",
-				{xmlns: "http://jabber.org/protocol/pubsub"},
-				xml("items", {node: "urn:xmpp:bookmarks:1"}),
-			),
-		);
-
-		if(typeof initBookmarks === "undefined") throw new Error("Got invalid result from bookmarks retrieval");
-
-		const initBookmarksItems = initBookmarks.getChild("items");
-		if(typeof initBookmarksItems === "undefined") {
-			throw new Error("Got invalid result from bookmarks retrieval");
-		}
+		const initBookmarks = await fetchPubsubItems(client, "urn:xmpp:bookmarks:1");
 
 		const targetRooms: Array<{
 			jid: string;
 			nick?: string;
 		}> = [];
 
-		initBookmarksItems.getChildren("item").forEach(item => {
-			const jid = item.getAttr("id");
+		initBookmarks.items.forEach(item => {
+			const jid = item.id;
 
-			const conf = item.getChild("conference", "urn:xmpp:bookmarks:1");
+			const conf = item.element.getChild("conference", "urn:xmpp:bookmarks:1");
 			if(typeof conf !== "undefined") {
 				const autojoinValue = conf.getAttr("autojoin");
 				if(autojoinValue === "true" || autojoinValue === "1") {
@@ -1628,25 +1616,19 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 				throw ex;
 			}
 
-			await account.client.iqCaller.set(
+			await publishPubsubItem(
+				account.client,
+				"urn:xmpp:bookmarks:1",
 				xml(
-					"pubsub",
-					{xmlns: "http://jabber.org/protocol/pubsub"},
+					"item",
+					{id: room.toString()},
 					xml(
-						"publish",
-						{node: "urn:xmpp:bookmarks:1"},
-						xml(
-							"item",
-							{id: room.toString()},
-							xml(
-								"conference",
-								{xmlns: "urn:xmpp:bookmarks:1", autojoin: "true"},
-								...(
-									typeof nick === "undefined" ?
-										[] :
-										[xml("nick", {}, nick)]
-								),
-							),
+						"conference",
+						{xmlns: "urn:xmpp:bookmarks:1", autojoin: "true"},
+						...(
+							typeof nick === "undefined" ?
+								[] :
+								[xml("nick", {}, nick)]
 						),
 					),
 				),
@@ -1673,20 +1655,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 				),
 			);
 
-			await account.client.iqCaller.set(
-				xml(
-					"pubsub",
-					{xmlns: "http://jabber.org/protocol/pubsub"},
-					xml(
-						"retract",
-						{node: "urn:xmpp:bookmarks:1", notify: "true"},
-						xml(
-							"item",
-							{id: roomJID.toString()},
-						),
-					),
-				),
-			);
+			await retractPubsubItem(account.client, "urn:xmpp:bookmarks:1", roomJID.toString(), true);
 		}
 
 		updateAccount(accountJID, account => {
