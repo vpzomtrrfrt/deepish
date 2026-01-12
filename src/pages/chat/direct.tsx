@@ -57,9 +57,14 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 	const account = useAccount();
 	const counterpart = account.counterparts.get(props.counterpartJID);
 
-	const [messagesData, setMessagesData] = useState<{messages: Message[]; messageMap: Map<string, Message>}>({
+	const [messagesData, setMessagesData] = useState<{
+		messages: Message[];
+		byID: Map<string, Message>;
+		byLocalID: Map<string, Message>;
+	}>({
 		messages: [],
-		messageMap: new Map(),
+		byID: new Map(),
+		byLocalID: new Map(),
 	});
 
 	const onMessage = useLatestCallback((evt: MessageEvent) => {
@@ -70,19 +75,36 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 			)
 		) {
 			setMessagesData(current => {
-				if(evt.message.id !== null && current.messageMap.has(evt.message.id)) {
-					// we already have this message, ignore
-					return current;
-				}
+				let newMessages;
+				if(
+					current.byLocalID.has(evt.message.localID) ||
+						(evt.message.id !== null && current.byID.has(evt.message.id))
+				) {
+					// Already present, remove existing entry
 
-				let newMap;
-				if(evt.message.id === null) newMap = current.messageMap;
+					// TODO do this faster
+					newMessages = current.messages.filter(message => {
+						return !(
+							message.id === null ?
+								message.localID === evt.message.localID :
+								message.id === evt.message.id
+						);
+					});
+				}
 				else {
-					newMap = new Map(current.messageMap);
-					newMap.set(evt.message.id, evt.message);
+					newMessages = current.messages.slice();
 				}
 
-				const newMessages = current.messages.slice();
+				let newByID;
+				if(evt.message.id === null) newByID = current.byID;
+				else {
+					newByID = new Map(current.byID);
+					newByID.set(evt.message.id, evt.message);
+				}
+
+				const newByLocalID = new Map(current.byLocalID);
+				newByLocalID.set(evt.message.localID, evt.message);
+
 				pushAtSortPosition(
 					newMessages,
 					evt.message,
@@ -92,7 +114,8 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 
 				return {
 					messages: newMessages,
-					messageMap: newMap,
+					byID: newByID,
+					byLocalID: newByLocalID,
 				};
 			});
 		}

@@ -655,7 +655,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 						to: null,
 						content,
 						id,
-						localID: id ?? xid(),
+						localID: unstableID ?? id ?? xid(),
 						timestamp,
 					},
 				});
@@ -700,6 +700,8 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 				const maybeID = idElem.getAttr("id");
 				if(typeof maybeID !== "undefined" && maybeID !== null) id = maybeID;
 			}
+
+			const unstableID = elem.getAttr("id");
 
 			let outgoingListener;
 			if(id === null) {
@@ -812,7 +814,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 						to,
 						content,
 						id,
-						localID: id ?? xid(),
+						localID: unstableID ?? id ?? xid(),
 						timestamp,
 					},
 				});
@@ -1459,64 +1461,66 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 		[],
 	);
 
-	const requestArchive = useLatestCallback(async (accountJID: JID, entity: JID, params: {with?: JID}, before?: string) => {
-		const account = accounts.find(x => x.jid.equals(accountJID));
-		if(typeof account === "undefined") throw new Error("No such account");
+	const requestArchive = useLatestCallback(
+		async (accountJID: JID, entity: JID, params: {with?: JID}, before?: string, options: {max?: number} = {}) => {
+			const account = accounts.find(x => x.jid.equals(accountJID));
+			if(typeof account === "undefined") throw new Error("No such account");
 
-		return account.client.iqCaller.request(
-			xml(
-				"iq",
-				{type: "set", to: entity.toString()},
+			return account.client.iqCaller.request(
 				xml(
-					"query",
-					{xmlns: "urn:xmpp:mam:2"},
-					...(
-						typeof params.with === "undefined" ?
-							[] :
-							[xml(
-								"x",
-								{xmlns: "jabber:x:data", type: "submit"},
-								xml("field", {var: "FORM_TYPE", type: "hidden"}, xml("value", {}, "urn:xmpp:mam:2")),
-								xml("field", {var: "with"}, xml("value", {}, params.with.toString())),
-							)]
-					),
+					"iq",
+					{type: "set", to: entity.toString()},
 					xml(
-						"set",
-						{xmlns: "http://jabber.org/protocol/rsm"},
-						xml("max", {}, "10"),
-						typeof before === "undefined" ?
-							xml("before") :
-							xml("before", {}, before),
+						"query",
+						{xmlns: "urn:xmpp:mam:2"},
+						...(
+							typeof params.with === "undefined" ?
+								[] :
+								[xml(
+									"x",
+									{xmlns: "jabber:x:data", type: "submit"},
+									xml("field", {var: "FORM_TYPE", type: "hidden"}, xml("value", {}, "urn:xmpp:mam:2")),
+									xml("field", {var: "with"}, xml("value", {}, params.with.toString())),
+								)]
+						),
+						xml(
+							"set",
+							{xmlns: "http://jabber.org/protocol/rsm"},
+							xml("max", {}, (options.max ?? 10).toString()),
+							typeof before === "undefined" ?
+								xml("before") :
+								xml("before", {}, before),
+						),
 					),
 				),
-			),
-		)
-			.then(result => {
-				console.log("result is", result);
+			)
+				.then(result => {
+					console.log("result is", result);
 
-				const finElem = result.getChild("fin", "urn:xmpp:mam:2");
+					const finElem = result.getChild("fin", "urn:xmpp:mam:2");
 
-				if(typeof finElem === "undefined") {
-					throw new Error("Unexpected result of MAM query");
-				}
+					if(typeof finElem === "undefined") {
+						throw new Error("Unexpected result of MAM query");
+					}
 
-				const setElem = finElem.getChild("set", "http://jabber.org/protocol/rsm");
-				if(typeof setElem === "undefined") throw new Error("Unexpected result of MAM query");
+					const setElem = finElem.getChild("set", "http://jabber.org/protocol/rsm");
+					if(typeof setElem === "undefined") throw new Error("Unexpected result of MAM query");
 
-				const firstItem = setElem.getChildText("first");
-				const lastItem = setElem.getChildText("last");
+					const firstItem = setElem.getChildText("first");
+					const lastItem = setElem.getChildText("last");
 
-				if(firstItem === null && lastItem === null) {
-					// There is nothing in the list
-					return null;
-				}
+					if(firstItem === null && lastItem === null) {
+						// There is nothing in the list
+						return null;
+					}
 
-				return {
-					firstItem: expectValue(firstItem),
-					lastItem: expectValue(lastItem),
-				} satisfies ResultSetInfo;
-			});
-	});
+					return {
+						firstItem: expectValue(firstItem),
+						lastItem: expectValue(lastItem),
+					} satisfies ResultSetInfo;
+				});
+		},
+	);
 
 	const sendMessageToCounterpart = useLatestCallback(async (accountJID: JID, targetJID: JID, message: {body: string}) => {
 		const localID = xid();
@@ -1547,6 +1551,11 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 				timestamp: new Date(),
 			},
 		});
+
+		// Non-groupchat messages don't get reflected, so we don't know the stanza ID
+		// Make an archive request to get the latest message
+		// (which may or may not be this one, but fine for the purpose of displayed sync)
+		requestArchive(account.jid, account.jid, {with: targetJID}, undefined, {max: 1});
 	});
 
 	const sendMessageToRoom = useLatestCallback(async (accountJID: JID, roomJID: JID, message: {body: string}) => {
