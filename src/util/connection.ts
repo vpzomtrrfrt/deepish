@@ -15,6 +15,7 @@ import useLatestCallback from "use-latest-callback";
 import { Counterpart, Presence, PresenceShowType, RosterEntry } from "./types";
 import { LoadState } from "./useData";
 import useEffectOnce from "./useEffectOnce";
+import useIdle, { IdleState } from "./useIdle";
 import * as xmppClient from "./xmpp/client";
 import { fetchPubsubItems, publishPubsubItem, PubsubItemInfo, retractPubsubItem } from "./xmpp/pubsub";
 
@@ -66,7 +67,6 @@ export interface Account {
 	connected: boolean;
 	lastError: unknown;
 	stopped: boolean;
-	setupQuery: Promise<void> | null;
 
 	counterparts: Map<string, Counterpart>;
 	rooms: Map<string, Room>;
@@ -117,6 +117,7 @@ interface RoomJoinCallbackInfo {
 export interface ConnectionContext {
 	accounts: Account[];
 	inited: boolean;
+	idle: IdleState;
 
 	saveToken(jid: JID, token: unknown, userAgent: string): void;
 	logout(jid: JID): void;
@@ -152,6 +153,8 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 	const [accounts, setAccounts] = useState<Account[]>([]);
 
 	const [inited, setInited] = useState(false);
+
+	const idle = useIdle();
 
 	const outgoingMessagesRef = useRef<Map<string, {resolve: () => void; reject: (err: unknown) => void}>>(new Map());
 
@@ -508,28 +511,50 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 		}
 	}
 
-	const onClientOnline = useLatestCallback((client: xmppClient.Client) => {
-		const setupQuery = genVerString(
+	const sendMyPresence = useLatestCallback(async (client: xmppClient.Client) => {
+		console.log("sending my presence", idle);
+
+		const ver = await genVerString(
 			[IDENTITY],
 			FEATURES,
-		)
-			.then(ver => {
-				return client.send(
-					xml(
-						"presence",
-						undefined,
-						xml(
-							"c",
-							{
-								xmlns: "http://jabber.org/protocol/caps",
-								hash: "sha-1",
-								node: NODE_URL,
-								ver,
-							},
-						),
-					),
-				);
-			})
+		);
+
+		await client.send(
+			xml(
+				"presence",
+				undefined,
+				xml(
+					"c",
+					{
+						xmlns: "http://jabber.org/protocol/caps",
+						hash: "sha-1",
+						node: NODE_URL,
+						ver,
+					},
+				),
+				...(
+					idle.idle ?
+						[xml("show", {}, "away")] :
+						[]
+				),
+			),
+		);
+	});
+
+	const sendMyPresences = useLatestCallback(() => {
+		accounts.forEach(account => {
+			if(account.client.status === "online" || account.client.status === "open") {
+				sendMyPresence(account.client);
+			}
+		});
+	});
+
+	useEffect(() => {
+		sendMyPresences();
+	}, [sendMyPresences, idle]);
+
+	const onClientOnline = useLatestCallback((client: xmppClient.Client) => {
+		sendMyPresence(client)
 			.then(() => {
 				return Promise.all([
 					fetchBookmarks(client),
@@ -541,8 +566,6 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 				]);
 			})
 			.then(() => undefined);
-
-		updateAccount(client, account => ({...account, setupQuery}));
 	});
 
 	const onClientStatusChanged = useLatestCallback((
@@ -1369,7 +1392,6 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 						client,
 						lastError: null,
 						connected: false,
-						setupQuery: null,
 						counterparts: new Map(),
 						rooms: new Map(),
 						avatarStates: new Map(),
@@ -2086,6 +2108,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 		() => ({
 			accounts,
 			inited,
+			idle,
 
 			saveToken(jid, token, userAgent) {
 				localStorage.setItem("deepishAccount", JSON.stringify({jid: jid.toString(), token, userAgent}));
@@ -2119,6 +2142,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 		[
 			accounts,
 			inited,
+			idle,
 			addEventListener,
 			removeEventListener,
 			requestArchive,
