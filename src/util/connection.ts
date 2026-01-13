@@ -598,6 +598,48 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 		}
 	}
 
+	function handleChatStateUpdate(client: xmppClient.Client, elem: Element, from: JID) {
+		const composing =
+			(
+				typeof elem.getChild("composing", "http://jabber.org/protocol/chatstates") !== "undefined" ||
+					typeof elem.getChild("paused", "http://jabber.org/protocol/chatstates") !== "undefined"
+			) ?
+				true :
+				(
+					(
+						typeof elem.getChild("active", "http://jabber.org/protocol/chatstates") !== "undefined" ||
+							typeof elem.getChild("inactive", "http://jabber.org/protocol/chatstates") !== "undefined" ||
+							typeof elem.getChild("gone", "http://jabber.org/protocol/chatstates") !== "undefined"
+					) ?
+						false :
+						null
+				);
+
+		if(composing !== null) {
+			console.log("updating composing from", from, composing, elem);
+
+			updateAccount(client, account => {
+				const entry = account.counterparts.get(from.toString());
+				const counterparts = new Map(account.counterparts);
+				if(typeof entry === "undefined") {
+					counterparts.set(from.toString(), {
+						...DEFAULT_COUNTERPART_INFO,
+						jid: from,
+						composingFrom: composing,
+					});
+				}
+				else {
+					counterparts.set(from.toString(), {
+						...entry,
+						composingFrom: composing,
+					});
+				}
+
+				return {...account, counterparts};
+			});
+		}
+	}
+
 	function handleMessageStanza(client: xmppClient.Client, elem: Element, idFromWrapper?: string, timestampFromWrapper?: Date) {
 		const fromStr = elem.getAttr("from");
 		const from = typeof fromStr === "undefined" ? undefined : parseJID(fromStr);
@@ -633,6 +675,8 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 
 				return;
 			}
+
+			if(typeof from !== "undefined") handleChatStateUpdate(client, elem, from);
 
 			const content = elem.getChildText("body");
 
@@ -721,45 +765,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 				return;
 			}
 
-			const composing =
-				(
-					typeof elem.getChild("composing", "http://jabber.org/protocol/chatstates") !== "undefined" ||
-						typeof elem.getChild("paused", "http://jabber.org/protocol/chatstates") !== "undefined"
-				) ?
-					true :
-					(
-						(
-							typeof elem.getChild("active", "http://jabber.org/protocol/chatstates") !== "undefined" ||
-								typeof elem.getChild("inactive", "http://jabber.org/protocol/chatstates") !== "undefined" ||
-								typeof elem.getChild("gone", "http://jabber.org/protocol/chatstates") !== "undefined"
-						) ?
-							false :
-							null
-					);
-
-			if(composing !== null && typeof from !== "undefined") {
-				console.log("updating composing from", from, composing, elem);
-
-				updateAccount(client, account => {
-					const entry = account.counterparts.get(from.bare().toString());
-					const counterparts = new Map(account.counterparts);
-					if(typeof entry === "undefined") {
-						counterparts.set(from.bare().toString(), {
-							...DEFAULT_COUNTERPART_INFO,
-							jid: from.bare(),
-							composingFrom: composing,
-						});
-					}
-					else {
-						counterparts.set(from.bare().toString(), {
-							...entry,
-							composingFrom: composing,
-						});
-					}
-
-					return {...account, counterparts};
-				});
-			}
+			if(typeof from !== "undefined") handleChatStateUpdate(client, elem, from.bare());
 
 			const content = elem.getChildText("body");
 

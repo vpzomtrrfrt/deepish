@@ -1,6 +1,7 @@
 import { css } from "@emotion/css";
+import { JID } from "@xmpp/jid";
 import { pushAtSortPosition } from "array-push-at-sort-position";
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { Fragment } from "preact/jsx-runtime";
 import useLatestCallback from "use-latest-callback";
 import { useLocation } from "wouter-preact";
@@ -12,6 +13,7 @@ import Menu, { MenuItem } from "../../../components/Menu";
 import MessageInput from "../../../components/MessageInput";
 import MessageList, { LoadMoreTriggerer } from "../../../components/MessageList";
 import TaskDialog from "../../../components/TaskDialog";
+import TypingIndicator from "../../../components/TypingIndicator";
 import { Message, MessageEvent, ResultSetInfo, useAccount, useConnectionContext } from "../../../util/connection";
 import { LoadState } from "../../../util/useData";
 import { SpaceItemsList } from "..";
@@ -160,6 +162,19 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 		);
 	});
 
+	const usersTyping = useMemo(() => {
+		if(typeof room === "undefined") return [];
+
+		const result: JID[] = [];
+		for(const [, value] of account.counterparts.entries()) {
+			if(value.jid.bare().equals(room.jid)) {
+				if(value.composingFrom === true) result.push(value.jid);
+			}
+		}
+
+		return result;
+	}, [account.counterparts, room]);
+
 	const loaderContent = pageState === null ?
 		<p>Connecting…</p> :
 		LoadState.ifDone(
@@ -189,6 +204,7 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 				messages={messagesData.messages}
 				loaderContent={loaderContent}
 			/>
+			<TypingIndicator usersTyping={usersTyping} />
 			<MessageInput submitMessage={submitMessage} autofocus />
 		</div>
 	</Fragment>;

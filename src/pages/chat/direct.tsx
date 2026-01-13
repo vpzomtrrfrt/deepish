@@ -1,5 +1,5 @@
-import { css, cx } from "@emotion/css";
-import { JID, parse as parseJID } from "@xmpp/jid";
+import { css } from "@emotion/css";
+import { parse as parseJID } from "@xmpp/jid";
 import { pushAtSortPosition } from "array-push-at-sort-position";
 import { useEffect, useRef, useState } from "preact/hooks";
 import useLatestCallback from "use-latest-callback";
@@ -7,9 +7,9 @@ import useLatestCallback from "use-latest-callback";
 import { DataNonDoneView } from "../../components/DataView";
 import MessageInput from "../../components/MessageInput";
 import MessageList, { LoadMoreTriggerer } from "../../components/MessageList";
+import TypingIndicator from "../../components/TypingIndicator";
 import { Message, MessageEvent, ResultSetInfo, useAccount, useConnectionContext } from "../../util/connection";
 import { getNickForCounterpart } from "../../util/profileUtil";
-import { themeVars } from "../../util/theme";
 import { LoadState } from "../../util/useData";
 
 const styles = {
@@ -19,21 +19,6 @@ const styles = {
 
 		display: "flex",
 		flexDirection: "column",
-	}),
-	typingIndicatorWrapper: css({
-		position: "relative",
-	}),
-	typingIndicator: css({
-		position: "absolute",
-		bottom: 0,
-		width: "100%",
-		height: "1.5rem",
-		visibility: "hidden",
-		backgroundColor: themeVars.bg1,
-
-		"&.active": {
-			visibility: "visible",
-		},
 	}),
 	header: css({
 		display: "flex",
@@ -208,13 +193,5 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 			usersTyping={(typeof counterpart !== "undefined" && counterpart.composingFrom) ? [counterpart.jid] : []}
 		/>
 		<MessageInput submitMessage={submitMessage} autofocus onChangeComposing={onChangeComposing} />
-	</div>;
-}
-
-function TypingIndicator(props: {usersTyping: JID[]}) {
-	return <div class={styles.typingIndicatorWrapper}>
-		<div class={cx(styles.typingIndicator, props.usersTyping.length > 0 && "active")}>
-			{props.usersTyping.length > 0 && props.usersTyping[0].toString() + " is typing…"}
-		</div>
 	</div>;
 }
