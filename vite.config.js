@@ -11,7 +11,13 @@ export default {
 				useFlatConfig: true,
 			},
 		}),
-		preact(),
+		preact({
+			babel: {
+				plugins: [
+					"babel-plugin-formatjs",
+				],
+			},
+		}),
 	],
 	resolve: {
 		alias: {

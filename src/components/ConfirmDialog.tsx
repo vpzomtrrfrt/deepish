@@ -1,10 +1,13 @@
 import { ComponentChildren } from "preact";
 import { useCallback, useContext } from "preact/hooks";
+import { useIntl } from "react-intl";
 
 import Button from "./Button";
 import Dialog, { DialogContext, DialogFooter } from "./Dialog";
 
 export default function ConfirmDialog(props: {onConfirm(): void; children: ComponentChildren; confirmText: string}) {
+	const { $t } = useIntl();
+
 	const dialogCtx = useContext(DialogContext)!;
 
 	const onConfirm = useCallback((evt: Event) => {
@@ -21,7 +24,7 @@ export default function ConfirmDialog(props: {onConfirm(): void; children: Compo
 				{props.children}
 			</div>
 			<DialogFooter>
-				<Button tier="secondary" onClick={dialogCtx.close}>Cancel</Button>
+				<Button tier="secondary" onClick={dialogCtx.close}>{$t({defaultMessage: "Cancel"})}</Button>
 				<Button tier="primary" type="submit">{props.confirmText}</Button>
 			</DialogFooter>
 		</form>
