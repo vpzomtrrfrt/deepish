@@ -54,6 +54,7 @@ export interface Room {
 	nick: string | null;
 	connected: boolean;
 	infoState: LoadState<RoomDiscoInfo>;
+	lastReportedComposing: boolean;
 }
 
 export interface ServiceInfo {
@@ -138,6 +139,7 @@ export interface ConnectionContext {
 	removeFriend(account: JID, target: JID): void;
 	sendFriendRequest(account: JID, target: JID): void;
 	setComposingToCounterpart(account: JID, target: JID, composing: boolean): void;
+	setComposingToRoom(account: JID, room: JID, composing: boolean): void;
 	joinRoom(account: JID, room: JID, nick?: string): Promise<void>;
 	leaveRoom(account: JID, room: JID): Promise<void>;
 	createRoom(account: JID, room: JID, params: RoomCreateParams): void;
@@ -217,6 +219,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 						nick: null,
 						connected: false,
 						infoState: LoadState.loading,
+						lastReportedComposing: false,
 					});
 					connectMUC(client, jid, entry.nick);
 				}
@@ -1796,6 +1799,47 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 		});
 	});
 
+	const setComposingToRoom = useLatestCallback((accountJID: JID, roomJID: JID, composing: boolean) => {
+		{
+			const account = accounts.find(x => x.jid.equals(accountJID));
+			if(typeof account === "undefined") throw new Error("No such account");
+
+			const room = account.rooms.get(roomJID.toString());
+			if(room?.lastReportedComposing === composing) return;
+
+			account.client.send(
+				xml(
+					"message",
+					{type: "groupchat", to: roomJID.toString()},
+					composing ?
+						xml("composing", {xmlns: "http://jabber.org/protocol/chatstates"}) :
+						xml("active", {xmlns: "http://jabber.org/protocol/chatstates"})
+				),
+			);
+		}
+
+		updateAccount(accountJID, account => {
+			const rooms = new Map(account.rooms);
+
+			const entry = rooms.get(roomJID.toString());
+
+			if(typeof entry === "undefined") {
+				console.warn("Attempting to send composing state to unknown room");
+			}
+			else {
+				rooms.set(
+					roomJID.toString(),
+					{
+						...entry,
+						lastReportedComposing: composing,
+					},
+				);
+			}
+
+			return {...account, rooms};
+		});
+	});
+
 	const joinRoom = useLatestCallback(async (accountJID: JID, room: JID, nick?: string) => {
 		const account = accounts.find(x => x.jid.equals(accountJID));
 		if(typeof account === "undefined") throw new Error("No such account");
@@ -1833,6 +1877,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 					nick: nick ?? null,
 					connected: false,
 					infoState: LoadState.loading,
+					lastReportedComposing: false,
 				});
 
 				return {...account, rooms};
@@ -2148,6 +2193,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 			rejectFriendRequest,
 			removeFriend,
 			setComposingToCounterpart,
+			setComposingToRoom,
 			joinRoom,
 			leaveRoom,
 			createRoom,
@@ -2169,6 +2215,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 			acceptFriendRequest,
 			rejectFriendRequest,
 			setComposingToCounterpart,
+			setComposingToRoom,
 			joinRoom,
 			leaveRoom,
 			removeFriend,

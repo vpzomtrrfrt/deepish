@@ -1,5 +1,5 @@
 import { css } from "@emotion/css";
-import { JID } from "@xmpp/jid";
+import { JID, parse as parseJID } from "@xmpp/jid";
 import { pushAtSortPosition } from "array-push-at-sort-position";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { Fragment } from "preact/jsx-runtime";
@@ -145,6 +145,14 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 		await conn.sendMessageToRoom(account.jid, room!.jid, {body: newMessage});
 	});
 
+	const onChangeComposing = useLatestCallback((composing: boolean) => {
+		conn.setComposingToRoom(account.jid, parseJID(props.roomJID), composing);
+	});
+
+	useEffect(() => {
+		return () => onChangeComposing(false);
+	}, [onChangeComposing]);
+
 	const leaveRoom = useLatestCallback(() => {
 		appCtx.showDialog(
 			<ConfirmDialog
@@ -168,12 +176,18 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 		const result: JID[] = [];
 		for(const [, value] of account.counterparts.entries()) {
 			if(value.jid.bare().equals(room.jid)) {
-				if(value.composingFrom === true) result.push(value.jid);
+				if(
+					value.composingFrom === true &&
+						// Don't show myself
+						!value.jid.equals(new JID(room.jid.local, room.jid.domain, room.nick ?? account.jid.local))
+				) {
+					result.push(value.jid);
+				}
 			}
 		}
 
 		return result;
-	}, [account.counterparts, room]);
+	}, [account.counterparts, account.jid.local, room]);
 
 	const loaderContent = pageState === null ?
 		<p>Connecting…</p> :
@@ -205,7 +219,7 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 				loaderContent={loaderContent}
 			/>
 			<TypingIndicator usersTyping={usersTyping} />
-			<MessageInput submitMessage={submitMessage} autofocus />
+			<MessageInput submitMessage={submitMessage} autofocus onChangeComposing={onChangeComposing} />
 		</div>
 	</Fragment>;
 }
