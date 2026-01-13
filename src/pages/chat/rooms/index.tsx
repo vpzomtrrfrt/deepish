@@ -218,7 +218,7 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 				messages={messagesData.messages}
 				loaderContent={loaderContent}
 			/>
-			<TypingIndicator usersTyping={usersTyping} />
+			<TypingIndicator usersTyping={usersTyping} inRoom={true} />
 			<MessageInput submitMessage={submitMessage} autofocus onChangeComposing={onChangeComposing} />
 		</div>
 	</Fragment>;

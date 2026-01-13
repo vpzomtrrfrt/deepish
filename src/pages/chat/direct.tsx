@@ -191,6 +191,7 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 		/>
 		<TypingIndicator
 			usersTyping={(typeof counterpart !== "undefined" && counterpart.composingFrom) ? [counterpart.jid] : []}
+			inRoom={false}
 		/>
 		<MessageInput submitMessage={submitMessage} autofocus onChangeComposing={onChangeComposing} />
 	</div>;
