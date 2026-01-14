@@ -21,6 +21,8 @@ import { SpaceItemsList } from "..";
 const styles = {
 	page: css({
 		flexGrow: 1,
+		flexShrink: 1,
+		minWidth: 0,
 		marginInlineStart: ".5rem",
 
 		display: "flex",
@@ -35,6 +37,9 @@ const styles = {
 		gap: ".5rem",
 		alignItems: "center",
 		flexGrow: 1,
+		flexShrink: 1,
+		minWidth: 0,
+		overflowX: "hidden",
 
 		"> h1": {
 			margin: 0,
@@ -206,7 +211,7 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 						typeof room !== "undefined" &&
 							LoadState.ifDone(room.infoState, disco => <h1>{disco.name}</h1>, () => null)
 					}
-					<div>{props.roomJID}</div>
+					<div style={{textOverflow: "ellipsis", overflowX: "hidden"}}>{props.roomJID}</div>
 				</div>
 				<div>
 					<Menu>
