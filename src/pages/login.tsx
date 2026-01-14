@@ -2,6 +2,7 @@ import * as xmppClient from "@xmpp/client";
 import { xml } from "@xmpp/client";
 import useLinkState from "linkstate/hook";
 import { useContext } from "preact/hooks";
+import { useIntl } from "react-intl";
 import { useLocation } from "wouter-preact";
 
 import { useAppContext } from "..";
@@ -11,9 +12,11 @@ import Field, { FieldLabel } from "../components/Field";
 import FieldList from "../components/FieldList";
 import Input from "../components/Input";
 import { useConnectionContext } from "../util/connection";
+import { msgClose, msgJID } from "../util/langCommon";
 import useSubmitting from "../util/useSubmitting";
 
 export default function LoginPage() {
+	const { $t } = useIntl();
 	const [, navigate] = useLocation();
 
 	const appCtx = useAppContext();
@@ -83,19 +86,19 @@ export default function LoginPage() {
 	>
 		<DialogLike>
 			<form onSubmit={submit}>
-				<h1>Log In</h1>
+				<h1>{$t({defaultMessage: "Log In"})}</h1>
 				<FieldList>
 					<Field>
-						<FieldLabel>XMPP Address</FieldLabel>
+						<FieldLabel>{$t(msgJID)}</FieldLabel>
 						<Input type="text" value={jid} onChange={linkJid} />
 					</Field>
 					<Field>
-						<FieldLabel>Password</FieldLabel>
+						<FieldLabel>{$t({defaultMessage: "Password"})}</FieldLabel>
 						<Input type="password" value={password} onChange={linkPassword} />
 					</Field>
 				</FieldList>
 				<DialogFooter>
-					<Button tier="primary" type="submit" disabled={submitting}>Log In</Button>
+					<Button tier="primary" type="submit" disabled={submitting}>{$t({defaultMessage: "Log In"})}</Button>
 				</DialogFooter>
 			</form>
 		</DialogLike>
@@ -103,14 +106,16 @@ export default function LoginPage() {
 }
 
 function IncompatibleDialog() {
+	const { $t } = useIntl();
+
 	const dialogCtx = useContext(DialogContext)!;
 
 	return <Dialog>
 		<div>
-			Your server is not compatible with Deepish.
+			{$t({defaultMessage: "Your server is not compatible with Deepish."})}
 		</div>
 		<DialogFooter>
-			<Button tier="secondary" onClick={dialogCtx.close}>Close</Button>
+			<Button tier="secondary" onClick={dialogCtx.close}>{$t(msgClose)}</Button>
 		</DialogFooter>
 	</Dialog>;
 }

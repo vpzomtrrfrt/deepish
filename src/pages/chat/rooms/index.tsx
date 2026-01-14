@@ -3,6 +3,7 @@ import { JID, parse as parseJID } from "@xmpp/jid";
 import { pushAtSortPosition } from "array-push-at-sort-position";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { Fragment } from "preact/jsx-runtime";
+import { useIntl } from "react-intl";
 import useLatestCallback from "use-latest-callback";
 import { useLocation } from "wouter-preact";
 
@@ -54,13 +55,14 @@ export default function ChatRoomPage(props: {params: {roomJID: string}}) {
 }
 
 function ChatRoomPageInner(props: {roomJID: string}) {
+	const { $t } = useIntl();
+	const [, navigate] = useLocation();
+
 	const appCtx = useAppContext();
 	const conn = useConnectionContext();
 	const account = useAccount();
 	const room = account.rooms.get(props.roomJID);
 	const counterpart = account.counterparts.get(props.roomJID);
-
-	const [, navigate] = useLocation();
 
 	const [messagesData, setMessagesData] = useState<{messages: Message[]; messageMap: Map<string, Message>}>({
 		messages: [],
@@ -161,16 +163,20 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 	const leaveRoom = useLatestCallback(() => {
 		appCtx.showDialog(
 			<ConfirmDialog
-				confirmText="Leave"
+				confirmText={$t({defaultMessage: "Leave"})}
 				onConfirm={() => {
 					const task = conn.leaveRoom.call(undefined, account.jid, room!.jid);
 
-					appCtx.showDialog(<TaskDialog task={task}>Leaving room…</TaskDialog>);
+					appCtx.showDialog(<TaskDialog task={task}>{$t({defaultMessage: "Leaving room…"})}</TaskDialog>);
 
 					task.then(() => navigate("~/"));
 				}}
 			>
-				<p>Are you sure you want to leave <em>{room!.jid.toString()}</em>?</p>
+				<p>
+					{$t({
+						defaultMessage: "Are you sure you want to leave {room}?",
+					}, {room: <em>{room!.jid.toString()}</em>})}
+				</p>
 			</ConfirmDialog>
 		);
 	});
@@ -195,10 +201,12 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 	}, [account.counterparts, account.jid.local, room]);
 
 	const loaderContent = pageState === null ?
-		<p>Connecting…</p> :
+		<p>{$t({defaultMessage: "Connecting…"})}</p> :
 		LoadState.ifDone(
 			pageState,
-			info => info === null ? <p>No more messages known.</p> : <LoadMoreTriggerer loadMore={loadMore} />,
+			info => info === null ?
+				<p>{$t({defaultMessage: "No more messages known."})}</p> :
+				<LoadMoreTriggerer loadMore={loadMore} />,
 			pageState => <DataNonDoneView state={pageState} />,
 		);
 
@@ -215,7 +223,7 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 				</div>
 				<div>
 					<Menu>
-						<MenuItem onClick={leaveRoom}>Leave Room</MenuItem>
+						<MenuItem onClick={leaveRoom}>{$t({defaultMessage: "Leave Room"})}</MenuItem>
 					</Menu>
 				</div>
 			</div>

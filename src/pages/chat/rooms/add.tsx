@@ -1,6 +1,7 @@
 import { JID, parse as parseJID } from "@xmpp/jid";
 import useLinkState from "linkstate/hook";
 import { useCallback, useContext } from "preact/hooks";
+import { useIntl } from "react-intl";
 import { useLocation } from "wouter-preact";
 
 import { useAppContext } from "../../..";
@@ -13,10 +14,13 @@ import FieldList from "../../../components/FieldList";
 import Input, { InputSuffixWrapper } from "../../../components/Input";
 import Select from "../../../components/Select";
 import { RoomDiscoInfo, ServiceInfo, useAccount, useConnectionContext } from "../../../util/connection";
+import { msgActionCreate, msgCancel, msgJIDShort } from "../../../util/langCommon";
 import { LoadState } from "../../../util/useData";
 import useSubmitting from "../../../util/useSubmitting";
 
 export default function ChatRoomAddPage() {
+	const { $t } = useIntl();
+
 	const appCtx = useAppContext();
 	const conn = useConnectionContext();
 	const account = useAccount();
@@ -52,21 +56,25 @@ export default function ChatRoomAddPage() {
 
 	return <div>
 		<Block>
-			<Button tier="secondary" onClick={createRoom}>Create a Room</Button>
+			<Button tier="secondary" onClick={createRoom}>{$t({defaultMessage: "Create a Room"})}</Button>
 		</Block>
 
 		<Block>
-			<h1>Join a Room</h1>
+			<h1>{$t({defaultMessage: "Join a Room"})}</h1>
 			<form onSubmit={submitJoin}>
 				<Input value={joinInput} onChange={linkJoinInput} />
 				{" "}
-				<Button tier="primary" disabled={submittingJoin || joinInput === ""} type="submit">Join</Button>
+				<Button tier="primary" disabled={submittingJoin || joinInput === ""} type="submit">
+					{$t({defaultMessage: "Join"})}
+				</Button>
 			</form>
 		</Block>
 	</div>;
 }
 
 function CreateRoomDialog() {
+	const { $t } = useIntl();
+
 	const account = useAccount();
 
 	const dialogCtx = useContext(DialogContext)!;
@@ -87,13 +95,15 @@ function CreateRoomDialog() {
 				<DataNonDoneView state={mucServiceState} />
 			</div>
 			<DialogFooter>
-				<Button tier="secondary" onClick={dialogCtx.close}>Cancel</Button>
+				<Button tier="secondary" onClick={dialogCtx.close}>{$t(msgCancel)}</Button>
 			</DialogFooter>
 		</Dialog>;
 	}
 }
 
 function CreateRoomDialogInner(props: {service: ServiceInfo}) {
+	const { $t } = useIntl();
+
 	const conn = useConnectionContext();
 	const account = useAccount();
 
@@ -132,7 +142,7 @@ function CreateRoomDialogInner(props: {service: ServiceInfo}) {
 		<form onSubmit={submit}>
 			<FieldList>
 				<Field>
-					<FieldLabel>Address</FieldLabel>
+					<FieldLabel>{$t(msgJIDShort)}</FieldLabel>
 					<InputSuffixWrapper
 						suffix={"@" + props.service.jid.domain}
 						inputProps={{
@@ -145,29 +155,31 @@ function CreateRoomDialogInner(props: {service: ServiceInfo}) {
 				</Field>
 
 				<Field>
-					<FieldLabel>Name</FieldLabel>
+					<FieldLabel>{$t({defaultMessage: "Name"})}</FieldLabel>
 					<Input value={name} onChange={linkName} />
 				</Field>
 
 				<Field>
-					<FieldLabel>Publishing</FieldLabel>
+					<FieldLabel>{$t({defaultMessage: "Publishing"})}</FieldLabel>
 					<Select value={publishing} onChange={linkPublishing}>
-						<option value="private">Private</option>
-						<option value="unlisted">Unlisted</option>
-						<option value="public">Public</option>
+						<option value="private">{$t({defaultMessage: "Private"})}</option>
+						<option value="unlisted">{$t({defaultMessage: "Unlisted"})}</option>
+						<option value="public">{$t({defaultMessage: "Public"})}</option>
 					</Select>
 				</Field>
 			</FieldList>
 
 			<DialogFooter>
-				<Button tier="secondary" onClick={dialogCtx.close}>Cancel</Button>
-				<Button tier="primary" type="submit" disabled={submitting}>Create</Button>
+				<Button tier="secondary" onClick={dialogCtx.close}>{$t(msgCancel)}</Button>
+				<Button tier="primary" type="submit" disabled={submitting}>{$t(msgActionCreate)}</Button>
 			</DialogFooter>
 		</form>
 	</Dialog>;
 }
 
 function JoinRoomDialog(props: {roomJID: JID; roomInfo: RoomDiscoInfo}) {
+	const { $t } = useIntl();
+
 	const conn = useConnectionContext();
 	const account = useAccount();
 
@@ -192,14 +204,14 @@ function JoinRoomDialog(props: {roomJID: JID; roomInfo: RoomDiscoInfo}) {
 
 			<FieldList>
 				<Field>
-					<FieldLabel>Nickname</FieldLabel>
+					<FieldLabel>{$t({defaultMessage: "Nickname"})}</FieldLabel>
 					<Input value={nick} onChange={linkNick} />
 				</Field>
 			</FieldList>
 
 			<DialogFooter>
-				<Button tier="secondary" onClick={dialogCtx.close}>Cancel</Button>
-				<Button tier="primary" type="submit" disabled={submitting}>Join</Button>
+				<Button tier="secondary" onClick={dialogCtx.close}>{$t(msgCancel)}</Button>
+				<Button tier="primary" type="submit" disabled={submitting}>{$t({defaultMessage: "Join"})}</Button>
 			</DialogFooter>
 		</form>
 	</Dialog>;

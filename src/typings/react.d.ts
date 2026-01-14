@@ -20,6 +20,7 @@ declare module "react" {
 		Key,
 		MouseEventHandler,
 		MutableRefObject,
+		PureComponent,
 		ReactElement,
 		ReactNode,
 		Ref,

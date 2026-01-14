@@ -2,6 +2,7 @@ import { css } from "@emotion/css";
 import { parse as parseJID } from "@xmpp/jid";
 import { pushAtSortPosition } from "array-push-at-sort-position";
 import { useEffect, useRef, useState } from "preact/hooks";
+import { useIntl } from "react-intl";
 import useLatestCallback from "use-latest-callback";
 
 import { DataNonDoneView } from "../../components/DataView";
@@ -38,6 +39,8 @@ export default function DirectChatPage(props: {params: {counterpartJID: string}}
 }
 
 function DirectChatPageInner(props: {counterpartJID: string}) {
+	const { $t } = useIntl();
+
 	const conn = useConnectionContext();
 	const account = useAccount();
 	const counterpart = account.counterparts.get(props.counterpartJID);
@@ -171,10 +174,12 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 	}, [onChangeComposing]);
 
 	const loaderContent = pageState === null ?
-		<p>Connecting…</p> :
+		<p>{$t({defaultMessage: "Connecting…"})}</p> :
 		LoadState.ifDone(
 			pageState,
-			info => info === null ? <p>No more messages known.</p> : <LoadMoreTriggerer loadMore={loadMore} />,
+			info => info === null ?
+				<p>{$t({defaultMessage: "No more messages known."})}</p> :
+				<LoadMoreTriggerer loadMore={loadMore} />,
 			pageState => <DataNonDoneView state={pageState} />,
 		);
 

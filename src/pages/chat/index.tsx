@@ -4,6 +4,7 @@ import { JID, parse as parseJID } from "@xmpp/jid";
 import useLinkState from "linkstate/hook";
 import { JSX } from "preact";
 import { useCallback, useEffect, useMemo, useState } from "preact/hooks";
+import { defineMessage, MessageDescriptor, useIntl } from "react-intl";
 import useLatestCallback from "use-latest-callback";
 import { Link, Route, Switch, useLocation, useRoute } from "wouter-preact";
 
@@ -23,6 +24,7 @@ import { ManualTabsContainer, TabLink, TabsList } from "../../components/Tabs";
 import WithTooltip from "../../components/WithTooltip";
 import * as commonStyles from "../../util/commonStyles";
 import { useAccount, useConnectionContext } from "../../util/connection";
+import { msgActionAdd } from "../../util/langCommon";
 import { getNickForCounterpart } from "../../util/profileUtil";
 import { getShowTypeForCounterpart } from "../../util/statusUtil";
 import { themeVars } from "../../util/theme";
@@ -318,6 +320,8 @@ function ChatView() {
 }
 
 function ChatHomePage() {
+	const { $t } = useIntl();
+
 	const account = useAccount();
 
 	// TODO this seems like a performance problem
@@ -338,7 +342,7 @@ function ChatHomePage() {
 		<SpaceItemsList>
 			<Link to="/" className={active => cx(styles.spaceItem, active && "active")}>
 				<Icon path={mdiAccountMultiple} class={styles.bigSpaceItemIcon} />
-				<span>Friends</span>
+				<span>{$t({defaultMessage: "Friends"})}</span>
 			</Link>
 			{
 				conversations.map(item => {
@@ -370,6 +374,8 @@ enum FriendsTab {
 }
 
 function ContactsPage() {
+	const { $t } = useIntl();
+
 	const appCtx = useAppContext();
 	const conn = useConnectionContext();
 	const account = useAccount();
@@ -390,8 +396,15 @@ function ContactsPage() {
 
 	function removeFriendAfterConfirm(target: JID) {
 		appCtx.showDialog(
-			<ConfirmDialog onConfirm={removeFriend.bind(undefined, target)} confirmText="Remove Friend">
-				<p>Are you sure you want to remove <em>{target.toString()}</em> as a friend?</p>
+			<ConfirmDialog
+				onConfirm={removeFriend.bind(undefined, target)}
+				confirmText={$t({defaultMessage: "Remove Friend"})}
+			>
+				<p>
+					{$t({
+						defaultMessage: "Are you sure you want to remove {target} as a friend?"
+					}, {target: <em>{target.toString()}</em>})}
+				</p>
 			</ConfirmDialog>,
 		);
 	}
@@ -414,10 +427,14 @@ function ContactsPage() {
 	return <div class={styles.contactsPage}>
 		<ManualTabsContainer tab={tab} setTab={setTab}>
 			<TabsList>
-				<TabLink tab={FriendsTab.Online}>Online</TabLink>
-				<TabLink tab={FriendsTab.All}>All</TabLink>
+				<TabLink tab={FriendsTab.Online}>
+					{$t({defaultMessage: "Online", description: "Friends tab"})}
+				</TabLink>
+				<TabLink tab={FriendsTab.All}>
+					{$t({defaultMessage: "All"})}
+				</TabLink>
 				<TabLink tab={FriendsTab.Requests}>
-					Requests
+					{$t({defaultMessage: "Requests"})}
 					{incomingRequestCounterparts.length > 0 &&
 						<>
 							{" "}
@@ -452,13 +469,13 @@ function ContactsPage() {
 										<span class={styles.friendEntryJID}>{info.jid.toString()}</span>
 									</div>
 									{showType !== null && <div class={styles.statusText}>
-										{presenceShowTypeNames[showType]}
+										{$t(presenceShowTypeNames[showType])}
 									</div>}
 								</div>
 								<div class={styles.friendButtons} onClick={onClickFriendButtons}>
 									<Menu>
 										<MenuItem onClick={removeFriendAfterConfirm.bind(undefined, info.jid)}>
-											Remove Friend
+											{$t({defaultMessage: "Remove Friend"})}
 										</MenuItem>
 									</Menu>
 								</div>
@@ -470,12 +487,14 @@ function ContactsPage() {
 			{
 				tab === FriendsTab.Requests && <div>
 					<Block>
-						<h1>Add Friend</h1>
+						<h1>{$t({defaultMessage: "Add Friend"})}</h1>
 						<AddFriendForm />
 					</Block>
 					{outgoingRequestCounterparts.length > 0 &&
 						<Block>
-							<h1>Outgoing</h1>
+							<h1>
+								{$t({defaultMessage: "Outgoing", description: "Heading for outgoing friend requests"})}
+							</h1>
 							<div>
 								{outgoingRequestCounterparts.map(info => {
 									return <div class={styles.friendEntry} key={info.jid.toString()}>
@@ -483,7 +502,7 @@ function ContactsPage() {
 											{info.jid.toString()}
 										</div>
 										<div class={styles.friendButtons}>
-											<WithTooltip tooltip="Cancel Request">
+											<WithTooltip tooltip={$t({defaultMessage: "Cancel Request"})}>
 												<IconButton onClick={removeFriend.bind(undefined, info.jid)}>
 													<Icon path={mdiClose} />
 												</IconButton>
@@ -497,7 +516,12 @@ function ContactsPage() {
 					{
 						incomingRequestCounterparts.length > 0 &&
 							<Block>
-								<h1>Incoming</h1>
+								<h1>
+									{$t({
+										defaultMessage: "Incoming",
+										description: "Heading for incoming friend requests",
+									})}
+								</h1>
 								<div>
 									{incomingRequestCounterparts.map(info => {
 										return <div class={styles.friendEntry} key={info.jid.toString()}>
@@ -505,12 +529,12 @@ function ContactsPage() {
 												{info.jid.toString()}
 											</div>
 											<div class={styles.friendButtons}>
-												<WithTooltip tooltip="Accept Request">
+												<WithTooltip tooltip={$t({defaultMessage: "Accept Request"})}>
 													<IconButton onClick={acceptFriendRequest.bind(undefined, info.jid)}>
 														<Icon path={mdiCheck} />
 													</IconButton>
 												</WithTooltip>
-												<WithTooltip tooltip="Reject Request">
+												<WithTooltip tooltip={$t({defaultMessage: "Reject Request"})}>
 													<IconButton onClick={rejectFriendRequest.bind(undefined, info.jid)}>
 														<Icon path={mdiClose} />
 													</IconButton>
@@ -557,16 +581,24 @@ function ConnectingView() {
 	</div>;
 }
 
-const presenceShowTypeNames: Record<PresenceShowTypeExtended, string> = {
-	[PresenceShowTypeExtended.XA]: "Extended Away",
-	[PresenceShowTypeExtended.DND]: "Do Not Disturb",
-	[PresenceShowTypeExtended.Chat]: "Open to Chat",
-	[PresenceShowTypeExtended.Away]: "Away",
-	[PresenceShowTypeExtended.Available]: "Online",
-	[PresenceShowTypeExtended.Unavailable]: "Offline",
+const presenceShowTypeNames: Record<PresenceShowTypeExtended, MessageDescriptor> = {
+	[PresenceShowTypeExtended.XA]: defineMessage({defaultMessage: "Extended Away"}),
+	[PresenceShowTypeExtended.DND]: defineMessage({defaultMessage: "Do Not Disturb"}),
+	[PresenceShowTypeExtended.Chat]: defineMessage({
+		defaultMessage: "Open to Chat",
+		description: "Status indicating user wants to chat",
+	}),
+	[PresenceShowTypeExtended.Away]: defineMessage({defaultMessage: "Away"}),
+	[PresenceShowTypeExtended.Available]: defineMessage({defaultMessage: "Online", description: "Default user status"}),
+	[PresenceShowTypeExtended.Unavailable]: defineMessage({
+		defaultMessage: "Offline",
+		description: "Status indicating user is not online",
+	}),
 };
 
 function AddFriendForm() {
+	const { $t } = useIntl();
+
 	const conn = useConnectionContext();
 	const account = useAccount();
 
@@ -585,11 +617,12 @@ function AddFriendForm() {
 	return <form onSubmit={submit}>
 		<Input type="text" value={input} onChange={linkInput} placeholder="user@server.example" pattern=".*@.*" />
 		{" "}
-		<Button tier="primary" type="submit" disabled={submitting}>Add</Button>
+		<Button tier="primary" type="submit" disabled={submitting}>{$t(msgActionAdd)}</Button>
 	</form>
 }
 
 function SelfBox() {
+	const { $t } = useIntl();
 	const [, navigate] = useLocation();
 
 	const account = useAccount();
@@ -607,7 +640,7 @@ function SelfBox() {
 			<div class={styles.friendEntryJID}>{account.jid.toString()}</div>
 		</div>
 		<Menu>
-			<MenuItem onClick={logout}>Log out</MenuItem>
+			<MenuItem onClick={logout}>{$t({defaultMessage: "Log out"})}</MenuItem>
 		</Menu>
 	</div>;
 }
