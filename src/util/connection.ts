@@ -17,7 +17,7 @@ import { LoadState } from "./useData";
 import useEffectOnce from "./useEffectOnce";
 import useIdle, { IdleState } from "./useIdle";
 import * as xmppClient from "./xmpp/client";
-import { fetchPubsubItems, publishPubsubItem, PubsubItemInfo, retractPubsubItem } from "./xmpp/pubsub";
+import { fetchPubsubItems, publishPubsubItem, PubsubItemInfo, PubsubPublishOptions, retractPubsubItem } from "./xmpp/pubsub";
 
 const FEATURES: string[] = [
 	"urn:xmpp:bookmarks:1+notify",
@@ -149,6 +149,13 @@ export interface ConnectionContext {
 }
 
 export const ConnectionContext = createContext<ConnectionContext | undefined>(undefined);
+
+const BOOKMARKS_PUBLISH_OPTIONS: PubsubPublishOptions = {
+	persistItems: true,
+	maxItems: "max",
+	sendLastPublishedItem: "never",
+	accessModel: "whitelist",
+};
 
 export function useCreateConnection(cache: IDBCache): ConnectionContext {
 	// eventually we might support multiple accounts
@@ -1939,6 +1946,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 						),
 					),
 				),
+				BOOKMARKS_PUBLISH_OPTIONS,
 			);
 		}
 	});
