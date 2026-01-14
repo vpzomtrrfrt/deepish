@@ -86,7 +86,7 @@ export default function LoginPage() {
 	>
 		<DialogLike>
 			<form onSubmit={submit}>
-				<h1>Log In</h1>
+				<h1>{$t({defaultMessage: "Log In"})}</h1>
 				<FieldList>
 					<Field>
 						<FieldLabel>{$t(msgJID)}</FieldLabel>
