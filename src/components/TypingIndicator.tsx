@@ -1,5 +1,6 @@
 import { css, cx } from "@emotion/css";
 import { JID } from "@xmpp/jid";
+import { useIntl } from "react-intl";
 
 import { useAccount } from "../util/connection";
 import { maybeGetNickForCounterpart } from "../util/profileUtil";
@@ -24,6 +25,9 @@ const styles = {
 };
 
 export default function TypingIndicator(props: {usersTyping: JID[]; inRoom: boolean}) {
+	const intl = useIntl();
+	const { $t } = intl;
+
 	const account = useAccount();
 
 	const nameList = props.usersTyping.map(jid => {
@@ -37,7 +41,20 @@ export default function TypingIndicator(props: {usersTyping: JID[]; inRoom: bool
 	// TODO show multiple users
 	return <div class={styles.typingIndicatorWrapper}>
 		<div class={cx(styles.typingIndicator, props.usersTyping.length > 0 && "active")}>
-			{props.usersTyping.length > 0 && nameList[0].toString() + " is typing…"}
+			{props.usersTyping.length > 0 &&
+				$t(
+					{
+						defaultMessage: "{count, plural,\
+							one {{list} is typing…}\
+							other {{list} are typing…}\
+						}"
+					},
+					{
+						list: intl.formatList(nameList, {type: "conjunction"}),
+						count: nameList.length,
+					},
+				)
+			}
 		</div>
 	</div>;
 }

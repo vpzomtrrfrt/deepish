@@ -2,6 +2,7 @@ import { ComponentChildren } from "preact";
 import { useCallback, useContext } from "preact/hooks";
 import { useIntl } from "react-intl";
 
+import { msgCancel } from "../util/langCommon";
 import Button from "./Button";
 import Dialog, { DialogContext, DialogFooter } from "./Dialog";
 
@@ -24,7 +25,7 @@ export default function ConfirmDialog(props: {onConfirm(): void; children: Compo
 				{props.children}
 			</div>
 			<DialogFooter>
-				<Button tier="secondary" onClick={dialogCtx.close}>{$t({defaultMessage: "Cancel"})}</Button>
+				<Button tier="secondary" onClick={dialogCtx.close}>{$t(msgCancel)}</Button>
 				<Button tier="primary" type="submit">{props.confirmText}</Button>
 			</DialogFooter>
 		</form>
