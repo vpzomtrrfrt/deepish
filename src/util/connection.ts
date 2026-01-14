@@ -408,6 +408,8 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 		(client: xmppClient.Client, from: JID | undefined, node: string, item: PubsubItemInfo) => {
 			console.log("handling pubsub item", from, node, item);
 
+			const isMe = typeof from === "undefined" || from.bare().equals(client.jid!.bare());
+
 			if(node === "http://jabber.org/protocol/nick") {
 				if(typeof from !== "undefined") {
 					const nickElem = item.element.getChild("nick", "http://jabber.org/protocol/nick");
@@ -460,37 +462,39 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 				}
 			}
 			else if(node === "urn:xmpp:bookmarks:1") {
-				handleBookmarksUpdate(client, "add", [item]);
+				if(isMe) handleBookmarksUpdate(client, "add", [item]);
 			}
 			else if(node === "urn:xmpp:mds:displayed:0") {
-				const jid = parseJID(item.id);
+				if(isMe) {
+					const jid = parseJID(item.id);
 
-				const displayedElem = item.element.getChild("displayed", "urn:xmpp:mds:displayed:0");
-				if(typeof displayedElem !== "undefined") {
-					const stanzaIDElem = displayedElem.getChild("stanza-id", "urn:xmpp:sid:0");
-					if(typeof stanzaIDElem !== "undefined") {
-						const messageID = stanzaIDElem.getAttr("id");
-						if(typeof messageID === "string") {
-							updateAccount(client, account => {
-								const counterparts = new Map(account.counterparts);
-								const entry = account.counterparts.get(jid.toString());
+					const displayedElem = item.element.getChild("displayed", "urn:xmpp:mds:displayed:0");
+					if(typeof displayedElem !== "undefined") {
+						const stanzaIDElem = displayedElem.getChild("stanza-id", "urn:xmpp:sid:0");
+						if(typeof stanzaIDElem !== "undefined") {
+							const messageID = stanzaIDElem.getAttr("id");
+							if(typeof messageID === "string") {
+								updateAccount(client, account => {
+									const counterparts = new Map(account.counterparts);
+									const entry = account.counterparts.get(jid.toString());
 
-								if(typeof entry === "undefined") {
-									counterparts.set(jid.toString(), {
-										...DEFAULT_COUNTERPART_INFO,
-										jid,
-										lastReadMessageID: messageID,
-									});
-								}
-								else {
-									counterparts.set(jid.toString(), {
-										...entry,
-										lastReadMessageID: messageID,
-									});
-								}
+									if(typeof entry === "undefined") {
+										counterparts.set(jid.toString(), {
+											...DEFAULT_COUNTERPART_INFO,
+											jid,
+											lastReadMessageID: messageID,
+										});
+									}
+									else {
+										counterparts.set(jid.toString(), {
+											...entry,
+											lastReadMessageID: messageID,
+										});
+									}
 
-								return {...account, counterparts};
-							});
+									return {...account, counterparts};
+								});
+							}
 						}
 					}
 				}
