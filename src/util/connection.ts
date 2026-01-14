@@ -53,6 +53,7 @@ export interface Room {
 	jid: JID;
 	nick: string | null;
 	connected: boolean;
+	error: unknown;
 	infoState: LoadState<RoomDiscoInfo>;
 	lastReportedComposing: boolean;
 }
@@ -218,6 +219,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 						jid,
 						nick: null,
 						connected: false,
+						error: null,
 						infoState: LoadState.loading,
 						lastReportedComposing: false,
 					});
@@ -1229,6 +1231,20 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 								);
 							}
 
+							updateAccount(client, account => {
+								const entry = account.rooms.get(roomJID.toString());
+
+								if(typeof entry === "undefined") return account;
+
+								const rooms = new Map(account.rooms);
+								rooms.set(roomJID.toString(), {
+									...entry,
+									error,
+								});
+
+								return {...account, rooms};
+							});
+
 							const callback = newRoomsRef.current.get(roomJID.toString());
 
 							if(typeof callback !== "undefined") {
@@ -1876,6 +1892,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 					jid: room,
 					nick: nick ?? null,
 					connected: false,
+					error: null,
 					infoState: LoadState.loading,
 					lastReportedComposing: false,
 				});

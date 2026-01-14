@@ -8,7 +8,7 @@ import { useLocation } from "wouter-preact";
 
 import { useAppContext } from "../../..";
 import ConfirmDialog from "../../../components/ConfirmDialog";
-import { DataNonDoneView } from "../../../components/DataView";
+import { DataNonDoneView, ErrorAlert } from "../../../components/DataView";
 import Menu, { MenuItem } from "../../../components/Menu";
 import MessageInput from "../../../components/MessageInput";
 import MessageList, { LoadMoreTriggerer } from "../../../components/MessageList";
@@ -214,12 +214,20 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 					</Menu>
 				</div>
 			</div>
-			<MessageList
-				messages={messagesData.messages}
-				loaderContent={loaderContent}
-			/>
-			<TypingIndicator usersTyping={usersTyping} inRoom={true} />
-			<MessageInput submitMessage={submitMessage} autofocus onChangeComposing={onChangeComposing} />
+			{
+				(typeof room !== "undefined" && !room.connected && room.error !== null) ?
+					<div>
+						<ErrorAlert error={room.error} />
+					</div> :
+					<>
+						<MessageList
+							messages={messagesData.messages}
+							loaderContent={loaderContent}
+						/>
+						<TypingIndicator usersTyping={usersTyping} inRoom={true} />
+						<MessageInput submitMessage={submitMessage} autofocus onChangeComposing={onChangeComposing} />
+					</>
+			}
 		</div>
 	</Fragment>;
 }
