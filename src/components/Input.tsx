@@ -1,6 +1,7 @@
 import { css, cx } from "@emotion/css";
-import { InputHTMLAttributes } from "preact";
-import { useContext, useEffect, useId, useRef } from "preact/hooks";
+import { InputHTMLAttributes, Ref } from "preact";
+import { forwardRef } from "preact/compat";
+import { useCallback, useContext, useEffect, useId, useRef } from "preact/hooks";
 
 import { themeVars } from "../util/theme";
 import unsignal from "../util/unsignal";
@@ -13,6 +14,7 @@ const styles = {
 		paddingBlock: "0.5rem",
 		borderRadius: "0.25rem",
 		borderStyle: "solid",
+		borderWidth: "2px",
 		borderColor: themeVars.outline1,
 
 		outline: 0,
@@ -35,26 +37,39 @@ const styles = {
 	}),
 };
 
-export default function Input(props: InputHTMLAttributes<HTMLInputElement>) {
-	const fieldCtx = useContext(FieldContext);
+const Input = forwardRef(
+	function Input(props: InputHTMLAttributes<HTMLInputElement>, parentRef: Ref<HTMLInputElement | null>) {
+		const fieldCtx = useContext(FieldContext);
 
-	const ref = useRef<HTMLInputElement>(null);
+		const ref = useRef<HTMLInputElement>(null);
 
-	const autofocus = unsignal(props.autofocus);
+		const autofocus = unsignal(props.autofocus);
 
-	useEffect(() => {
-		if(autofocus === true) {
-			ref.current!.focus();
-		}
-	}, [autofocus]);
+		useEffect(() => {
+			if(autofocus === true) {
+				ref.current!.focus();
+			}
+		}, [autofocus]);
 
-	return <input
-		id={fieldCtx?.id}
-		{...props}
-		class={cx(styles.input, unsignal(props.className), unsignal(props.class))}
-		ref={ref}
-	/>;
-}
+		const refCallback = useCallback((value: HTMLInputElement | null) => {
+			ref.current = value;
+
+			if(parentRef !== null) {
+				if(typeof parentRef === "function") parentRef(value);
+				else parentRef.current = value;
+			}
+		}, [parentRef]);
+
+		return <input
+			id={fieldCtx?.id}
+			{...props}
+			class={cx(styles.input, unsignal(props.className), unsignal(props.class))}
+			ref={refCallback}
+		/>;
+	},
+);
+
+export default Input;
 
 export function InputSuffixWrapper(props: {suffix: string; inputProps: InputHTMLAttributes<HTMLInputElement>}) {
 	const innerID = useId();

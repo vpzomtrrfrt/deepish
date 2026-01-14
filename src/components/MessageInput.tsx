@@ -1,12 +1,15 @@
 import { css } from "@emotion/css";
-import { mdiSend } from "@mdi/js";
+import { mdiEmoticon, mdiSend } from "@mdi/js";
+import { EmojiClickEvent } from "emoji-picker-element/shared";
 import useLinkState from "linkstate/hook";
-import { useEffect } from "preact/hooks";
+import { useCallback, useEffect, useRef } from "preact/hooks";
 
 import useSubmitting from "../util/useSubmitting";
+import EmojiPicker from "./EmojiPicker";
 import Icon from "./Icon";
 import IconButton from "./IconButton";
 import Input from "./Input";
+import Popover from "./Popover";
 
 const styles = {
 	messageInput: css({
@@ -33,6 +36,29 @@ export default function MessageInput(props: {
 		setNewMessage("");
 	});
 
+	const inputRef = useRef<HTMLInputElement>(null);
+
+	const onEmojiClick = useCallback((evt: EmojiClickEvent) => {
+		const emojiText = evt.detail.unicode!;
+
+		const elem = inputRef.current!;
+
+		if(elem.selectionStart === null || elem.selectionEnd === null) {
+			elem.value += emojiText;
+		}
+		else {
+			const newLocation = elem.selectionStart + emojiText.length;
+
+			elem.value =
+				elem.value.substring(0, elem.selectionStart) + emojiText + elem.value.substring(elem.selectionEnd);
+
+			elem.selectionStart = newLocation;
+			elem.selectionEnd = newLocation;
+		}
+
+		setNewMessage(elem.value);
+	}, [setNewMessage]);
+
 	const composing = newMessage !== "";
 
 	useEffect(() => {
@@ -46,7 +72,11 @@ export default function MessageInput(props: {
 			onChange={linkNewMessage}
 			style={{flexGrow: 1}}
 			autofocus={props.autofocus}
+			ref={inputRef}
 		/>
+		<Popover icon={<Icon path={mdiEmoticon} />}>
+			<EmojiPicker onEmojiClick={onEmojiClick} />
+		</Popover>
 		<IconButton type="submit" disabled={submittingMessage}>
 			<Icon path={mdiSend} />
 		</IconButton>
