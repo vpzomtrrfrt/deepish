@@ -8,6 +8,8 @@ import { useEffect, useRef } from "preact/hooks";
 
 import { themeVars } from "../util/theme";
 
+export { dataSource as emojiDataSource };
+
 const styles = {
 	picker: css({
 		"--border-color": "transparent",

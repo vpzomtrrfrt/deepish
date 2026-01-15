@@ -10,13 +10,29 @@ export type LoadState<T> = {
 	value: T;
 };
 
+function ifDone<T, O>(
+	state: LoadState<T>,
+	doneHandler: (value: T) => O,
+	elseHandler: (state: LoadState<T> & {state: "error" | "loading"}) => O,
+): O;
+function ifDone<T, O>(
+	state: LoadState<T>,
+	doneHandler: (value: T) => O,
+	elseHandler?: (state: LoadState<T> & {state: "error" | "loading"}) => O,
+): O | undefined;
+function ifDone<T, O>(
+	state: LoadState<T>,
+	doneHandler: (value: T) => O,
+	elseHandler?: (state: LoadState<T> & {state: "error" | "loading"}) => O,
+) {
+	if(state.state === "done") return doneHandler(state.value);
+	else return elseHandler?.(state);
+}
+
 export const LoadState = {
 	loading: {state: "loading" as const},
 
-	ifDone<T, O>(state: LoadState<T>, doneHandler: (value: T) => O, elseHandler: (state: LoadState<T> & {state: "error" | "loading"}) => O) {
-		if(state.state === "done") return doneHandler(state.value);
-		else return elseHandler(state);
-	},
+	ifDone,
 
 	wrapError<T>(error: unknown): LoadState<T> & {state: "error"} {
 		return {state: "error", error};

@@ -9,7 +9,7 @@ import unsignal from "../util/unsignal";
 import Icon from "./Icon";
 import IconButton from "./IconButton";
 
-const styles = {
+export const styles = {
 	popup: css({
 		backgroundColor: themeVars.bg1,
 		borderStyle: "solid",

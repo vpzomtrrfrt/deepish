@@ -1,14 +1,20 @@
-import { css } from "@emotion/css";
+import { css, cx } from "@emotion/css";
 import { mdiEmoticon, mdiSend } from "@mdi/js";
-import { EmojiClickEvent } from "emoji-picker-element/shared";
+import { Database as EmojiDatabase } from "emoji-picker-element";
+import { EmojiClickEvent, NativeEmoji } from "emoji-picker-element/shared";
 import useLinkState from "linkstate/hook";
-import { useCallback, useEffect, useRef } from "preact/hooks";
+import { JSX } from "preact";
+import { useCallback, useEffect, useRef, useState } from "preact/hooks";
+import useLatestCallback from "use-latest-callback";
 
+import useData, { LoadState } from "../util/useData";
 import useSubmitting from "../util/useSubmitting";
-import EmojiPicker from "./EmojiPicker";
+import DataView from "./DataView";
+import EmojiPicker, { emojiDataSource } from "./EmojiPicker";
 import Icon from "./Icon";
 import IconButton from "./IconButton";
 import Input from "./Input";
+import { styles as menuStyles } from "./Menu";
 import Popover from "./Popover";
 
 const styles = {
@@ -17,8 +23,21 @@ const styles = {
 		padding: ".5rem",
 		gap: ".25rem",
 		alignItems: "center",
+
+		position: "relative",
 	}),
+	completionsMenu: cx(menuStyles.popup, css({
+		position: "absolute",
+		width: "calc(100% - .5rem * 2)",
+		maxHeight: "10rem",
+		bottom: "100%",
+		left: 0,
+
+		overflowY: "auto",
+	})),
 };
+
+const emojiDatabase = new EmojiDatabase({dataSource: emojiDataSource});
 
 export default function MessageInput(props: {
 	submitMessage: (text: string) => Promise<void>;
@@ -59,6 +78,130 @@ export default function MessageInput(props: {
 		setNewMessage(elem.value);
 	}, [setNewMessage]);
 
+	const [completionText, setCompletionText] = useState("");
+
+	const onInput = useCallback((evt: JSX.TargetedEvent<HTMLInputElement>) => {
+		let result = "";
+
+		const elem = evt.currentTarget;
+		if(elem.selectionEnd !== null && elem.selectionStart !== null) {
+			if(elem.selectionStart === elem.selectionEnd) {
+				const endIndex = elem.selectionStart;
+				for(let i = endIndex - 1; i >= 0; i--) {
+					if(elem.value[i] === ":") {
+						const text = elem.value.substring(i, endIndex);
+
+						if(text.length >= 3) result = text;
+
+						break;
+					}
+					else if(elem.value[i] === " ") break;
+				}
+			}
+		}
+
+		console.log("completionText", result);
+		setCompletionText(result);
+	}, []);
+
+	const completionsState = useData(async () => {
+		if(completionText.startsWith(":")) {
+			const searchText = completionText.substring(1).toLowerCase();
+
+			const list = await emojiDatabase.getEmojiBySearchQuery(searchText);
+
+			console.log("list", list);
+
+			return list
+				.filter(entry => {
+					if(typeof entry.shortcodes !== "undefined") {
+						for(const shortcode of entry.shortcodes) {
+							if(shortcode.includes(searchText)) return true;
+						}
+					}
+
+					return false;
+				})
+				.map(entry => {
+					const value = (entry as NativeEmoji).unicode;
+
+					return {
+						value,
+						label: value + " " + (
+							entry.shortcodes?.find(x => x.includes(searchText)) ?? entry.shortcodes?.[0] ?? entry.name
+						),
+					};
+				});
+		}
+
+		return [];
+	}, [completionText]);
+
+	const [completionsSelectedIndex, setCompletionsSelectedIndex] = useState(0);
+
+	useEffect(() => {
+		setCompletionsSelectedIndex(0);
+	}, [completionText]);
+
+	const triggerCompletionInsert = useLatestCallback(() => {
+		LoadState.ifDone(completionsState, list => {
+			if(list.length > 0) {
+				const entry = list[completionsSelectedIndex];
+
+				const elem = inputRef.current!;
+
+				if(elem.selectionStart !== null) {
+					const start = elem.value.lastIndexOf(":", elem.selectionStart);
+					const end = elem.selectionStart;
+
+					elem.value = elem.value.substring(0, start) + entry.value + elem.value.substring(end);
+					elem.selectionStart = start + entry.value.length;
+					elem.selectionEnd = elem.selectionStart;
+
+					setNewMessage(elem.value);
+					setCompletionText("");
+
+					inputRef.current!.focus();
+				}
+			}
+		});
+	});
+
+	const onKeyDown = useLatestCallback((evt: KeyboardEvent) => {
+		if(evt.code === "ArrowDown") {
+			evt.preventDefault();
+
+			LoadState.ifDone(completionsState, list => {
+				setCompletionsSelectedIndex(current => {
+					if(current + 1 < list.length) return current + 1;
+					return 0;
+				});
+			});
+		}
+		else if(evt.code === "ArrowUp") {
+			evt.preventDefault();
+
+			LoadState.ifDone(completionsState, list => {
+				setCompletionsSelectedIndex(current => {
+					if(current - 1 >= 0) return current - 1;
+					return list.length - 1;
+				});
+			});
+		}
+		else if(evt.code === "Enter" || evt.code === "Tab") {
+			LoadState.ifDone(completionsState, list => {
+				if(list.length > 0) {
+					evt.preventDefault();
+					triggerCompletionInsert();
+				}
+			});
+		}
+	});
+
+	const onHoverCompletion = useCallback((index: number) => {
+		setCompletionsSelectedIndex(index);
+	}, []);
+
 	const composing = newMessage !== "";
 
 	useEffect(() => {
@@ -70,6 +213,8 @@ export default function MessageInput(props: {
 			type="text"
 			value={newMessage}
 			onChange={linkNewMessage}
+			onInput={onInput}
+			onKeyDown={onKeyDown}
 			style={{flexGrow: 1}}
 			autofocus={props.autofocus}
 			ref={inputRef}
@@ -80,5 +225,25 @@ export default function MessageInput(props: {
 		<IconButton type="submit" disabled={submittingMessage}>
 			<Icon path={mdiSend} />
 		</IconButton>
+		{LoadState.ifDone(completionsState, x => x.length > 0, () => true) &&
+			<div class={styles.completionsMenu}>
+				<DataView state={completionsState}>
+					{list => {
+						return list.map((entry, index) => {
+							const selected = index === completionsSelectedIndex;
+							return <div
+								key={entry.value}
+								class={menuStyles.item}
+								data-highlighted={selected ? true : undefined}
+								onMouseOver={onHoverCompletion.bind(undefined, index)}
+								onClick={triggerCompletionInsert}
+							>
+								{entry.label}
+							</div>;
+						});
+					}}
+				</DataView>
+			</div>
+		}
 	</form>;
 }
