@@ -1,7 +1,9 @@
 import "./global.css";
 
 import { Tooltip } from "@base-ui/react/tooltip";
+import { css } from "@emotion/css";
 import { IDBCache } from "@instructure/idb-cache";
+import { useMediaQuery } from "@react-hook/media-query";
 import { parse as parseJID } from "@xmpp/jid";
 import { createContext, RefObject, render, VNode } from "preact";
 import { useCallback, useContext, useEffect, useMemo, useRef } from "preact/hooks";
@@ -14,7 +16,7 @@ import ChatPage from "./pages/chat";
 import LoginPage from "./pages/login";
 import { ConnectionContext, useConnectionContext, useCreateConnection } from "./util/connection";
 import matchLocale from "./util/matchLocale";
-import { themeCSS } from "./util/theme";
+import { themeCSS, themeVars } from "./util/theme";
 import useData, { LoadState } from "./util/useData";
 import useEffectOnce from "./util/useEffectOnce";
 
@@ -38,6 +40,15 @@ export function useAppContext(): AppContext {
 
 	return appCtx;
 }
+
+const styles = {
+	appWrapper: css({
+		width: "100vw",
+		height: "100vh",
+		backgroundColor: themeVars.bg0,
+		color: themeVars.textOn1,
+	}),
+};
 
 function App() {
 	const [location] = useLocation();
@@ -83,6 +94,8 @@ function App() {
 		return content.default;
 	}, [lang]);
 
+	const prefersDark = useMediaQuery("(prefers-color-scheme: dark)");
+
 	// This used to trigger a lint warning but doesn't anymore for some reason
 	(window as unknown as {deepishConnection: unknown}).deepishConnection = connection;
 
@@ -97,7 +110,7 @@ function App() {
 			>
 				<DataView state={messagesState}>
 					{() => {
-						return <div class="appWrapper" style={themeCSS.light}>
+						return <div class={styles.appWrapper} style={prefersDark ? themeCSS.dark : themeCSS.light}>
 							<Tooltip.Provider delay={0}>
 								<Route path="/" component={RootPage} />
 								<Route path="/chat" component={ChatPage} nest />

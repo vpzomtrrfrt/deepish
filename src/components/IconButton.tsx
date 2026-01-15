@@ -14,6 +14,7 @@ const styles = {
 		padding: ".5rem",
 
 		cursor: "pointer",
+		color: "inherit",
 
 		"> .icon": {
 			display: "block",

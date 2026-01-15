@@ -1,6 +1,6 @@
 import "emoji-picker-element";
 
-import { css, cx } from "@emotion/css";
+import { css } from "@emotion/css";
 import { Picker } from "emoji-picker-element";
 import { EmojiClickEvent } from "emoji-picker-element/shared";
 import dataSource from "emoji-picker-element-data/en/emojibase/data.json?url";
@@ -36,5 +36,5 @@ export default function EmojiPicker(props: {
 		};
 	}, [props.onEmojiClick]);
 
-	return <emoji-picker dataSource={dataSource} ref={ref} class={cx(styles.picker, "light")} />;
+	return <emoji-picker dataSource={dataSource} ref={ref} class={styles.picker} />;
 }

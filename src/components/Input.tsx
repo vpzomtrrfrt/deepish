@@ -16,6 +16,8 @@ const styles = {
 		borderStyle: "solid",
 		borderWidth: "2px",
 		borderColor: themeVars.outline1,
+		backgroundColor: "transparent",
+		color: themeVars.textOn1,
 
 		outline: 0,
 

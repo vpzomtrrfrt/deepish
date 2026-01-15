@@ -19,6 +19,7 @@ const styles = {
 		position: "relative",
 		textDecoration: "none",
 		lineHeight: 1.35,
+		color: themeVars.link,
 
 		"&::after": {
 			content: "\"\"",

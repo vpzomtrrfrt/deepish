@@ -53,6 +53,10 @@ const styles = {
 		borderRightColor: themeVars.outline1,
 		backgroundColor: themeVars.bg1,
 		overflowY: "auto",
+
+		a: {
+			color: "inherit",
+		},
 	}),
 	currentRoomLink: css({
 		borderColor: themeVars.highlightOutline,

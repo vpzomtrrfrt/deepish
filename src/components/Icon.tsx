@@ -1,7 +1,7 @@
 import { css, cx } from "@emotion/css";
 
 const styles = {
-	icon: cx("icon", css({width: "1em", height: "1em"})),
+	icon: cx("icon", css({width: "1em", height: "1em", fill: "currentColor"})),
 };
 
 export default function Icon(props: {path: string; class?: string}) {
