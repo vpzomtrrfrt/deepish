@@ -15,7 +15,7 @@ import Icon from "./Icon";
 import IconButton from "./IconButton";
 import Input from "./Input";
 import { styles as menuStyles } from "./Menu";
-import Popover from "./Popover";
+import Popover, { PopoverActions } from "./Popover";
 
 const styles = {
 	messageInput: css({
@@ -56,6 +56,7 @@ export default function MessageInput(props: {
 	});
 
 	const inputRef = useRef<HTMLInputElement>(null);
+	const emojiPopoverActionsRef = useRef<PopoverActions | null>(null);
 
 	const onEmojiClick = useCallback((evt: EmojiClickEvent) => {
 		const emojiText = evt.detail.unicode!;
@@ -76,6 +77,9 @@ export default function MessageInput(props: {
 		}
 
 		setNewMessage(elem.value);
+		elem.focus();
+
+		emojiPopoverActionsRef.current!.close();
 	}, [setNewMessage]);
 
 	const [completionText, setCompletionText] = useState("");
@@ -226,7 +230,7 @@ export default function MessageInput(props: {
 			autofocus={props.autofocus}
 			ref={inputRef}
 		/>
-		<Popover icon={<Icon path={mdiEmoticon} />}>
+		<Popover icon={<Icon path={mdiEmoticon} />} actionsRef={emojiPopoverActionsRef}>
 			<EmojiPicker onEmojiClick={onEmojiClick} />
 		</Popover>
 		<IconButton type="submit" disabled={submittingMessage}>
