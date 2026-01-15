@@ -16,7 +16,7 @@ const src = {
 	hoverOverlay: {light: "rgba(0, 0, 0, 0.25)", dark: "rgba(255, 255, 255, 0.12)"},
 	textLight: "#fff",
 	textOn1: {light: "#000", dark: "#eee"},
-	link: {light: "#283593", dark: "#5C6BC0"},
+	link: {light: "#3F51B5", dark: "#7986CB"},
 } satisfies Record<string, Record<Theme, csstype.DataType.Color> | csstype.DataType.Color>;
 
 const themeVars = {} as {
