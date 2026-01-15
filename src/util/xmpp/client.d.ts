@@ -16,6 +16,7 @@ export interface Options extends ConnectionOptions {
 	credentials?: CredentialsObj | CredentialsFactory<Client>;
 	mechanisms: ReadonlyArray<(factory: SASLFactory) => unknown>;
 	userAgent: Element;
+	resource: string;
 }
 
 export function client(options?: Options): Client;

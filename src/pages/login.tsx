@@ -49,19 +49,21 @@ export default function LoginPage() {
 		});
 
 		try {
-			let gotToken = false;
+			let token: unknown = null;
 
 			(client as unknown as {fast: {
 				saveToken(t: unknown): Promise<void>;
-			}}).fast.saveToken = async token => {
-				gotToken = true;
-
-				conn.saveToken.call(undefined, client.jid!, token, userAgent);
+			}}).fast.saveToken = async token_ => {
+				token = token_;
 			};
 
 			await client.start();
 
-			if(gotToken) {
+			if(token !== null) {
+				const resource = client.jid?.resource;
+				if(typeof resource === "undefined" || resource === "") throw new Error("Missing resource");
+
+				conn.saveToken.call(undefined, client.jid!.bare(), token, userAgent, resource);
 				navigate("~/");
 			}
 			else {

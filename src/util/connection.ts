@@ -121,7 +121,7 @@ export interface ConnectionContext {
 	inited: boolean;
 	idle: IdleState;
 
-	saveToken(jid: JID, token: unknown, userAgent: string): void;
+	saveToken(jid: JID, token: unknown, userAgent: string, resource: string): void;
 	logout(jid: JID): void;
 	addEventListener<K extends keyof AppEventMap>(
 		event: K,
@@ -1408,56 +1408,62 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 				jid: string;
 				token: unknown;
 				userAgent: string;
+				resource?: string;
 			};
 
-			const jid = parseJID(info.jid);
+			if(typeof info.resource === "undefined") {
+				setAccounts([]);
+			}
+			else {
+				const jid = parseJID(info.jid);
 
-			const client = createXMPPClientForAccount(jid, info.token, info.userAgent, {
-				online: onClientOnline,
-				status: onClientStatusChanged,
-				error: onClientError,
-				element: onClientElement,
-			}, onClientError);
+				const client = createXMPPClientForAccount(jid, info.token, info.userAgent, info.resource, {
+					online: onClientOnline,
+					status: onClientStatusChanged,
+					error: onClientError,
+					element: onClientElement,
+				}, onClientError);
 
-			setAccounts(current => {
-				current.forEach(account => {
-					account.client.stop();
+				setAccounts(current => {
+					current.forEach(account => {
+						account.client.stop();
+					});
+
+					return [
+						{
+							jid,
+							client,
+							lastError: null,
+							connected: false,
+							counterparts: new Map(),
+							rooms: new Map(),
+							avatarStates: new Map(),
+							servicesState: LoadState.loading,
+							stopped: false,
+						} satisfies Account,
+					];
 				});
 
-				return [
-					{
-						jid,
-						client,
-						lastError: null,
-						connected: false,
-						counterparts: new Map(),
-						rooms: new Map(),
-						avatarStates: new Map(),
-						servicesState: LoadState.loading,
-						stopped: false,
-					} satisfies Account,
-				];
-			});
+				client.iqCallee.set("jabber:iq:roster", "query", async (req) => {
+					console.log("got roster update", req);
 
-			client.iqCallee.set("jabber:iq:roster", "query", async (req) => {
-				console.log("got roster update", req);
+					if(
+						req.from === null ||
+							req.from.equals(jid) ||
 
-				if(
-					req.from === null ||
-						req.from.equals(jid) ||
+							// I'm assuming xmpp.js adds this? The raw message has no from at all
+							(req.from.domain === jid.domain && req.from.local === "")
+					) {
+						const elem = (req as unknown as {element: Element}).element; // ???
+						handleRosterUpdate(jid, elem.getChildren("item"), false);
 
-						// I'm assuming xmpp.js adds this? The raw message has no from at all
-						(req.from.domain === jid.domain && req.from.local === "")
-				) {
-					const elem = (req as unknown as {element: Element}).element; // ???
-					handleRosterUpdate(jid, elem.getChildren("item"), false);
-
-					return true; // ???
-				}
-				else {
-					console.log("ignoring roster update since from isn't me");
-				}
-			});
+						return true; // ???
+					}
+					else {
+						console.log("ignoring roster update since from isn't me");
+					}
+				});
+			}
 		}
 
 		setInited(true);
@@ -2199,8 +2205,8 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 			inited,
 			idle,
 
-			saveToken(jid, token, userAgent) {
-				localStorage.setItem("deepishAccount", JSON.stringify({jid: jid.toString(), token, userAgent}));
+			saveToken(jid, token, userAgent, resource) {
+				localStorage.setItem("deepishAccount", JSON.stringify({jid: jid.toString(), token, userAgent, resource}));
 				loadAccounts();
 			},
 			logout(jid) {
@@ -2291,6 +2297,7 @@ function createXMPPClientForAccount(
 	jid: JID,
 	token: unknown,
 	userAgent: string,
+	resource: string,
 	listeners: {
 		[K in keyof Connection.ConnectionEvents]?: Connection.ConnectionEvents[K] extends (...args: infer T) => infer O ?
 			(client: xmppClient.Client, ...args: T) => O :
@@ -2307,6 +2314,7 @@ function createXMPPClientForAccount(
 			token,
 		},
 		userAgent: xml("user-agent", {id: userAgent}),
+		resource,
 		mechanisms: [],
 	});
 
