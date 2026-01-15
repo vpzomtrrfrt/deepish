@@ -202,6 +202,13 @@ export default function MessageInput(props: {
 		setCompletionsSelectedIndex(index);
 	}, []);
 
+	const completionsMenuRef = useRef<HTMLDivElement>(null);
+
+	useEffect(() => {
+		const child = completionsMenuRef.current!.children[completionsSelectedIndex];
+		if(typeof child !== "undefined") scrollIntoViewIfNeeded(child as HTMLElement);
+	}, [completionsSelectedIndex]);
+
 	const composing = newMessage !== "";
 
 	useEffect(() => {
@@ -226,7 +233,7 @@ export default function MessageInput(props: {
 			<Icon path={mdiSend} />
 		</IconButton>
 		{LoadState.ifDone(completionsState, x => x.length > 0, () => true) &&
-			<div class={styles.completionsMenu}>
+			<div class={styles.completionsMenu} ref={completionsMenuRef}>
 				<DataView state={completionsState}>
 					{list => {
 						return list.map((entry, index) => {
@@ -246,4 +253,19 @@ export default function MessageInput(props: {
 			</div>
 		}
 	</form>;
+}
+
+function scrollIntoViewIfNeeded(elem: HTMLElement) {
+	const parent = elem.offsetParent;
+	if(parent !== null) {
+		const minY = parent.scrollTop;
+		const maxY = parent.scrollTop + parent.clientHeight;
+
+		if(elem.offsetTop < minY) {
+			elem.scrollIntoView(true);
+		}
+		else if(elem.offsetTop + elem.offsetHeight > maxY) {
+			elem.scrollIntoView(false);
+		}
+	}
 }
