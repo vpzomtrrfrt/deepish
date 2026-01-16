@@ -146,6 +146,7 @@ export interface ConnectionContext {
 	createRoom(account: JID, room: JID, params: RoomCreateParams): void;
 	fetchRoomInfo(account: JID, room: JID): Promise<RoomDiscoInfo>;
 	markCounterpartAsRead(account: JID, target: JID, lastReadMessageID: string, isRoom: boolean): void;
+	setNick(account: JID, value: string): Promise<void>;
 }
 
 export const ConnectionContext = createContext<ConnectionContext | undefined>(undefined);
@@ -2186,6 +2187,25 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 		},
 	);
 
+	const setNick = useLatestCallback(async (accountJID: JID, value: string) => {
+		const account = accounts.find(x => x.jid.equals(accountJID));
+		if(typeof account === "undefined") throw new Error("No such account");
+
+		await publishPubsubItem(
+			account.client,
+			"http://jabber.org/protocol/nick",
+			xml(
+				"item",
+				{},
+				xml(
+					"nick",
+					{xmlns: "http://jabber.org/protocol/nick"},
+					value,
+				),
+			),
+		);
+	});
+
 	useEffectOnce(() => {
 		loadAccounts();
 	});
@@ -2234,6 +2254,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 			createRoom,
 			sendFriendRequest,
 			fetchRoomInfo,
+			setNick,
 		} satisfies ConnectionContext),
 		[
 			accounts,
@@ -2257,6 +2278,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 			createRoom,
 			sendFriendRequest,
 			fetchRoomInfo,
+			setNick,
 		],
 	);
 }

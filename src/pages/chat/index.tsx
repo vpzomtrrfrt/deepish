@@ -15,6 +15,7 @@ import Block from "../../components/Block";
 import Button from "../../components/Button";
 import ConfirmDialog from "../../components/ConfirmDialog";
 import { ErrorAlert } from "../../components/DataView";
+import EditProfileDialog from "../../components/EditProfileDialog";
 import Icon from "../../components/Icon";
 import IconButton from "../../components/IconButton";
 import Input from "../../components/Input";
@@ -621,9 +622,14 @@ function SelfBox() {
 	const { $t } = useIntl();
 	const [, navigate] = useLocation();
 
+	const appCtx = useAppContext();
 	const account = useAccount();
 
 	const counterpart = account.counterparts.get(account.jid.toString());
+
+	const editProfile = useLatestCallback(() => {
+		appCtx.showDialog(<EditProfileDialog />);
+	});
 
 	const logout = useLatestCallback(() => {
 		navigate("~/logout/" + encodeURIComponent(account.jid.toString()));
@@ -636,6 +642,7 @@ function SelfBox() {
 			<div class={styles.friendEntryJID}>{account.jid.toString()}</div>
 		</div>
 		<Menu>
+			<MenuItem onClick={editProfile}>{$t({defaultMessage: "Edit Profile"})}</MenuItem>
 			<MenuItem onClick={logout}>{$t({defaultMessage: "Log out"})}</MenuItem>
 		</Menu>
 	</div>;
