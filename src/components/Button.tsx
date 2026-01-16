@@ -16,6 +16,10 @@ const styles = {
 		transition: "background-color 300ms",
 
 		cursor: "pointer",
+
+		"&[data-disabled]": {
+			opacity: 0.38,
+		},
 	}),
 };
 
