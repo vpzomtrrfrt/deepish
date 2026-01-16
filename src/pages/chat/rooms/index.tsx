@@ -8,6 +8,8 @@ import useLatestCallback from "use-latest-callback";
 import { useLocation } from "wouter-preact";
 
 import { useAppContext } from "../../..";
+import AvatarWithStatus from "../../../components/AvatarWithStatus";
+import Block from "../../../components/Block";
 import ConfirmDialog from "../../../components/ConfirmDialog";
 import { DataNonDoneView, ErrorAlert } from "../../../components/DataView";
 import Menu, { MenuItem } from "../../../components/Menu";
@@ -16,8 +18,10 @@ import MessageList, { LoadMoreTriggerer } from "../../../components/MessageList"
 import TaskDialog from "../../../components/TaskDialog";
 import TypingIndicator from "../../../components/TypingIndicator";
 import { Message, MessageEvent, ResultSetInfo, useAccount, useConnectionContext } from "../../../util/connection";
+import { presenceShowTypeNames } from "../../../util/langCommon";
+import { getShowTypeForCounterpart } from "../../../util/statusUtil";
 import { LoadState } from "../../../util/useData";
-import { SpaceItemsList } from "..";
+import { SidebarSegment } from "..";
 
 const styles = {
 	page: css({
@@ -45,6 +49,23 @@ const styles = {
 		"> h1": {
 			margin: 0,
 		},
+	}),
+	membersListEntry: css({
+		padding: ".5rem",
+		textDecoration: "none",
+		color: "inherit",
+
+		display: "flex",
+		alignItems: "center",
+		whiteSpace: "nowrap",
+
+		"> .avatar": {
+			marginInlineEnd: ".5rem",
+		},
+	}),
+	statusText: css({
+		opacity: 0.65,
+		fontSize: "80%",
 	}),
 };
 
@@ -211,7 +232,9 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 		);
 
 	return <Fragment>
-		<SpaceItemsList />
+		<SidebarSegment>
+			<MembersList roomJID={props.roomJID} />
+		</SidebarSegment>
 		<div class={styles.page}>
 			<div class={styles.header}>
 				<div class={styles.headerStart}>
@@ -245,3 +268,37 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 	</Fragment>;
 }
 
+function MembersList(props: {roomJID: string}) {
+	const { $t } = useIntl();
+
+	const account = useAccount();
+
+	const room = account.rooms.get(props.roomJID);
+
+	if(typeof room === "undefined" || !room.connected) return null;
+
+	const members = Array.from(
+		account.counterparts.values()
+			.filter(x => x.jid.bare().equals(room.jid) && x.presences !== null && x.presences.size > 0),
+	);
+
+	return <Block style={{display: "flex", flexDirection: "column"}}>
+		{
+			members.map(member => {
+				const showType = getShowTypeForCounterpart(member, true);
+
+				return <div key={member.jid.resource} class={styles.membersListEntry}>
+					<AvatarWithStatus size="md" jid={member.jid} inRoom />
+					<div style={{flexGrow: 1}}>
+						<div>{member.jid.resource}</div>
+						{showType !== null &&
+							<div class={styles.statusText}>
+								{$t(presenceShowTypeNames[showType])}
+							</div>
+						}
+					</div>
+				</div>;
+			})
+		}
+	</Block>;
+}

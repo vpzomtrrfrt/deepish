@@ -1,8 +1,8 @@
 import { Counterpart, PresenceShowTypeExtended } from "./types";
 import { TupleUnion } from "./typeUtil";
 
-export function getShowTypeForCounterpart(counterpart: Counterpart) {
-	if(counterpart.rosterEntry?.subscriptionTo !== true) return null;
+export function getShowTypeForCounterpart(counterpart: Counterpart, inRoom: boolean = false) {
+	if(!inRoom && counterpart.rosterEntry?.subscriptionTo !== true) return null;
 	if(counterpart.presences === null) return null;
 
 	let best: PresenceShowTypeExtended = PresenceShowTypeExtended.Unavailable;

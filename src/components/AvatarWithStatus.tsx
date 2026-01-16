@@ -23,13 +23,14 @@ const styles = {
 export default function AvatarWithStatus(props: {
 	size: AvatarSize;
 	jid: string | JID;
+	inRoom?: boolean;
 }) {
 	const jid = typeof props.jid === "object" ? props.jid : parseJID(props.jid);
 
 	const account = useAccount();
 
 	const counterpart = account.counterparts.get(jid.toString());
-	const showType = typeof counterpart === "undefined" ? null : getShowTypeForCounterpart(counterpart);
+	const showType = typeof counterpart === "undefined" ? null : getShowTypeForCounterpart(counterpart, props.inRoom);
 
 	return <div class={cx("avatar", styles.avatarWithStatus)}>
 		<Avatar size={props.size} jid={props.jid} />

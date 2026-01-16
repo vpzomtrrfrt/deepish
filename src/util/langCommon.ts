@@ -1,4 +1,6 @@
-import { defineMessage } from "react-intl";
+import { defineMessage, MessageDescriptor } from "react-intl";
+
+import { PresenceShowTypeExtended } from "./types";
 
 export const msgActionAdd = defineMessage({defaultMessage: "Add"});
 export const msgActionCreate = defineMessage({defaultMessage: "Create"});
@@ -19,3 +21,18 @@ export const msgJID = defineMessage({
 export const msgJIDShort = defineMessage({
 	defaultMessage: "Address",
 });
+
+export const presenceShowTypeNames: Record<PresenceShowTypeExtended, MessageDescriptor> = {
+	[PresenceShowTypeExtended.XA]: defineMessage({defaultMessage: "Extended Away"}),
+	[PresenceShowTypeExtended.DND]: defineMessage({defaultMessage: "Do Not Disturb"}),
+	[PresenceShowTypeExtended.Chat]: defineMessage({
+		defaultMessage: "Open to Chat",
+		description: "Status indicating user wants to chat",
+	}),
+	[PresenceShowTypeExtended.Away]: defineMessage({defaultMessage: "Away"}),
+	[PresenceShowTypeExtended.Available]: defineMessage({defaultMessage: "Online", description: "Default user status"}),
+	[PresenceShowTypeExtended.Unavailable]: defineMessage({
+		defaultMessage: "Offline",
+		description: "Status indicating user is not online",
+	}),
+};

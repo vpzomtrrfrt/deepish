@@ -4,7 +4,7 @@ import { JID, parse as parseJID } from "@xmpp/jid";
 import useLinkState from "linkstate/hook";
 import { JSX } from "preact";
 import { useCallback, useEffect, useMemo, useState } from "preact/hooks";
-import { defineMessage, MessageDescriptor, useIntl } from "react-intl";
+import { useIntl } from "react-intl";
 import useLatestCallback from "use-latest-callback";
 import { Link, Route, Switch, useLocation, useRoute } from "wouter-preact";
 
@@ -24,11 +24,11 @@ import { ManualTabsContainer, TabLink, TabsList } from "../../components/Tabs";
 import WithTooltip from "../../components/WithTooltip";
 import * as commonStyles from "../../util/commonStyles";
 import { useAccount, useConnectionContext } from "../../util/connection";
-import { msgActionAdd } from "../../util/langCommon";
+import { msgActionAdd, presenceShowTypeNames } from "../../util/langCommon";
 import { getNickForCounterpart } from "../../util/profileUtil";
 import { getShowTypeForCounterpart } from "../../util/statusUtil";
 import { themeVars } from "../../util/theme";
-import { Counterpart, PresenceShowTypeExtended } from "../../util/types";
+import { Counterpart } from "../../util/types";
 import unsignal from "../../util/unsignal";
 import { LoadState } from "../../util/useData";
 import useSubmitting from "../../util/useSubmitting";
@@ -256,10 +256,17 @@ export default function ChatPage() {
 	</div>;
 }
 
-export function SpaceItemsList(props: JSX.HTMLAttributes<HTMLDivElement>) {
+export function SidebarSegment(props: JSX.HTMLAttributes<HTMLDivElement>) {
 	return <div
 		{...props}
 		className={cx(styles.sidebarSegment, styles.spaceItemsList, unsignal(props.class), unsignal(props.className))}
+	/>;
+}
+
+export function SpaceItemsList(props: JSX.HTMLAttributes<HTMLDivElement>) {
+	return <SidebarSegment
+		{...props}
+		className={cx(styles.spaceItemsList, unsignal(props.class), unsignal(props.className))}
 	/>;
 }
 
@@ -584,21 +591,6 @@ function ConnectingView() {
 		<Button tier="secondary" onClick={logout}>Log out</Button>
 	</div>;
 }
-
-const presenceShowTypeNames: Record<PresenceShowTypeExtended, MessageDescriptor> = {
-	[PresenceShowTypeExtended.XA]: defineMessage({defaultMessage: "Extended Away"}),
-	[PresenceShowTypeExtended.DND]: defineMessage({defaultMessage: "Do Not Disturb"}),
-	[PresenceShowTypeExtended.Chat]: defineMessage({
-		defaultMessage: "Open to Chat",
-		description: "Status indicating user wants to chat",
-	}),
-	[PresenceShowTypeExtended.Away]: defineMessage({defaultMessage: "Away"}),
-	[PresenceShowTypeExtended.Available]: defineMessage({defaultMessage: "Online", description: "Default user status"}),
-	[PresenceShowTypeExtended.Unavailable]: defineMessage({
-		defaultMessage: "Offline",
-		description: "Status indicating user is not online",
-	}),
-};
 
 function AddFriendForm() {
 	const { $t } = useIntl();
