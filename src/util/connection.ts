@@ -1993,6 +1993,8 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 	});
 
 	const createRoom = useLatestCallback(async (accountJID: JID, room: JID, params: RoomCreateParams) => {
+		if(room.local === "") throw new Error("Room ID cannot be empty");
+
 		const realParams = {
 			"muc#roomconfig_membersonly": params.membersOnly,
 			"muc#roomconfig_persistentroom": params.persistent,
