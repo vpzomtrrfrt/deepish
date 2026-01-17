@@ -116,6 +116,12 @@ interface RoomJoinCallbackInfo {
 	statuses: string[];
 }
 
+interface ImageInfo {
+	content: Blob;
+	width: number;
+	height: number;
+}
+
 export interface ConnectionContext {
 	accounts: Account[];
 	inited: boolean;
@@ -147,6 +153,7 @@ export interface ConnectionContext {
 	fetchRoomInfo(account: JID, room: JID): Promise<RoomDiscoInfo>;
 	markCounterpartAsRead(account: JID, target: JID, lastReadMessageID: string, isRoom: boolean): void;
 	setNick(account: JID, value: string): Promise<void>;
+	setAvatar(account: JID, info: ImageInfo): Promise<void>;
 }
 
 export const ConnectionContext = createContext<ConnectionContext | undefined>(undefined);
@@ -467,6 +474,8 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 
 						return {...account, counterparts};
 					});
+
+					startRequestingAvatar(client, contact, avatarHashes);
 				}
 			}
 			else if(node === "urn:xmpp:bookmarks:1") {
@@ -2208,6 +2217,60 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 		);
 	});
 
+	const setAvatar = useLatestCallback(async (accountJID: JID, value: ImageInfo) => {
+		const account = accounts.find(x => x.jid.equals(accountJID));
+		if(typeof account === "undefined") throw new Error("No such account");
+
+		const content = await value.content.bytes();
+		const hash = await crypto.subtle.digest("SHA-1", content);
+		const hashStr = toHex(new Uint8Array(hash));
+
+		const contentB64 = toBase64(content);
+
+		// Prefill local cache
+		await cache.setItem(
+			"avatarImages/" + encodeURIComponent(hashStr),
+			JSON.stringify({contentB64, type: "image/png"} satisfies AvatarImageCacheEntry),
+		);
+
+		await publishPubsubItem(
+			account.client,
+			"urn:xmpp:avatar:data",
+			xml(
+				"item",
+				{id: hashStr},
+				xml(
+					"data",
+					{xmlns: "urn:xmpp:avatar:data"},
+					contentB64,
+				),
+			),
+		);
+
+		await publishPubsubItem(
+			account.client,
+			"urn:xmpp:avatar:metadata",
+			xml(
+				"item",
+				{id: hashStr},
+				xml(
+					"metadata",
+					{xmlns: "urn:xmpp:avatar:metadata"},
+					xml(
+						"info",
+						{
+							bytes: content.byteLength,
+							id: hashStr,
+							height: value.height,
+							type: "image/png",
+							width: value.width,
+						},
+					),
+				),
+			),
+		);
+	});
+
 	useEffectOnce(() => {
 		loadAccounts();
 	});
@@ -2257,6 +2320,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 			sendFriendRequest,
 			fetchRoomInfo,
 			setNick,
+			setAvatar,
 		} satisfies ConnectionContext),
 		[
 			accounts,
@@ -2281,6 +2345,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 			sendFriendRequest,
 			fetchRoomInfo,
 			setNick,
+			setAvatar,
 		],
 	);
 }

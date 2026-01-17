@@ -32,6 +32,13 @@ function ifDone<T, O>(
 export const LoadState = {
 	loading: {state: "loading" as const},
 
+	assertDone<T>(state: LoadState<T>): T {
+		if(state.state === "done") return state.value;
+		else {
+			throw new Error("assertDone called on non-done state");
+		}
+	},
+
 	ifDone,
 
 	wrapError<T>(error: unknown): LoadState<T> & {state: "error"} {

@@ -6,7 +6,7 @@ import { useAccount } from "../util/connection";
 import { generateColorForID } from "../util/xmpp/colorGeneration";
 
 const styles = {
-	avatar: css({
+	avatar: cx("avatar", css({
 		display: "inline-block",
 		width: "var(--avatar-size)",
 		height: "var(--avatar-size)",
@@ -23,7 +23,7 @@ const styles = {
 			width: "100%",
 			height: "100%",
 		},
-	}),
+	})),
 	fallbackAvatar: css({
 		width: "100%",
 		height: "100%",
@@ -87,7 +87,7 @@ export default function Avatar(props: {size: AvatarSize; jid: string | JID; clas
 		return generateColorForID(parsedJID.toString());
 	}, [parsedJID]);
 
-	return <div class={cx("avatar", styles.avatar, props.class)} style={{"--avatar-size": props.size === "lg" ? "50px": "35px"}}>
+	return <div class={cx(styles.avatar, props.class)} style={{"--avatar-size": props.size === "lg" ? "50px": "35px"}}>
 		{image === null ?
 			<svg class={styles.fallbackAvatar} style={{backgroundColor: color}} viewBox="0 0 30 30">
 				<text x="50%" y="50%">
@@ -102,5 +102,11 @@ export default function Avatar(props: {size: AvatarSize; jid: string | JID; clas
 			</svg> :
 			<img src={image} />
 		}
+	</div>;
+}
+
+export function RawAvatar(props: {size: AvatarSize; src: string; class?: string}) {
+	return <div class={cx(styles.avatar, props.class)} style={{"--avatar-size": props.size === "lg" ? "50px": "35px"}}>
+		<img src={props.src} />
 	</div>;
 }
