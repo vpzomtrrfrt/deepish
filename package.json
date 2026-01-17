@@ -49,5 +49,8 @@
       "sasl-scram-sha-1": "github:singpolyma/js-sasl-scram-sha-1#defc69a"
     },
     "rollup": "4.52.5"
+  },
+  "scripts": {
+    "build": "vite build"
   }
 }
