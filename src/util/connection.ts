@@ -1,4 +1,5 @@
 import { IDBCache } from "@instructure/idb-cache";
+import { useSignal } from "@preact/signals";
 import Connection from "@xmpp/connection";
 import xid from "@xmpp/id";
 import { JID, parse as parseJID } from "@xmpp/jid";
@@ -34,6 +35,7 @@ const DEFAULT_COUNTERPART_INFO: Omit<Counterpart, "jid"> = {
 	requestingMySubscription: false,
 	lastMessageID: null,
 	lastMessageTimestamp: null,
+	lastMessageTimestampFromInbox: null,
 	overrideVisibleTimestamp: null,
 	avatarHashes: [],
 	presences: null,
@@ -171,7 +173,8 @@ const BOOKMARKS_PUBLISH_OPTIONS: PubsubPublishOptions = {
 export function useCreateConnection(cache: IDBCache): ConnectionContext {
 	// eventually we might support multiple accounts
 	// just one for now though
-	const [accounts, setAccounts] = useState<Account[]>([]);
+	const accountsSig = useSignal<Account[]>([]);
+	const accounts = accountsSig.value;
 
 	const [inited, setInited] = useState(false);
 
@@ -182,15 +185,13 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 	const newRoomsRef = useRef<Map<string, {resolve: (value: RoomJoinCallbackInfo) => void; reject: (err: unknown) => void}>>(new Map());
 
 	const updateAccount = useCallback((identifier: xmppClient.Client | JID, fn: (current: Account) => Account) => {
-		setAccounts(current => {
-			return current.map(account => {
-				if(identifier instanceof JID ? account.jid.equals(identifier) : account.client === identifier) {
-					return fn(account);
-				}
-				else return account;
-			});
+		accountsSig.value = accountsSig.value.map(account => {
+			if(identifier instanceof JID ? account.jid.equals(identifier) : account.client === identifier) {
+				return fn(account);
+			}
+			else return account;
 		});
-	}, []);
+	}, [accountsSig]);
 
 	const upsertCounterpart = useCallback(
 		(accountIdentifier: xmppClient.Client | JID, counterpartJID: JID, fn: (current: Counterpart) => Counterpart) => {
@@ -378,8 +379,93 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 	}
 
 	async function fetchInbox(client: xmppClient.Client) {
-		const result = await client.iqCaller.request(xml("iq", {type: "get"}, xml("inbox", {xmlns: "http://deepish.vpzom.click/ns/inbox"})));
+		const result = await client.iqCaller.get(xml("summary", {xmlns: "xmpp:prosody.im/mod_map"}));
 		if(typeof result === "undefined") throw new Error("Missing result from summary");
+
+		console.log("inbox", result);
+
+		// technically these might not be "real" messages, but maybe close enough?
+
+		const newLastMessageTimestamps = new Map<string, Date>();
+		result.getChildren("item").forEach(item => {
+			const itemJID = parseJID(item.getAttr("jid"));
+
+			const end = item.getChildText("end");
+			if(end !== null) {
+				const endDate = new Date(end);
+				if(!isNaN(endDate.getTime())) newLastMessageTimestamps.set(itemJID.toString(), endDate);
+			}
+		});
+
+		if(newLastMessageTimestamps.size > 0) {
+			updateAccount(client, account => {
+				const counterparts = new Map(account.counterparts);
+
+				newLastMessageTimestamps.forEach((timestamp, itemJID) => {
+					counterparts.set(itemJID, {
+						...(counterparts.get(itemJID) ?? {...DEFAULT_COUNTERPART_INFO, jid: parseJID(itemJID)}),
+						lastMessageTimestampFromInbox: timestamp,
+					});
+				});
+
+				return {...account, counterparts};
+			});
+
+			// Fetch recent messages from MAM to populate lastMessageID
+			const remaining = new Map<string, string | null>();
+			newLastMessageTimestamps.forEach((_, itemJID) => {
+				remaining.set(itemJID, null);
+			});
+			while(true) {
+				{
+					const accounts = accountsSig.value;
+					const account = accounts.find(x => x.client === client);
+					if(typeof account === "undefined") break;
+
+					remaining.forEach((_, itemJID) => {
+						const counterpart = account.counterparts.get(itemJID);
+						if(typeof counterpart !== "undefined" && counterpart.lastMessageID !== null) {
+							remaining.delete(itemJID);
+						}
+					});
+				}
+
+				console.log("need last message from", remaining);
+
+				if(remaining.size < 1) break;
+
+				const account = accountsSig.value.find(x => x.client === client);
+				if(typeof account === "undefined") break;
+
+				await Promise.all(
+					Array.from(remaining, async ([key, value]) => {
+						try {
+							const isRoom = account.rooms.has(key);
+
+							const fin = await requestArchive(
+								client.jid!.bare(),
+								isRoom ? parseJID(key) : account.jid,
+								{with: isRoom ? undefined : parseJID(key)},
+								value === null ? undefined : value,
+							);
+
+							if(fin === null) {
+								remaining.delete(key);
+							}
+							else {
+								remaining.set(key, fin.lastItem);
+							}
+						}
+						catch(ex) {
+							console.error(ex);
+
+							// Stop trying for this one
+							remaining.delete(key);
+						}
+					}),
+				);
+			}
+		}
 	}
 
 	async function fetchServices(client: xmppClient.Client) {
@@ -841,32 +927,6 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 					}
 				});
 			}
-
-			const inboxElem = elem.getChild("entry", "http://deepish.vpzom.click/ns/inbox");
-			if(typeof inboxElem !== "undefined") {
-				const timestamp = new Date(inboxElem.getAttr("stamp"));
-				const stanzaID = inboxElem.getAttr("id");
-				let itemJID = null;
-				try {
-					itemJID = parseJID(inboxElem.getAttr("jid"));
-				}
-				catch(ex) {
-					console.error(ex);
-				}
-
-				if(!isNaN(timestamp.getTime()) && itemJID !== null && typeof stanzaID === "string") {
-					upsertCounterpart(client, itemJID, entry => {
-						if(entry.lastMessageTimestamp === null || entry.lastMessageTimestamp < timestamp) {
-							return {
-								...entry,
-								lastMessageTimestamp: timestamp,
-								lastMessageID: stanzaID,
-							};
-						}
-						else return entry;
-					});
-				}
-			}
 		}
 	}
 
@@ -1107,29 +1167,27 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 					if(success) {
 						callback?.resolve({statuses});
 
-						setAccounts(current => {
-							return current.map(item => {
-								if(item.client === client) {
-									const rooms = new Map(item.rooms);
-									const oldInfo = rooms.get(srcJID.bare().toString());
-									if(typeof oldInfo === "undefined") {
-										console.log("Tried to update room missing in list");
-										return item;
-									}
-
-									rooms.set(srcJID.bare().toString(), {
-										...oldInfo,
-										connected: true,
-										nick: srcJID.resource,
-									});
-
-									return {
-										...item,
-										rooms,
-									};
+						accountsSig.value = accountsSig.value.map(item => {
+							if(item.client === client) {
+								const rooms = new Map(item.rooms);
+								const oldInfo = rooms.get(srcJID.bare().toString());
+								if(typeof oldInfo === "undefined") {
+									console.log("Tried to update room missing in list");
+									return item;
 								}
-								else return item;
-							});
+
+								rooms.set(srcJID.bare().toString(), {
+									...oldInfo,
+									connected: true,
+									nick: srcJID.resource,
+								});
+
+								return {
+									...item,
+									rooms,
+								};
+							}
+							else return item;
 						});
 
 						fetchAndStoreRoomDisco(client, srcJID.bare());
@@ -1271,7 +1329,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 	const loadAccounts = useCallback(() => {
 		const infoStr = localStorage.getItem("deepishAccount");
 		if(infoStr === null) {
-			setAccounts([]);
+			accountsSig.value = [];
 		}
 		else {
 			const info = JSON.parse(infoStr) as {
@@ -1282,7 +1340,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 			};
 
 			if(typeof info.resource === "undefined") {
-				setAccounts([]);
+				accountsSig.value = [];
 			}
 			else {
 				const jid = parseJID(info.jid);
@@ -1294,12 +1352,13 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 					element: onClientElement,
 				}, onClientError);
 
-				setAccounts(current => {
+				{
+					const current = accountsSig.value;
 					current.forEach(account => {
 						account.client.stop();
 					});
 
-					return [
+					accountsSig.value = [
 						{
 							jid,
 							client,
@@ -1312,7 +1371,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 							stopped: false,
 						} satisfies Account,
 					];
-				});
+				}
 
 				client.iqCallee.set("jabber:iq:roster", "query", async (req) => {
 					console.log("got roster update", req);
@@ -1337,7 +1396,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 		}
 
 		setInited(true);
-	}, [onClientOnline, onClientStatusChanged, onClientError, onClientElement, handleRosterUpdate]);
+	}, [accountsSig, onClientOnline, onClientStatusChanged, onClientError, onClientElement, handleRosterUpdate]);
 
 	const listenersRef = useRef<{
 		[K in keyof AppEventMap]: Set<(evt: AppEventMap[K]) => void>;

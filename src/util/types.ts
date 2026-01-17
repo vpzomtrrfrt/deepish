@@ -31,6 +31,7 @@ export interface Counterpart {
 	requestingMySubscription: boolean;
 	lastMessageID: string | null;
 	lastMessageTimestamp: Date | null;
+	lastMessageTimestampFromInbox: Date | null;
 	overrideVisibleTimestamp: Date | null;
 	avatarHashes: string[];
 	presences: Map<string, Presence> | null;
