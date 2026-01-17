@@ -189,6 +189,22 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 		});
 	}, []);
 
+	const upsertCounterpart = useCallback(
+		(accountIdentifier: xmppClient.Client | JID, counterpartJID: JID, fn: (current: Counterpart) => Counterpart) => {
+			updateAccount(accountIdentifier, account => {
+				const counterparts = new Map(account.counterparts);
+
+				counterparts.set(counterpartJID.toString(), fn(
+					counterparts.get(counterpartJID.toString()) ??
+						{...DEFAULT_COUNTERPART_INFO, jid: counterpartJID}
+				));
+
+				return {...account, counterparts};
+			});
+		},
+		[updateAccount],
+	);
+
 	const handleBookmarksUpdate = useLatestCallback((
 		client: xmppClient.Client,
 		mode: "add" | "remove" | "all",
@@ -431,20 +447,10 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 					if(typeof nickElem !== "undefined") {
 						const nick = nickElem.getText();
 
-						updateAccount(client, account => {
-							const counterparts = new Map(account.counterparts);
-							counterparts.set(
-								from.toString(),
-								{
-									...(
-										counterparts.get(from.toString()) ?? {...DEFAULT_COUNTERPART_INFO, jid: from}
-									),
-									nick,
-								},
-							);
-
-							return {...account, counterparts};
-						});
+						upsertCounterpart(client, from, current => ({
+							...current,
+							nick,
+						}));
 					}
 				}
 			}
@@ -454,26 +460,10 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 				if(typeof from !== "undefined") {
 					const contact = from;
 
-					updateAccount(client, account => {
-						const counterparts = new Map(account.counterparts);
-
-						const entry = counterparts.get(contact.toString());
-						if(typeof entry === "undefined") {
-							counterparts.set(contact.toString(), {
-								...DEFAULT_COUNTERPART_INFO,
-								jid: contact,
-								avatarHashes,
-							});
-						}
-						else {
-							counterparts.set(contact.toString(), {
-								...entry,
-								avatarHashes,
-							});
-						}
-
-						return {...account, counterparts};
-					});
+					upsertCounterpart(client, contact, current => ({
+						...current,
+						avatarHashes,
+					}));
 
 					startRequestingAvatar(client, contact, avatarHashes);
 				}
@@ -491,26 +481,10 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 						if(typeof stanzaIDElem !== "undefined") {
 							const messageID = stanzaIDElem.getAttr("id");
 							if(typeof messageID === "string") {
-								updateAccount(client, account => {
-									const counterparts = new Map(account.counterparts);
-									const entry = account.counterparts.get(jid.toString());
-
-									if(typeof entry === "undefined") {
-										counterparts.set(jid.toString(), {
-											...DEFAULT_COUNTERPART_INFO,
-											jid,
-											lastReadMessageID: messageID,
-										});
-									}
-									else {
-										counterparts.set(jid.toString(), {
-											...entry,
-											lastReadMessageID: messageID,
-										});
-									}
-
-									return {...account, counterparts};
-								});
+								upsertCounterpart(client, jid, current => ({
+									...current,
+									lastReadMessageID: messageID,
+								}));
 							}
 						}
 					}
@@ -644,25 +618,10 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 		if(composing !== null) {
 			console.log("updating composing from", from, composing, elem);
 
-			updateAccount(client, account => {
-				const entry = account.counterparts.get(from.toString());
-				const counterparts = new Map(account.counterparts);
-				if(typeof entry === "undefined") {
-					counterparts.set(from.toString(), {
-						...DEFAULT_COUNTERPART_INFO,
-						jid: from,
-						composingFrom: composing,
-					});
-				}
-				else {
-					counterparts.set(from.toString(), {
-						...entry,
-						composingFrom: composing,
-					});
-				}
-
-				return {...account, counterparts};
-			});
+			upsertCounterpart(client, from, current => ({
+				...current,
+				composingFrom: composing,
+			}));
 		}
 	}
 
@@ -730,33 +689,18 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 					},
 				});
 
-				updateAccount(client, account => {
-					const entry = account.counterparts.get(room.toString());
+				upsertCounterpart(client, room, entry => {
 					if(
-						typeof entry === "undefined" ||
-							entry.lastMessageTimestamp === null ||
+						entry.lastMessageTimestamp === null ||
 							entry.lastMessageTimestamp.getTime() < timestamp.getTime()
 					) {
-						const counterparts = new Map(account.counterparts);
-						if(typeof entry === "undefined") {
-							counterparts.set(room.toString(), {
-								...DEFAULT_COUNTERPART_INFO,
-								jid: room,
-								lastMessageTimestamp: timestamp,
-								lastMessageID: id,
-							});
-						}
-						else {
-							counterparts.set(room.toString(), {
-								...entry,
-								lastMessageTimestamp: timestamp,
-								lastMessageID: id ?? entry.lastMessageID,
-							});
-						}
-
-						return {...account, counterparts};
+						return {
+							...entry,
+							lastMessageTimestamp: timestamp,
+							lastMessageID: id ?? entry.lastMessageID,
+						};
 					}
-					else return account;
+					else return entry;
 				});
 			}
 
@@ -810,33 +754,18 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 				// Messages might be from me, should count against the recipient in that case
 				const conversation = from.bare().equals(client.jid!.bare()) ? to : from.bare();
 
-				updateAccount(client, account => {
-					const entry = account.counterparts.get(conversation.toString());
+				upsertCounterpart(client, conversation, entry => {
 					if(
-						typeof entry === "undefined" ||
-							entry.lastMessageTimestamp === null ||
+						entry.lastMessageTimestamp === null ||
 							entry.lastMessageTimestamp.getTime() < timestamp.getTime()
 					) {
-						const counterparts = new Map(account.counterparts);
-						if(typeof entry === "undefined") {
-							counterparts.set(conversation.toString(), {
-								...DEFAULT_COUNTERPART_INFO,
-								jid: conversation,
-								lastMessageTimestamp: timestamp,
-								lastMessageID: id,
-							});
-						}
-						else {
-							counterparts.set(conversation.toString(), {
-								...entry,
-								lastMessageTimestamp: timestamp,
-								lastMessageID: id ?? entry.lastMessageID,
-							});
-						}
-
-						return {...account, counterparts};
+						return {
+							...entry,
+							lastMessageTimestamp: timestamp,
+							lastMessageID: id ?? entry.lastMessageID,
+						};
 					}
-					else return account;
+					else return entry;
 				});
 
 				emit("message", {
@@ -915,28 +844,15 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 				}
 
 				if(!isNaN(timestamp.getTime()) && itemJID !== null && typeof stanzaID === "string") {
-					updateAccount(client, account => {
-						const counterparts = new Map(account.counterparts);
-						const entry = counterparts.get(itemJID.toString());
-						if(typeof entry === "undefined") {
-							counterparts.set(itemJID.toString(), {
-								...DEFAULT_COUNTERPART_INFO,
-								jid: itemJID,
+					upsertCounterpart(client, itemJID, entry => {
+						if(entry.lastMessageTimestamp === null || entry.lastMessageTimestamp < timestamp) {
+							return {
+								...entry,
 								lastMessageTimestamp: timestamp,
 								lastMessageID: stanzaID,
-							});
+							};
 						}
-						else {
-							if(entry.lastMessageTimestamp === null || entry.lastMessageTimestamp < timestamp) {
-								counterparts.set(itemJID.toString(), {
-									...entry,
-									lastMessageTimestamp: timestamp,
-									lastMessageID: stanzaID,
-								});
-							}
-						}
-
-						return {...account, counterparts};
+						else return entry;
 					});
 				}
 			}
@@ -1276,53 +1192,20 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 				}
 			}
 			else if(type === "unavailable") {
-				updateAccount(client, account => {
-					const counterparts = new Map(account.counterparts);
+				upsertCounterpart(client, contact, entry => {
+					const presences: typeof entry.presences = entry.presences === null ?
+						new Map() :
+						new Map(entry.presences);
+					presences.delete(srcJID.toString());
 
-					const entry = counterparts.get(contact.toString());
-					if(typeof entry === "undefined") {
-						counterparts.set(contact.toString(), {
-							...DEFAULT_COUNTERPART_INFO,
-							jid: contact,
-							presences: new Map(),
-						});
-					}
-					else {
-						const presences: typeof entry.presences = entry.presences === null ?
-							new Map() :
-							new Map(entry.presences);
-						presences.delete(srcJID.toString());
-
-						counterparts.set(contact.toString(), {
-							...entry,
-							presences,
-						});
-					}
-
-					return {...account, counterparts};
+					return {
+						...entry,
+						presences,
+					};
 				});
 			}
 			else if(type === "subscribe") {
-				updateAccount(client, account => {
-					const counterparts = new Map(account.counterparts);
-
-					const entry = counterparts.get(contact.toString());
-					if(typeof entry === "undefined") {
-						counterparts.set(contact.toString(), {
-							...DEFAULT_COUNTERPART_INFO,
-							jid: contact,
-							requestingMySubscription: true,
-						});
-					}
-					else {
-						counterparts.set(contact.toString(), {
-							...entry,
-							requestingMySubscription: true,
-						});
-					}
-
-					return {...account, counterparts};
-				});
+				upsertCounterpart(client, contact, current => ({...current, requestingMySubscription: true}));
 			}
 			else if(typeof type === "undefined") {
 				const showValue = elem.getChildText("show");
@@ -1335,34 +1218,19 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 					}
 				}
 
-				updateAccount(client, account => {
-					const counterparts = new Map(account.counterparts);
-
-					const entry = counterparts.get(contact.toString());
+				upsertCounterpart(client, contact, entry => {
 					let presences: Map<string, Presence>;
-					if(typeof entry === "undefined") {
-						presences = new Map();
-						counterparts.set(contact.toString(), {
-							...DEFAULT_COUNTERPART_INFO,
-							jid: contact,
-							presences,
-						});
-					}
-					else {
-						if(entry.presences === null) presences = new Map();
-						else presences = new Map(entry.presences);
-
-						counterparts.set(contact.toString(), {
-							...entry,
-							presences,
-						});
-					}
+					if(entry.presences === null) presences = new Map();
+					else presences = new Map(entry.presences);
 
 					presences.set(srcJID.toString(), {
 						show,
 					});
 
-					return {...account, counterparts};
+					return {
+						...entry,
+						presences,
+					};
 				});
 			}
 
@@ -1377,26 +1245,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 			console.log("got presence from", srcJID.toString(), ", interpreting as from", contact.toString(), ", avatar hashes:", avatarHashes);
 
 			if(typeof avatarHashes !== "undefined") {
-				updateAccount(client, account => {
-					const counterparts = new Map(account.counterparts);
-
-					const entry = counterparts.get(contact.toString());
-					if(typeof entry === "undefined") {
-						counterparts.set(contact.toString(), {
-							...DEFAULT_COUNTERPART_INFO,
-							jid: contact,
-							avatarHashes,
-						});
-					}
-					else {
-						counterparts.set(contact.toString(), {
-							...entry,
-							avatarHashes,
-						});
-					}
-
-					return {...account, counterparts};
-				});
+				upsertCounterpart(client, contact, current => ({...current, avatarHashes}));
 			}
 
 			if(typeof avatarHashes !== "undefined" && avatarHashes.length > 0) {
@@ -1636,28 +1485,12 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 	});
 
 	const markCounterpartAsVisible = useLatestCallback((accountJID: JID, target: JID) => {
-		updateAccount(accountJID, account => {
-			const entry = account.counterparts.get(target.toString());
-			if(
-				typeof entry !== "undefined" &&
-					(entry.overrideVisibleTimestamp !== null || entry.lastMessageTimestamp !== null)
-			) {
-				return account;
+		upsertCounterpart(accountJID, target, entry => {
+			if(entry.overrideVisibleTimestamp !== null || entry.lastMessageTimestamp !== null) {
+				return entry;
 			}
 
-			const counterparts = new Map(account.counterparts);
-			if(typeof entry === "undefined") {
-				counterparts.set(target.toString(), {
-					...DEFAULT_COUNTERPART_INFO,
-					jid: target,
-					overrideVisibleTimestamp: new Date(),
-				});
-			}
-			else {
-				counterparts.set(target.toString(), {...entry, overrideVisibleTimestamp: new Date()});
-			}
-
-			return {...account, counterparts};
+			return {...entry, overrideVisibleTimestamp: new Date()};
 		});
 	});
 
@@ -1708,20 +1541,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 			);
 		}
 
-		updateAccount(accountJID, account => {
-			const counterparts = new Map(account.counterparts);
-
-			const entry = counterparts.get(target.toString());
-
-			if(typeof entry !== "undefined") {
-				counterparts.set(target.toString(), {
-					...entry,
-					requestingMySubscription: false,
-				});
-			}
-
-			return {...account, counterparts};
-		});
+		upsertCounterpart(accountJID, target, current => ({...current, requestingMySubscription: false}));
 	});
 
 	const removeFriend = useLatestCallback(async (accountJID: JID, target: JID) => {
@@ -1784,20 +1604,14 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 			);
 		}
 
-		updateAccount(accountJID, account => {
-			const counterparts = new Map(account.counterparts);
-
-			counterparts.set(target.toString(), {
-				...(counterparts.get(target.toString()) ?? {...DEFAULT_COUNTERPART_INFO, jid: target}),
-				rosterEntry: {
-					subscriptionFrom: true,
-					subscriptionTo: false,
-					requestingSubscriptionTo: true,
-				},
-			});
-
-			return {...account, counterparts};
-		});
+		upsertCounterpart(accountJID, target, current => ({
+			...current,
+			rosterEntry: {
+				subscriptionFrom: true,
+				subscriptionTo: false,
+				requestingSubscriptionTo: true,
+			},
+		}));
 	});
 
 	const fetchRoomInfo = useLatestCallback(async (accountJID: JID, roomJID: JID) => {
@@ -1826,20 +1640,10 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 			);
 		}
 
-		updateAccount(accountJID, account => {
-			const counterparts = new Map(account.counterparts);
-
-			const entry = counterparts.get(target.toString());
-			counterparts.set(
-				target.toString(),
-				{
-					...(entry ?? {...DEFAULT_COUNTERPART_INFO, jid: target}),
-					lastReportedComposing: composing,
-				},
-			);
-
-			return {...account, counterparts};
-		});
+		upsertCounterpart(accountJID, target, current => ({
+			...current,
+			lastReportedComposing: composing,
+		}));
 	});
 
 	const setComposingToRoom = useLatestCallback((accountJID: JID, roomJID: JID, composing: boolean) => {
@@ -2174,25 +1978,10 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 
 	const markCounterpartAsRead = useLatestCallback(
 		(accountJID: JID, targetJID: JID, lastReadMessageID: string, isRoom: boolean) => {
-			updateAccount(accountJID, account => {
-				const counterparts = new Map(account.counterparts);
-				const entry = account.counterparts.get(targetJID.toString());
-				if(typeof entry === "undefined") {
-					counterparts.set(targetJID.toString(), {
-						...DEFAULT_COUNTERPART_INFO,
-						jid: targetJID,
-						lastReadMessageID,
-					});
-				}
-				else {
-					counterparts.set(targetJID.toString(), {
-						...entry,
-						lastReadMessageID,
-					});
-				}
-
-				return {...account, counterparts};
-			});
+			upsertCounterpart(accountJID, targetJID, current => ({
+				...current,
+				lastReadMessageID,
+			}));
 
 			submitDisplayedUpdate(accountJID, targetJID, lastReadMessageID, isRoom);
 		},
