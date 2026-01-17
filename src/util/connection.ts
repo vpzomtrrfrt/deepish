@@ -88,7 +88,10 @@ export interface Message {
 }
 
 export interface MessageEvent {
+	account: JID;
 	message: Message;
+	isNew: boolean;
+	shouldNotify: boolean;
 }
 
 interface AppEventMap {
@@ -673,11 +676,14 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 					timestamp = new Date(delayElem.getAttr("stamp"));
 				}
 
+				const isNew = timestamp === null;
+
 				timestamp ??= new Date();
 
 				const room = from.bare();
 
-				emit("message", {
+				handleMessage({
+					account: client.jid!.bare(),
 					message: {
 						room, // TODO is this correct for non-anonymous MUCs?
 						from: from,
@@ -687,6 +693,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 						localID: unstableID ?? id ?? xid(),
 						timestamp,
 					},
+					isNew,
 				});
 
 				upsertCounterpart(client, room, entry => {
@@ -747,6 +754,8 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 					timestamp = new Date(delayElem.getAttr("stamp"));
 				}
 
+				const isNew = timestamp === null;
+
 				timestamp = timestamp ?? new Date();
 
 				console.log("got a message", timestamp, id);
@@ -768,7 +777,8 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 					else return entry;
 				});
 
-				emit("message", {
+				handleMessage({
+					account: client.jid!.bare(),
 					message: {
 						room: null,
 						from,
@@ -778,6 +788,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 						localID: unstableID ?? id ?? xid(),
 						timestamp,
 					},
+					isNew,
 				});
 			}
 		}
@@ -1362,6 +1373,25 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 		[],
 	);
 
+	const shouldNotifyForMessage = useCallback((evt: Omit<MessageEvent, "shouldNotify">) => {
+		// TODO add configurable logic
+
+		if(!evt.isNew) return false;
+
+		if(evt.message.room === null) {
+			if(evt.message.from.equals(evt.account)) return false;
+
+			return true;
+		}
+		else {
+			return false;
+		}
+	}, []);
+
+	const handleMessage = useCallback((evt: Omit<MessageEvent, "shouldNotify">) => {
+		emit("message", {...evt, shouldNotify: shouldNotifyForMessage(evt)});
+	}, [emit, shouldNotifyForMessage]);
+
 	const requestArchive = useLatestCallback(
 		async (accountJID: JID, entity: JID, params: {with?: JID}, before?: string, options: {max?: number} = {}) => {
 			const account = accounts.find(x => x.jid.equals(accountJID));
@@ -1441,7 +1471,8 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 			),
 		);
 
-		emit("message", {
+		handleMessage({
+			account: accountJID,
 			message: {
 				room: null,
 				from: accountJID,
@@ -1451,6 +1482,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 				localID,
 				timestamp: new Date(),
 			},
+			isNew: true,
 		});
 
 		// Non-groupchat messages don't get reflected, so we don't know the stanza ID

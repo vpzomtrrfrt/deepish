@@ -642,6 +642,9 @@ function SelfBox() {
 			<div class={styles.friendEntryJID}>{account.jid.toString()}</div>
 		</div>
 		<Menu>
+			{LoadState.ifDone(appCtx.notificationsPermissionState, state => state === "prompt", () => false) &&
+				<MenuItem onClick={appCtx.requestNotificationsPermission}>Enable Notifications</MenuItem>
+			}
 			<MenuItem onClick={editProfile}>{$t({defaultMessage: "Edit Profile"})}</MenuItem>
 			<MenuItem onClick={logout}>{$t({defaultMessage: "Log out"})}</MenuItem>
 		</Menu>
