@@ -56,11 +56,11 @@ export default function ChatRoomAddPage() {
 
 	return <div>
 		<Block>
-			<Button tier="secondary" onClick={createRoom}>{$t({defaultMessage: "Create a Room"})}</Button>
+			<Button tier="secondary" onClick={createRoom}>{$t({defaultMessage: "Create Channel"})}</Button>
 		</Block>
 
 		<Block>
-			<h1>{$t({defaultMessage: "Join a Room"})}</h1>
+			<h1>{$t({defaultMessage: "Join a Channel"})}</h1>
 			<form onSubmit={submitJoin}>
 				<Input value={joinInput} onChange={linkJoinInput} />
 				{" "}

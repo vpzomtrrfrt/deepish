@@ -188,7 +188,7 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 				onConfirm={() => {
 					const task = conn.leaveRoom.call(undefined, account.jid, room!.jid);
 
-					appCtx.showDialog(<TaskDialog task={task}>{$t({defaultMessage: "Leaving room…"})}</TaskDialog>);
+					appCtx.showDialog(<TaskDialog task={task}>{$t({defaultMessage: "Leaving…"})}</TaskDialog>);
 
 					task.then(() => navigate("~/"));
 				}}
@@ -246,7 +246,7 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 				</div>
 				<div>
 					<Menu>
-						<MenuItem onClick={leaveRoom}>{$t({defaultMessage: "Leave Room"})}</MenuItem>
+						<MenuItem onClick={leaveRoom}>{$t({defaultMessage: "Leave Channel"})}</MenuItem>
 					</Menu>
 				</div>
 			</div>
