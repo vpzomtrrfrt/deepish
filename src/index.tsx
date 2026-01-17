@@ -9,7 +9,7 @@ import { createContext, RefObject, render, VNode } from "preact";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { IntlProvider, MissingTranslationError, useIntl } from "react-intl";
 import useLatestCallback from "use-latest-callback";
-import { Redirect, Route, useLocation } from "wouter-preact";
+import { Redirect, Route, useLocation, useRoute } from "wouter-preact";
 
 import DataView from "./components/DataView";
 import DialogContainer, { DialogContainerRef } from "./components/DialogContainer";
@@ -160,25 +160,34 @@ function AppContent() {
 
 	const connection = useConnectionContext();
 
+	const directMatch = useRoute("/chat/direct/:counterpartJID");
+
 	const onMessage = useLatestCallback((evt: MessageEvent) => {
 		if(evt.shouldNotify) {
-			console.log("notifying", evt);
-			const account = connection.accounts.find(x => x.jid.equals(evt.account));
-			if(typeof account !== "undefined") {
-				let contact = evt.message.from;
-				if(evt.message.room === null) contact = contact.bare();
+			let contact = evt.message.from;
+			if(evt.message.room === null) contact = contact.bare();
 
-				const counterpart = account.counterparts.get(contact.toString());
+			let isActive = false;
+			if(directMatch[0]) {
+				if(decodeURIComponent(directMatch[1].counterpartJID) === contact.toString()) isActive = true;
+			}
 
-				new Notification(
-					$t(
-						{defaultMessage: "New message from {name}"},
-						{name: maybeGetNickForCounterpart(contact, counterpart)},
-					),
-					{
-						body: evt.message.content,
-					},
-				);
+			if(!isActive) {
+				console.log("notifying", evt);
+				const account = connection.accounts.find(x => x.jid.equals(evt.account));
+				if(typeof account !== "undefined") {
+					const counterpart = account.counterparts.get(contact.toString());
+
+					new Notification(
+						$t(
+							{defaultMessage: "New message from {name}"},
+							{name: maybeGetNickForCounterpart(contact, counterpart)},
+						),
+						{
+							body: evt.message.content,
+						},
+					);
+				}
 			}
 		}
 	});
