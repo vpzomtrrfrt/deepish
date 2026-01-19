@@ -972,7 +972,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 		else {
 			const mamResultElem = elem.getChild("result", "urn:xmpp:mam:2");
 			if(typeof mamResultElem !== "undefined") {
-				const id = mamResultElem.getAttr("id") ?? undefined;
+				const idValue = mamResultElem.getAttr("id");
 
 				let timestamp: Date | undefined = undefined;
 
@@ -984,7 +984,18 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 					}
 
 					const messageElem = forwardedElem.getChild("message", "jabber:client");
-					if(typeof messageElem !== "undefined") handleMessageStanza(client, messageElem, id, timestamp);
+					if(typeof messageElem !== "undefined") {
+						let id = undefined;
+						if(typeof idValue === "string") {
+							id = new StanzaID(
+								StanzaIDType.Stanza,
+								from ?? client.jid!.bare(),
+								idValue,
+							);
+						}
+
+						handleMessageStanza(client, messageElem, id, timestamp);
+					}
 				}
 			}
 
