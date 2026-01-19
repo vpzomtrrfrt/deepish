@@ -21,6 +21,8 @@ import { Message, MessageEvent, ResultSetInfo, useAccount, useConnectionContext 
 import { presenceShowTypeNames } from "../../../util/langCommon";
 import { getShowTypeForCounterpart } from "../../../util/statusUtil";
 import { LoadState } from "../../../util/useData";
+import useEventHandler from "../../../util/useEventHandler";
+import { StanzaIDType } from "../../../util/xmpp/StanzaID";
 import { SidebarSegment } from "..";
 
 const styles = {
@@ -95,17 +97,15 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 
 		if(evt.message.room !== null && evt.message.room.toString() === props.roomJID) {
 			setMessagesData(current => {
-				if(evt.message.id !== null && current.messageMap.has(evt.message.id)) {
+				if(evt.message.ids.some(x => current.messageMap.has(x.toString()))) {
 					// we already have this message, ignore
 					return current;
 				}
 
-				let newMap;
-				if(evt.message.id === null) newMap = current.messageMap;
-				else {
-					newMap = new Map(current.messageMap);
-					newMap.set(evt.message.id, evt.message);
-				}
+				const newMap = new Map(current.messageMap);
+				evt.message.ids.forEach(id => {
+					newMap.set(id.toString(), evt.message);
+				});
 
 				const newMessages = current.messages.slice();
 				pushAtSortPosition(
@@ -123,13 +123,7 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 		}
 	});
 
-	useEffect(() => {
-		conn.addEventListener.call(undefined, "message", onMessage);
-
-		return () => {
-			conn.removeEventListener.call(undefined, "message", onMessage);
-		};
-	}, [onMessage, conn.addEventListener, conn.removeEventListener]);
+	useEventHandler(conn, "message", onMessage);
 
 	const [pageState, setPageState] = useState<LoadState<ResultSetInfo | null> | null>(null);
 
@@ -163,8 +157,10 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 				typeof counterpart !== "undefined"
 		) {
 			const lastMessage = messagesData.messages[messagesData.messages.length - 1];
-			if(lastMessage.id !== null && counterpart.lastReadMessageID !== lastMessage.id) {
-				conn.markCounterpartAsRead.call(undefined, account.jid, counterpart.jid, lastMessage.id, false);
+			const lastMessageID =
+				lastMessage.ids.find(x => x.type === StanzaIDType.Stanza && x.by.equals(counterpart.jid));
+			if(typeof lastMessageID !== "undefined" && counterpart.lastReadMessageID !== lastMessageID.id) {
+				conn.markCounterpartAsRead.call(undefined, account.jid, counterpart.jid, lastMessageID.id, false);
 			}
 		}
 	}, [account.jid, conn.markCounterpartAsRead, counterpart, messagesData.messages, pageState]);

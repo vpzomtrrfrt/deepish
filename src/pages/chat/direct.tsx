@@ -12,6 +12,8 @@ import TypingIndicator from "../../components/TypingIndicator";
 import { Message, MessageEvent, ResultSetInfo, useAccount, useConnectionContext } from "../../util/connection";
 import { getNickForCounterpart } from "../../util/profileUtil";
 import { LoadState } from "../../util/useData";
+import useEventHandler from "../../util/useEventHandler";
+import { StanzaIDType } from "../../util/xmpp/StanzaID";
 
 const styles = {
 	page: css({
@@ -47,12 +49,10 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 
 	const [messagesData, setMessagesData] = useState<{
 		messages: Message[];
-		byID: Map<string, Message>;
-		byLocalID: Map<string, Message>;
+		messageMap: Map<string, Message>;
 	}>({
 		messages: [],
-		byID: new Map(),
-		byLocalID: new Map(),
+		messageMap: new Map(),
 	});
 
 	const onMessage = useLatestCallback((evt: MessageEvent) => {
@@ -64,34 +64,22 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 		) {
 			setMessagesData(current => {
 				let newMessages;
-				if(
-					current.byLocalID.has(evt.message.localID) ||
-						(evt.message.id !== null && current.byID.has(evt.message.id))
-				) {
+				if(evt.message.ids.some(x => current.messageMap.has(x.toString()))) {
 					// Already present, remove existing entry
 
 					// TODO do this faster
 					newMessages = current.messages.filter(message => {
-						return !(
-							message.id === null ?
-								message.localID === evt.message.localID :
-								message.id === evt.message.id
-						);
+						return !message.ids.some(existing => evt.message.ids.some(x => x.equals(existing)));
 					});
 				}
 				else {
 					newMessages = current.messages.slice();
 				}
 
-				let newByID;
-				if(evt.message.id === null) newByID = current.byID;
-				else {
-					newByID = new Map(current.byID);
-					newByID.set(evt.message.id, evt.message);
-				}
-
-				const newByLocalID = new Map(current.byLocalID);
-				newByLocalID.set(evt.message.localID, evt.message);
+				const newMap = new Map(current.messageMap);
+				evt.message.ids.forEach(id => {
+					newMap.set(id.toString(), evt.message);
+				});
 
 				pushAtSortPosition(
 					newMessages,
@@ -102,20 +90,13 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 
 				return {
 					messages: newMessages,
-					byID: newByID,
-					byLocalID: newByLocalID,
+					messageMap: newMap,
 				};
 			});
 		}
 	});
 
-	useEffect(() => {
-		conn.addEventListener.call(undefined, "message", onMessage);
-
-		return () => {
-			conn.removeEventListener.call(undefined, "message", onMessage);
-		};
-	}, [onMessage, conn.addEventListener, conn.removeEventListener]);
+	useEventHandler(conn, "message", onMessage);
 
 	const [pageState, setPageState] = useState<LoadState<ResultSetInfo | null> | null>(null);
 
@@ -155,8 +136,10 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 				typeof counterpart !== "undefined"
 		) {
 			const lastMessage = messagesData.messages[messagesData.messages.length - 1];
-			if(lastMessage.id !== null && counterpart.lastReadMessageID !== lastMessage.id) {
-				conn.markCounterpartAsRead.call(undefined, account.jid, counterpart.jid, lastMessage.id, false);
+			const lastMessageID =
+				lastMessage.ids.find(x => x.type === StanzaIDType.Stanza && x.by.equals(account.jid));
+			if(typeof lastMessageID !== "undefined" && counterpart.lastReadMessageID !== lastMessageID.id) {
+				conn.markCounterpartAsRead.call(undefined, account.jid, counterpart.jid, lastMessageID.id, false);
 			}
 		}
 	}, [account.jid, conn.markCounterpartAsRead, counterpart, messagesData.messages, pageState]);

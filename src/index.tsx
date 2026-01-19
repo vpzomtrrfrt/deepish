@@ -21,6 +21,7 @@ import { maybeGetNickForCounterpart } from "./util/profileUtil";
 import { themeCSS, themeVars } from "./util/theme";
 import useData, { LoadState } from "./util/useData";
 import useEffectOnce from "./util/useEffectOnce";
+import useEventHandler from "./util/useEventHandler";
 
 const SUPPORTED_LANGUAGES = ["en", "eo"];
 const DEFAULT_LANGUAGE = "en";
@@ -192,13 +193,7 @@ function AppContent() {
 		}
 	});
 
-	useEffect(() => {
-		connection.addEventListener.call(undefined, "message", onMessage);
-
-		return () => {
-			connection.removeEventListener.call(undefined, "message", onMessage);
-		};
-	}, [connection.addEventListener, connection.removeEventListener, onMessage]);
+	useEventHandler(connection, "message", onMessage);
 
 	return <>
 		<Route path="/" component={RootPage} />
