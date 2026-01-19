@@ -92,6 +92,8 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 		messageMap: new Map(),
 	});
 
+	const unresolvedRemovalsRef = useRef<Map<string, MessageRemovalEvent>>(new Map());
+
 	const onMessage = useLatestCallback((evt: MessageEvent) => {
 		console.log("room page got message", evt);
 
@@ -102,15 +104,31 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 					return current;
 				}
 
+				let removal = null;
+				evt.message.ids.forEach(id => {
+					const entry = unresolvedRemovalsRef.current.get(id.toString());
+					if(typeof entry !== "undefined") {
+						console.log("resolving unresolved removal", id);
+						if(messageRemovalIsAllowed(evt.message, entry)) {
+							removal = entry.removal;
+							unresolvedRemovalsRef.current.delete(id.toString());
+						}
+					}
+				});
+
+				const message: Message = removal === null ?
+					evt.message :
+					{...evt.message, removal};
+
 				const newMap = new Map(current.messageMap);
 				evt.message.ids.forEach(id => {
-					newMap.set(id.toString(), evt.message);
+					newMap.set(id.toString(), message);
 				});
 
 				const newMessages = current.messages.slice();
 				pushAtSortPosition(
 					newMessages,
-					evt.message,
+					message,
 					(a, b) => (a.timestamp - b.timestamp) as (0 | 1 | -1), // it's not but should be fine
 					0,
 				);
@@ -131,6 +149,8 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 		setMessagesData(current => {
 			const newMessageMap = new Map(current.messageMap);
 
+			let anyHit = false;
+
 			const newMessages = current.messages.map(message => {
 				if(message.ids.some(x => x.equals(evt.target))) {
 					if(messageRemovalIsAllowed(message, evt)) {
@@ -143,6 +163,8 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 							newMessageMap.set(id.toString(), newValue);
 						});
 
+						anyHit = true;
+
 						return newValue;
 					}
 				}
@@ -150,7 +172,16 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 				return message;
 			});
 
-			return {messages: newMessages, messageMap: newMessageMap};
+			if(anyHit) {
+				return {messages: newMessages, messageMap: newMessageMap};
+			}
+			else {
+				console.log("got unresolved removal", evt);
+
+				unresolvedRemovalsRef.current.set(evt.target.toString(), evt);
+
+				return current;
+			}
 		});
 	});
 	useEventHandler(conn, "messageRemove", onMessageRemove);

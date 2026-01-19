@@ -55,6 +55,8 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 		messageMap: new Map(),
 	});
 
+	const unresolvedRemovalsRef = useRef<Map<string, MessageRemovalEvent>>(new Map());
+
 	const onMessage = useLatestCallback((evt: MessageEvent) => {
 		if(
 			evt.message.room === null && (
@@ -64,26 +66,56 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 		) {
 			setMessagesData(current => {
 				let newMessages;
-				if(evt.message.ids.some(x => current.messageMap.has(x.toString()))) {
-					// Already present, remove existing entry
+				{
+					let existing = undefined;
+					for(const id of evt.message.ids) {
+						existing = current.messageMap.get(id.toString());
+						if(typeof existing !== "undefined") break;
+					}
 
-					// TODO do this faster
-					newMessages = current.messages.filter(message => {
-						return !message.ids.some(existing => evt.message.ids.some(x => x.equals(existing)));
-					});
+					if(typeof existing !== "undefined") {
+						// Already present
+
+						if(existing.removal === null) {
+							// TODO do this faster
+							newMessages = current.messages.filter(message => {
+								return !message.ids.some(existing => evt.message.ids.some(x => x.equals(existing)));
+							});
+						}
+						else {
+							// Message has been removed, don't bother with it further
+							return current;
+						}
+					}
+					else {
+						newMessages = current.messages.slice();
+					}
 				}
-				else {
-					newMessages = current.messages.slice();
-				}
+
+				let removal = null;
+				evt.message.ids.forEach(id => {
+					const entry = unresolvedRemovalsRef.current.get(id.toString());
+					if(typeof entry !== "undefined") {
+						console.log("resolving unresolved removal", id);
+						if(messageRemovalIsAllowed(evt.message, entry)) {
+							removal = entry.removal;
+							unresolvedRemovalsRef.current.delete(id.toString());
+						}
+					}
+				});
+
+				const message: Message = removal === null ?
+					evt.message :
+					{...evt.message, removal};
 
 				const newMap = new Map(current.messageMap);
 				evt.message.ids.forEach(id => {
-					newMap.set(id.toString(), evt.message);
+					newMap.set(id.toString(), message);
 				});
 
 				pushAtSortPosition(
 					newMessages,
-					evt.message,
+					message,
 					(a, b) => (a.timestamp - b.timestamp) as (0 | 1 | -1), // it's not but should be fine
 					0,
 				);
@@ -103,6 +135,8 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 		setMessagesData(current => {
 			const newMessageMap = new Map(current.messageMap);
 
+			let anyHit = false;
+
 			const newMessages = current.messages.map(message => {
 				if(message.ids.some(x => x.equals(evt.target))) {
 					if(messageRemovalIsAllowed(message, evt)) {
@@ -115,6 +149,8 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 							newMessageMap.set(id.toString(), newValue);
 						});
 
+						anyHit = true;
+
 						return newValue;
 					}
 				}
@@ -122,7 +158,16 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 				return message;
 			});
 
-			return {messages: newMessages, messageMap: newMessageMap};
+			if(anyHit) {
+				return {messages: newMessages, messageMap: newMessageMap};
+			}
+			else {
+				console.log("got unresolved removal", evt);
+
+				unresolvedRemovalsRef.current.set(evt.target.toString(), evt);
+
+				return current;
+			}
 		});
 	});
 	useEventHandler(conn, "messageRemove", onMessageRemove);
