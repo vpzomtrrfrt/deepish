@@ -5,7 +5,7 @@ import xid from "@xmpp/id";
 import { JID, parse as parseJID } from "@xmpp/jid";
 import StanzaError from "@xmpp/middleware/lib/StanzaError";
 import SASLError from "@xmpp/sasl/lib/SASLError";
-import xml, { Element } from "@xmpp/xml";
+import xml, { Element, Node } from "@xmpp/xml";
 import fromBase64 from "es-arraybuffer-base64/Uint8Array.fromBase64";
 import toBase64 from "es-arraybuffer-base64/Uint8Array.prototype.toBase64";
 import toHex from "es-arraybuffer-base64/Uint8Array.prototype.toHex";
@@ -13,6 +13,7 @@ import { createContext } from "preact";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import useLatestCallback from "use-latest-callback";
 
+import { compareRanks, DEFAULT_RANK, genRankBetween } from "./lexrank";
 import { Counterpart, Presence, PresenceShowType, RosterEntry } from "./types";
 import { LoadState } from "./useData";
 import useEffectOnce from "./useEffectOnce";
@@ -56,6 +57,9 @@ export interface RoomDiscoInfo {
 export interface Room {
 	jid: JID;
 	nick: string | null;
+	rank: string;
+	extensionsContent: Node[];
+
 	connected: boolean;
 	error: unknown;
 	infoState: LoadState<RoomDiscoInfo>;
@@ -174,6 +178,7 @@ export interface ConnectionContext {
 	markCounterpartAsRead(account: JID, target: JID, lastReadMessageID: string, isRoom: boolean): void;
 	setNick(account: JID, value: string): Promise<void>;
 	setAvatar(account: JID, info: ImageInfo): Promise<void>;
+	reorderRoom(account: JID, room: JID, to: {before: JID | null; after: JID | null}): Promise<void>;
 }
 
 export const ConnectionContext = createContext<ConnectionContext | undefined>(undefined);
@@ -233,6 +238,8 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 		const wantedRooms: Array<{
 			jid: string;
 			nick?: string;
+			rank: string;
+			extensionsContent: Node[];
 		}> = [];
 
 		if(typeof newItems !== "undefined") {
@@ -243,11 +250,21 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 				if(typeof conf !== "undefined") {
 					const autojoinValue = conf.getAttr("autojoin");
 					if(autojoinValue === "true" || autojoinValue === "1") {
-						const entry: typeof wantedRooms[0] = {jid};
+						const entry: typeof wantedRooms[0] = {jid, rank: DEFAULT_RANK, extensionsContent: []};
 
 						const nickNode = conf.getChild("nick");
 						if(typeof nickNode !== "undefined") {
 							entry.nick = nickNode.getText();
+						}
+
+						const extensionsNode = conf.getChild("extensions");
+						if(typeof extensionsNode !== "undefined") {
+							entry.extensionsContent = extensionsNode.children;
+
+							const rankNode = conf.getChild("rank", "http://deepish.vpzom.click/ns/rank");
+							if(typeof rankNode !== "undefined") {
+								entry.rank = rankNode.getText();
+							}
 						}
 
 						wantedRooms.push(entry);
@@ -268,6 +285,8 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 					rooms.set(entry.jid, {
 						jid,
 						nick: null,
+						rank: entry.rank,
+						extensionsContent: entry.extensionsContent,
 						connected: false,
 						error: null,
 						infoState: LoadState.loading,
@@ -1919,6 +1938,8 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 				rooms.set(room.toString(), {
 					jid: room,
 					nick: nick ?? null,
+					rank: DEFAULT_RANK,
+					extensionsContent: [],
 					connected: false,
 					error: null,
 					infoState: LoadState.loading,
@@ -2257,6 +2278,108 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 		);
 	});
 
+	const setRoomRank = useCallback(async (accountJID: JID, roomJID: JID, newRank: string) => {
+		const account = accountsSig.value.find(x => x.jid.equals(accountJID));
+		if(typeof account === "undefined") throw new Error("No such account");
+
+		const room = account.rooms.get(roomJID.toString());
+		if(typeof room === "undefined") throw new Error("Unknown room");
+
+		await publishPubsubItem(
+			account.client,
+			"urn:xmpp:bookmarks:1",
+			xml(
+				"item",
+				{id: roomJID.toString()},
+				xml(
+					"conference",
+					{xmlns: "urn:xmpp:bookmarks:1", autojoin: "true"},
+					...(
+						room.nick === null ?
+							[] :
+							[xml("nick", {}, room.nick)]
+					),
+					xml(
+						"extensions",
+						{},
+						...room.extensionsContent.filter(x => {
+							return !(
+								x instanceof Element &&
+									x.name === "rank" &&
+									x.getNS() === "http://deepish.vpzom.click/ns/rank"
+							);
+						}),
+						xml(
+							"rank",
+							"http://deepish.vpzom.click/ns/rank",
+							newRank,
+						),
+					),
+				),
+			),
+			BOOKMARKS_PUBLISH_OPTIONS,
+		);
+
+		updateAccount(accountJID, current => {
+			const rooms = new Map(current.rooms);
+			const entry = rooms.get(roomJID.toString());
+
+			if(typeof entry === "undefined") return current;
+			else {
+				rooms.set(roomJID.toString(), {
+					...entry,
+					rank: newRank,
+				});
+				return {...current, rooms};
+			}
+		});
+	}, [accountsSig.value, updateAccount]);
+
+	async function reorderRoomInner(accountJID: JID, roomJID: JID, to: {before: JID | null; after: JID | null}) {
+		async function task() {
+			const account = accountsSig.value.find(x => x.jid.equals(accountJID));
+			if(typeof account === "undefined") throw new Error("No such account");
+
+			const before = to.before === null ?
+				null :
+				account.rooms.get(to.before.toString());
+			if(typeof before === "undefined") throw new Error("Unknown anchor room");
+
+			const after = to.after === null ?
+				null :
+				account.rooms.get(to.after.toString());
+			if(typeof after === "undefined") throw new Error("Unknown anchor room");
+
+			if(before === null || after === null || before.rank !== after.rank) {
+				const newRank = genRankBetween(
+					after === null ? null : after.rank,
+					before === null ? null : before.rank,
+				);
+
+				await setRoomRank(accountJID, roomJID, newRank);
+			}
+			else {
+				// Too close, move up after anchor first
+
+				const roomsList = Array.from(account.rooms.values());
+				roomsList.sort((a, b) => compareRanks(a.rank, b.rank));
+
+				const idx = roomsList.indexOf(after);
+
+				await reorderRoomInner(
+					accountJID,
+					after.jid,
+					{after: idx > 0 ? roomsList[idx - 1].jid : null, before: before.jid},
+				);
+				await task();
+			}
+		}
+
+		await task();
+	}
+
+	const reorderRoom = useLatestCallback(reorderRoomInner);
+
 	useEffectOnce(() => {
 		loadAccounts();
 	});
@@ -2307,6 +2430,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 			fetchRoomInfo,
 			setNick,
 			setAvatar,
+			reorderRoom,
 		} satisfies ConnectionContext),
 		[
 			accounts,
@@ -2332,6 +2456,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 			fetchRoomInfo,
 			setNick,
 			setAvatar,
+			reorderRoom,
 		],
 	);
 }

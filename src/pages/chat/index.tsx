@@ -26,6 +26,7 @@ import WithTooltip from "../../components/WithTooltip";
 import * as commonStyles from "../../util/commonStyles";
 import { useAccount, useConnectionContext } from "../../util/connection";
 import { msgActionAdd, presenceShowTypeNames } from "../../util/langCommon";
+import { compareRanks } from "../../util/lexrank";
 import { getNickForCounterpart } from "../../util/profileUtil";
 import { getShowTypeForCounterpart } from "../../util/statusUtil";
 import { themeVars } from "../../util/theme";
@@ -283,6 +284,9 @@ function ChatView() {
 	const incomingRequestCounterparts = Array.from(account.counterparts.values())
 		.filter(counterpartIsIncomingRequest);
 
+	const rooms = Array.from(account.rooms.values());
+	rooms.sort((a, b) => compareRanks(a.rank, b.rank));
+
 	return <div class={cx(styles.sidebarSegment, styles.roomList)}>
 		<div>
 			<Link to="~/">
@@ -296,31 +300,28 @@ function ChatView() {
 			</Link>
 		</div>
 		{
-			Array.from(
-				account.rooms,
-				([roomJID, info]) => {
-					const name = LoadState.ifDone(info.infoState, disco => disco.name, () => null) ?? roomJID;
+			rooms.map(info => {
+				const name = LoadState.ifDone(info.infoState, disco => disco.name, () => null) ?? info.jid.toString();
 
-					const counterpart = account.counterparts.get(roomJID);
-					const unread = typeof counterpart !== "undefined" &&
-						counterpart.lastMessageID !== null &&
-						counterpart.lastReadMessageID !== counterpart.lastMessageID;
+				const counterpart = account.counterparts.get(info.jid.toString());
+				const unread = typeof counterpart !== "undefined" &&
+					counterpart.lastMessageID !== null &&
+					counterpart.lastReadMessageID !== counterpart.lastMessageID;
 
-					return <div key={roomJID}>
-						<WithTooltip tooltip={name} side="inline-end">
-							<Link
-								to={"~/chat/rooms/" + encodeURIComponent(roomJID)}
-								class={cx(styles.roomLink, currentRoom === roomJID && styles.currentRoomLink)}
-							>
-								<Avatar size="lg" jid={roomJID} />
-								{
-									unread && <div class={styles.roomUnreadIndicator} />
-								}
-							</Link>
-						</WithTooltip>
-					</div>;
-				},
-			)
+				return <div key={info.jid.toString()}>
+					<WithTooltip tooltip={name} side="inline-end">
+						<Link
+							to={"~/chat/rooms/" + encodeURIComponent(info.jid.toString())}
+							class={cx(styles.roomLink, currentRoom === info.jid.toString() && styles.currentRoomLink)}
+						>
+							<Avatar size="lg" jid={info.jid.toString()} />
+							{
+								unread && <div class={styles.roomUnreadIndicator} />
+							}
+						</Link>
+					</WithTooltip>
+				</div>;
+			})
 		}
 		<div>
 			<Link to="~/chat/rooms:add">
