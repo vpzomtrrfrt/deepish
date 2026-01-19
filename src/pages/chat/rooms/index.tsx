@@ -9,7 +9,6 @@ import { useLocation } from "wouter-preact";
 
 import { useAppContext } from "../../..";
 import AvatarWithStatus from "../../../components/AvatarWithStatus";
-import Block from "../../../components/Block";
 import ConfirmDialog from "../../../components/ConfirmDialog";
 import { DataNonDoneView, ErrorAlert } from "../../../components/DataView";
 import Menu, { MenuItem } from "../../../components/Menu";
@@ -20,6 +19,7 @@ import TypingIndicator from "../../../components/TypingIndicator";
 import { Message, MessageEvent, ResultSetInfo, useAccount, useConnectionContext } from "../../../util/connection";
 import { presenceShowTypeNames } from "../../../util/langCommon";
 import { getShowTypeForCounterpart } from "../../../util/statusUtil";
+import { themeVars } from "../../../util/theme";
 import { LoadState } from "../../../util/useData";
 import { SidebarSegment } from "..";
 
@@ -49,6 +49,18 @@ const styles = {
 		"> h1": {
 			margin: 0,
 		},
+	}),
+	membersList: css({
+		width: "250px",
+
+		display: "flex",
+		flexDirection: "column",
+		overflowY: "auto",
+
+		borderRightStyle: "solid",
+		borderRightWidth: "1px",
+		borderRightColor: themeVars.outline1,
+		backgroundColor: themeVars.bg1,
 	}),
 	membersListEntry: css({
 		padding: ".5rem",
@@ -232,9 +244,7 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 		);
 
 	return <Fragment>
-		<SidebarSegment>
-			<MembersList roomJID={props.roomJID} />
-		</SidebarSegment>
+		<MembersList roomJID={props.roomJID} />
 		<div class={styles.page}>
 			<div class={styles.header}>
 				<div class={styles.headerStart}>
@@ -282,7 +292,7 @@ function MembersList(props: {roomJID: string}) {
 			.filter(x => x.jid.bare().equals(room.jid) && x.presences !== null && x.presences.size > 0),
 	);
 
-	return <Block style={{display: "flex", flexDirection: "column"}}>
+	return <SidebarSegment class={styles.membersList}>
 		{
 			members.map(member => {
 				const showType = getShowTypeForCounterpart(member, true);
@@ -300,5 +310,5 @@ function MembersList(props: {roomJID: string}) {
 				</div>;
 			})
 		}
-	</Block>;
+	</SidebarSegment>;
 }

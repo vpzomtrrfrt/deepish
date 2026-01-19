@@ -133,6 +133,7 @@ const styles = {
 
 		display: "flex",
 		flexDirection: "column",
+		overflowY: "auto",
 
 		borderRightStyle: "solid",
 		borderRightWidth: "1px",
@@ -260,7 +261,7 @@ export default function ChatPage() {
 export function SidebarSegment(props: JSX.HTMLAttributes<HTMLDivElement>) {
 	return <div
 		{...props}
-		className={cx(styles.sidebarSegment, styles.spaceItemsList, unsignal(props.class), unsignal(props.className))}
+		className={cx(styles.sidebarSegment, unsignal(props.class), unsignal(props.className))}
 	/>;
 }
 
