@@ -19,6 +19,7 @@ import useEffectOnce from "./useEffectOnce";
 import useIdle, { IdleState } from "./useIdle";
 import * as xmppClient from "./xmpp/client";
 import { fetchPubsubItems, publishPubsubItem, PubsubItemInfo, PubsubPublishOptions, retractPubsubItem } from "./xmpp/pubsub";
+import StanzaID, { StanzaIDType } from "./xmpp/StanzaID";
 
 const FEATURES: string[] = [
 	"urn:xmpp:bookmarks:1+notify",
@@ -26,6 +27,7 @@ const FEATURES: string[] = [
 	"urn:xmpp:mds:displayed:0+notify",
 	"http://jabber.org/protocol/nick+notify",
 	"http://jabber.org/protocol/chatstates",
+	"urn:xmpp:message-retract:1",
 ];
 const IDENTITY = {category: "client", type: "web", lang: "", name: "Deepish"};
 const NODE_URL = "https://deepish.vpzom.click";
@@ -79,14 +81,19 @@ export interface Account {
 	servicesState: LoadState<ServiceInfo[]>;
 }
 
+export type MessageRemoval = {
+	"type": "retract";
+};
+
 export interface Message {
 	room: JID | null;
 	from: JID;
 	to: JID | null;
 	content: string;
-	id: string | null;
+	ids: StanzaID[];
 	localID: string;
 	timestamp: Date;
+	removal: null | MessageRemoval;
 }
 
 export interface MessageEvent {
@@ -96,8 +103,16 @@ export interface MessageEvent {
 	shouldNotify: boolean;
 }
 
+export interface MessageRemovalEvent {
+	removal: MessageRemoval;
+	room: JID | null;
+	target: StanzaID;
+	from: JID;
+}
+
 interface AppEventMap {
 	message: MessageEvent;
+	messageRemove: MessageRemovalEvent;
 }
 
 export interface ResultSetInfo {
@@ -714,7 +729,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 		}
 	}
 
-	function handleMessageStanza(client: xmppClient.Client, elem: Element, idFromWrapper?: string, timestampFromWrapper?: Date) {
+	function handleMessageStanza(client: xmppClient.Client, elem: Element, idFromWrapper?: StanzaID, timestampFromWrapper?: Date) {
 		const fromStr = elem.getAttr("from");
 		const from = typeof fromStr === "undefined" ? undefined : parseJID(fromStr);
 
@@ -722,101 +737,146 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 		const to = typeof toStr === "undefined" ? undefined : parseJID(toStr);
 
 		if(elem.getAttr("type") === "groupchat") {
-			let id = idFromWrapper ?? null;
-
-			const idElem = elem.getChild("stanza-id", "urn:xmpp:sid:0");
-			if(typeof idElem !== "undefined") {
-				const maybeID = idElem.getAttr("id");
-				if(typeof maybeID !== "undefined" && maybeID !== null) id = maybeID;
-			}
-
-			const unstableID = elem.getAttr("id");
-
-			let outgoingListener;
-			if(typeof unstableID === "string") {
-				outgoingListener = outgoingMessagesRef.current.get(unstableID);
-				outgoingMessagesRef.current.delete(unstableID);
-			}
-			else {
-				outgoingListener = undefined;
-			}
-
-			const errorElem = elem.getChild("error");
-			if(typeof errorElem !== "undefined") {
-				if(typeof outgoingListener !== "undefined") {
-					outgoingListener.reject(errorElem);
-				}
-
-				return;
-			}
-
-			if(typeof from !== "undefined") handleChatStateUpdate(client, elem, from);
-
-			const content = elem.getChildText("body");
-
-			if(content !== null && typeof from !== "undefined") {
-				let timestamp: Date | null = timestampFromWrapper ?? null;
-
-				const delayElem = elem.getChild("delay", "urn:xmpp:delay");
-				if(typeof delayElem !== "undefined") {
-					timestamp = new Date(delayElem.getAttr("stamp"));
-				}
-
-				const isNew = timestamp === null;
-
-				timestamp ??= new Date();
-
+			if(typeof from !== "undefined") {
 				const room = from.bare();
 
-				handleMessage({
-					account: client.jid!.bare(),
-					message: {
-						room, // TODO is this correct for non-anonymous MUCs?
-						from: from,
-						to: null,
-						content,
-						id,
-						localID: unstableID ?? id ?? xid(),
-						timestamp,
-					},
-					isNew,
-				});
+				let archiveID = (idFromWrapper?.type === StanzaIDType.Stanza && idFromWrapper.by.equals(room)) ?
+					idFromWrapper.id :
+					null;
 
-				upsertCounterpart(client, room, entry => {
-					if(
-						entry.lastMessageTimestamp === null ||
-							entry.lastMessageTimestamp.getTime() < timestamp.getTime()
-					) {
-						return {
-							...entry,
-							lastMessageTimestamp: timestamp,
-							lastMessageID: id ?? entry.lastMessageID,
-						};
+				const idElem = elem.getChild("stanza-id", "urn:xmpp:sid:0");
+				if(typeof idElem !== "undefined") {
+					const maybeID = idElem.getAttr("id");
+					const maybeBy = idElem.getAttr("by");
+					if(typeof maybeID === "string" && maybeBy === room.toString()) {
+						archiveID = maybeID;
 					}
-					else return entry;
-				});
-			}
+				}
 
-			outgoingListener?.resolve();
+				const elementID = elem.getAttr("id");
+
+				let outgoingListener;
+				if(typeof elementID === "string") {
+					outgoingListener = outgoingMessagesRef.current.get(elementID);
+					outgoingMessagesRef.current.delete(elementID);
+				}
+				else {
+					outgoingListener = undefined;
+				}
+
+				const errorElem = elem.getChild("error");
+				if(typeof errorElem !== "undefined") {
+					if(typeof outgoingListener !== "undefined") {
+						outgoingListener.reject(errorElem);
+					}
+
+					return;
+				}
+
+				handleChatStateUpdate(client, elem, from);
+
+				const content = elem.getChildText("body");
+				let ignore = false;
+
+				const retractElem = elem.getChild("retract", "urn:xmpp:message-retract:1");
+
+				if(typeof retractElem !== "undefined") {
+					const targetID = retractElem.getAttr("id");
+
+					if(typeof targetID === "string") {
+						emit("messageRemove", {
+							removal: {type: "retract"},
+							target: new StanzaID(
+								StanzaIDType.Stanza,
+								from.bare(),
+								targetID,
+							),
+							room: from.bare(),
+							from,
+						});
+
+						ignore = true;
+					}
+				}
+
+				if(content !== null && !ignore) {
+					let timestamp: Date | null = timestampFromWrapper ?? null;
+
+					const delayElem = elem.getChild("delay", "urn:xmpp:delay");
+					if(typeof delayElem !== "undefined") {
+						timestamp = new Date(delayElem.getAttr("stamp"));
+					}
+
+					const isNew = timestamp === null;
+
+					timestamp ??= new Date();
+
+					const ids = [];
+					if(archiveID !== null) {
+						ids.push(new StanzaID(StanzaIDType.Stanza, room, archiveID));
+					}
+					if(typeof elementID === "string") {
+						ids.push(new StanzaID(StanzaIDType.Element, from, elementID));
+					}
+
+					handleMessage({
+						account: client.jid!.bare(),
+						message: {
+							room, // TODO is this correct for non-anonymous MUCs?
+							from: from,
+							to: null,
+							content,
+							ids,
+							localID: ids.length > 0 ? ids[0].toString() : xid(),
+							timestamp,
+							removal: null,
+						},
+						isNew,
+					});
+
+					upsertCounterpart(client, room, entry => {
+						if(
+							entry.lastMessageTimestamp === null ||
+								entry.lastMessageTimestamp.getTime() < timestamp.getTime()
+						) {
+							return {
+								...entry,
+								lastMessageTimestamp: timestamp,
+								lastMessageID: archiveID ?? entry.lastMessageID,
+							};
+						}
+						else return entry;
+					});
+				}
+
+				outgoingListener?.resolve();
+			}
 		}
 		else if(elem.getAttr("type") === "chat") {
-			let id = idFromWrapper ?? null;
+			let archiveID = (
+				idFromWrapper?.type === StanzaIDType.Stanza && idFromWrapper.by.equals(client.jid!.bare())
+			) ?
+				idFromWrapper.id :
+				null;
 
 			const idElem = elem.getChild("stanza-id", "urn:xmpp:sid:0");
 			if(typeof idElem !== "undefined") {
 				const maybeID = idElem.getAttr("id");
-				if(typeof maybeID !== "undefined" && maybeID !== null) id = maybeID;
+				const maybeBy = idElem.getAttr("by");
+				if(typeof maybeID === "string" && maybeBy === client.jid!.bare().toString()) {
+					archiveID = maybeID;
+				}
 			}
 
-			const unstableID = elem.getAttr("id");
+			const elementID = elem.getAttr("id");
 
 			let outgoingListener;
-			if(id === null) {
-				outgoingListener = undefined;
+			if(typeof elementID === "string") {
+				outgoingListener = outgoingMessagesRef.current.get(elementID);
+				outgoingMessagesRef.current.delete(elementID);
 			}
 			else {
-				outgoingListener = outgoingMessagesRef.current.get(id);
-				outgoingMessagesRef.current.delete(id);
+				outgoingListener = undefined;
 			}
 
 			const errorElem = elem.getChild("error");
@@ -831,8 +891,30 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 			if(typeof from !== "undefined") handleChatStateUpdate(client, elem, from.bare());
 
 			const content = elem.getChildText("body");
+			let ignore = false;
 
-			if(content !== null && typeof from !== "undefined" && typeof to !== "undefined") {
+			const retractElem = elem.getChild("retract", "urn:xmpp:message-retract:1");
+
+			if(typeof retractElem !== "undefined" && typeof from !== "undefined") {
+				const targetID = retractElem.getAttr("id");
+
+				if(typeof targetID === "string") {
+					emit("messageRemove", {
+						removal: {type: "retract"},
+						target: new StanzaID(
+							StanzaIDType.Element,
+							from.bare(),
+							targetID,
+						),
+						room: null,
+						from,
+					});
+
+					ignore = true;
+				}
+			}
+
+			if(content !== null && typeof from !== "undefined" && typeof to !== "undefined" && !ignore) {
 				let timestamp: Date | null = timestampFromWrapper ?? null;
 
 				const delayElem = elem.getChild("delay", "urn:xmpp:delay");
@@ -844,7 +926,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 
 				timestamp = timestamp ?? new Date();
 
-				console.log("got a message", timestamp, id);
+				console.log("got a message", timestamp, archiveID);
 
 				// Messages might be from me, should count against the recipient in that case
 				const conversation = from.bare().equals(client.jid!.bare()) ? to : from.bare();
@@ -857,11 +939,19 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 						return {
 							...entry,
 							lastMessageTimestamp: timestamp,
-							lastMessageID: id ?? entry.lastMessageID,
+							lastMessageID: archiveID ?? entry.lastMessageID,
 						};
 					}
 					else return entry;
 				});
+
+				const ids = [];
+				if(archiveID !== null) {
+					ids.push(new StanzaID(StanzaIDType.Stanza, client.jid!.bare(), archiveID));
+				}
+				if(typeof elementID === "string") {
+					ids.push(new StanzaID(StanzaIDType.Element, from.bare(), elementID));
+				}
 
 				handleMessage({
 					account: client.jid!.bare(),
@@ -870,9 +960,10 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 						from,
 						to,
 						content,
-						id,
-						localID: unstableID ?? id ?? xid(),
+						ids,
+						localID: ids.length > 0 ? ids[0].toString() : xid(),
 						timestamp,
+						removal: null,
 					},
 					isNew,
 				});
@@ -881,7 +972,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 		else {
 			const mamResultElem = elem.getChild("result", "urn:xmpp:mam:2");
 			if(typeof mamResultElem !== "undefined") {
-				const id = mamResultElem.getAttr("id") ?? undefined;
+				const idValue = mamResultElem.getAttr("id");
 
 				let timestamp: Date | undefined = undefined;
 
@@ -893,7 +984,18 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 					}
 
 					const messageElem = forwardedElem.getChild("message", "jabber:client");
-					if(typeof messageElem !== "undefined") handleMessageStanza(client, messageElem, id, timestamp);
+					if(typeof messageElem !== "undefined") {
+						let id = undefined;
+						if(typeof idValue === "string") {
+							id = new StanzaID(
+								StanzaIDType.Stanza,
+								from ?? client.jid!.bare(),
+								idValue,
+							);
+						}
+
+						handleMessageStanza(client, messageElem, id, timestamp);
+					}
 				}
 			}
 
@@ -1402,6 +1504,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 		[K in keyof AppEventMap]: Set<(evt: AppEventMap[K]) => void>;
 	}>({
 		message: new Set(),
+		messageRemove: new Set(),
 	});
 
 	const addEventListener = useCallback(
@@ -1537,9 +1640,12 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 				from: accountJID,
 				to: targetJID,
 				content: message.body,
-				id: null,
+				ids: [
+					new StanzaID(StanzaIDType.Element, accountJID, localID),
+				],
 				localID,
 				timestamp: new Date(),
+				removal: null,
 			},
 			isNew: true,
 		});
@@ -2353,4 +2459,18 @@ export function useAccount() {
 	if(typeof account === "undefined") throw new Error("Attempted to read account while not logged in");
 
 	return account;
+}
+
+export function messageRemovalIsAllowed(message: Message, evt: MessageRemovalEvent) {
+	if(evt.removal.type === "retract") {
+		// Allow retractions for one's own messages
+
+		return (evt.room === null ? evt.from.bare() : evt.from)
+			.equals(evt.room === null ? message.from.bare() : message.from)
+	}
+	else {
+		const _: never = evt.removal.type;
+		console.warn("Unknown removal type");
+		return false;
+	}
 }

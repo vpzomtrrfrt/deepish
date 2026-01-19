@@ -16,11 +16,13 @@ import MessageInput from "../../../components/MessageInput";
 import MessageList, { LoadMoreTriggerer } from "../../../components/MessageList";
 import TaskDialog from "../../../components/TaskDialog";
 import TypingIndicator from "../../../components/TypingIndicator";
-import { Message, MessageEvent, ResultSetInfo, useAccount, useConnectionContext } from "../../../util/connection";
+import { Message, MessageEvent, MessageRemovalEvent, messageRemovalIsAllowed, ResultSetInfo, useAccount, useConnectionContext } from "../../../util/connection";
 import { presenceShowTypeNames } from "../../../util/langCommon";
 import { getShowTypeForCounterpart } from "../../../util/statusUtil";
 import { themeVars } from "../../../util/theme";
 import { LoadState } from "../../../util/useData";
+import useEventHandler from "../../../util/useEventHandler";
+import { StanzaIDType } from "../../../util/xmpp/StanzaID";
 import { SidebarSegment } from "..";
 
 const styles = {
@@ -102,27 +104,43 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 		messageMap: new Map(),
 	});
 
+	const unresolvedRemovalsRef = useRef<Map<string, MessageRemovalEvent>>(new Map());
+
 	const onMessage = useLatestCallback((evt: MessageEvent) => {
 		console.log("room page got message", evt);
 
 		if(evt.message.room !== null && evt.message.room.toString() === props.roomJID) {
 			setMessagesData(current => {
-				if(evt.message.id !== null && current.messageMap.has(evt.message.id)) {
+				if(evt.message.ids.some(x => current.messageMap.has(x.toString()))) {
 					// we already have this message, ignore
 					return current;
 				}
 
-				let newMap;
-				if(evt.message.id === null) newMap = current.messageMap;
-				else {
-					newMap = new Map(current.messageMap);
-					newMap.set(evt.message.id, evt.message);
-				}
+				let removal = null;
+				evt.message.ids.forEach(id => {
+					const entry = unresolvedRemovalsRef.current.get(id.toString());
+					if(typeof entry !== "undefined") {
+						console.log("resolving unresolved removal", id);
+						if(messageRemovalIsAllowed(evt.message, entry)) {
+							removal = entry.removal;
+							unresolvedRemovalsRef.current.delete(id.toString());
+						}
+					}
+				});
+
+				const message: Message = removal === null ?
+					evt.message :
+					{...evt.message, removal};
+
+				const newMap = new Map(current.messageMap);
+				evt.message.ids.forEach(id => {
+					newMap.set(id.toString(), message);
+				});
 
 				const newMessages = current.messages.slice();
 				pushAtSortPosition(
 					newMessages,
-					evt.message,
+					message,
 					(a, b) => (a.timestamp - b.timestamp) as (0 | 1 | -1), // it's not but should be fine
 					0,
 				);
@@ -135,13 +153,50 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 		}
 	});
 
-	useEffect(() => {
-		conn.addEventListener.call(undefined, "message", onMessage);
+	useEventHandler(conn, "message", onMessage);
 
-		return () => {
-			conn.removeEventListener.call(undefined, "message", onMessage);
-		};
-	}, [onMessage, conn.addEventListener, conn.removeEventListener]);
+	const onMessageRemove = useLatestCallback((evt: MessageRemovalEvent) => {
+		if(evt.room === null || evt.room.toString() !== props.roomJID) return;
+
+		setMessagesData(current => {
+			const newMessageMap = new Map(current.messageMap);
+
+			let anyHit = false;
+
+			const newMessages = current.messages.map(message => {
+				if(message.ids.some(x => x.equals(evt.target))) {
+					if(messageRemovalIsAllowed(message, evt)) {
+						const newValue: Message = {
+							...message,
+							removal: evt.removal,
+						};
+
+						message.ids.forEach(id => {
+							newMessageMap.set(id.toString(), newValue);
+						});
+
+						anyHit = true;
+
+						return newValue;
+					}
+				}
+
+				return message;
+			});
+
+			if(anyHit) {
+				return {messages: newMessages, messageMap: newMessageMap};
+			}
+			else {
+				console.log("got unresolved removal", evt);
+
+				unresolvedRemovalsRef.current.set(evt.target.toString(), evt);
+
+				return current;
+			}
+		});
+	});
+	useEventHandler(conn, "messageRemove", onMessageRemove);
 
 	const [pageState, setPageState] = useState<LoadState<ResultSetInfo | null> | null>(null);
 
@@ -175,8 +230,10 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 				typeof counterpart !== "undefined"
 		) {
 			const lastMessage = messagesData.messages[messagesData.messages.length - 1];
-			if(lastMessage.id !== null && counterpart.lastReadMessageID !== lastMessage.id) {
-				conn.markCounterpartAsRead.call(undefined, account.jid, counterpart.jid, lastMessage.id, false);
+			const lastMessageID =
+				lastMessage.ids.find(x => x.type === StanzaIDType.Stanza && x.by.equals(counterpart.jid));
+			if(typeof lastMessageID !== "undefined" && counterpart.lastReadMessageID !== lastMessageID.id) {
+				conn.markCounterpartAsRead.call(undefined, account.jid, counterpart.jid, lastMessageID.id, false);
 			}
 		}
 	}, [account.jid, conn.markCounterpartAsRead, counterpart, messagesData.messages, pageState]);

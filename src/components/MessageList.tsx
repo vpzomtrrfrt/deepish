@@ -1,6 +1,7 @@
 import { css } from "@emotion/css";
 import { JSX, VNode } from "preact";
 import { useCallback, useEffect, useLayoutEffect, useRef } from "preact/hooks";
+import { useIntl } from "react-intl";
 import { List, ListImperativeAPI, RowComponentProps, useDynamicRowHeight } from "react-window";
 
 import { Message, useAccount } from "../util/connection";
@@ -150,6 +151,8 @@ function MessageRow(props: RowComponentProps<{messages: Message[]; loaderContent
 function RealMessageRow(props: RowComponentProps<{message: Message}>) {
 	const message = props.message;
 
+	const { $t } = useIntl();
+
 	const account = useAccount();
 
 	const from = message.room === null ? message.from.bare() : message.from;
@@ -165,7 +168,11 @@ function RealMessageRow(props: RowComponentProps<{message: Message}>) {
 				<span class={styles.messageTimestamp}>{message.timestamp.toLocaleString()}</span>
 			</div>
 			<div>
-				{message.content}
+				{
+					message.removal === null ?
+						message.content :
+						<em>{$t({defaultMessage: "This message has been deleted"})}</em>
+				}
 			</div>
 		</div>
 	</div>;

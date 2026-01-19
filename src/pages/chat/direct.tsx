@@ -9,9 +9,11 @@ import { DataNonDoneView } from "../../components/DataView";
 import MessageInput from "../../components/MessageInput";
 import MessageList, { LoadMoreTriggerer } from "../../components/MessageList";
 import TypingIndicator from "../../components/TypingIndicator";
-import { Message, MessageEvent, ResultSetInfo, useAccount, useConnectionContext } from "../../util/connection";
+import { Message, MessageEvent, MessageRemovalEvent, messageRemovalIsAllowed, ResultSetInfo, useAccount, useConnectionContext } from "../../util/connection";
 import { getNickForCounterpart } from "../../util/profileUtil";
 import { LoadState } from "../../util/useData";
+import useEventHandler from "../../util/useEventHandler";
+import { StanzaIDType } from "../../util/xmpp/StanzaID";
 
 const styles = {
 	page: css({
@@ -47,13 +49,13 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 
 	const [messagesData, setMessagesData] = useState<{
 		messages: Message[];
-		byID: Map<string, Message>;
-		byLocalID: Map<string, Message>;
+		messageMap: Map<string, Message>;
 	}>({
 		messages: [],
-		byID: new Map(),
-		byLocalID: new Map(),
+		messageMap: new Map(),
 	});
+
+	const unresolvedRemovalsRef = useRef<Map<string, MessageRemovalEvent>>(new Map());
 
 	const onMessage = useLatestCallback((evt: MessageEvent) => {
 		if(
@@ -64,58 +66,111 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 		) {
 			setMessagesData(current => {
 				let newMessages;
-				if(
-					current.byLocalID.has(evt.message.localID) ||
-						(evt.message.id !== null && current.byID.has(evt.message.id))
-				) {
-					// Already present, remove existing entry
+				{
+					let existing = undefined;
+					for(const id of evt.message.ids) {
+						existing = current.messageMap.get(id.toString());
+						if(typeof existing !== "undefined") break;
+					}
 
-					// TODO do this faster
-					newMessages = current.messages.filter(message => {
-						return !(
-							message.id === null ?
-								message.localID === evt.message.localID :
-								message.id === evt.message.id
-						);
-					});
-				}
-				else {
-					newMessages = current.messages.slice();
+					if(typeof existing !== "undefined") {
+						// Already present
+
+						if(existing.removal === null) {
+							// TODO do this faster
+							newMessages = current.messages.filter(message => {
+								return !message.ids.some(existing => evt.message.ids.some(x => x.equals(existing)));
+							});
+						}
+						else {
+							// Message has been removed, don't bother with it further
+							return current;
+						}
+					}
+					else {
+						newMessages = current.messages.slice();
+					}
 				}
 
-				let newByID;
-				if(evt.message.id === null) newByID = current.byID;
-				else {
-					newByID = new Map(current.byID);
-					newByID.set(evt.message.id, evt.message);
-				}
+				let removal = null;
+				evt.message.ids.forEach(id => {
+					const entry = unresolvedRemovalsRef.current.get(id.toString());
+					if(typeof entry !== "undefined") {
+						console.log("resolving unresolved removal", id);
+						if(messageRemovalIsAllowed(evt.message, entry)) {
+							removal = entry.removal;
+							unresolvedRemovalsRef.current.delete(id.toString());
+						}
+					}
+				});
 
-				const newByLocalID = new Map(current.byLocalID);
-				newByLocalID.set(evt.message.localID, evt.message);
+				const message: Message = removal === null ?
+					evt.message :
+					{...evt.message, removal};
+
+				const newMap = new Map(current.messageMap);
+				evt.message.ids.forEach(id => {
+					newMap.set(id.toString(), message);
+				});
 
 				pushAtSortPosition(
 					newMessages,
-					evt.message,
+					message,
 					(a, b) => (a.timestamp - b.timestamp) as (0 | 1 | -1), // it's not but should be fine
 					0,
 				);
 
 				return {
 					messages: newMessages,
-					byID: newByID,
-					byLocalID: newByLocalID,
+					messageMap: newMap,
 				};
 			});
 		}
 	});
+	useEventHandler(conn, "message", onMessage);
 
-	useEffect(() => {
-		conn.addEventListener.call(undefined, "message", onMessage);
+	const onMessageRemove = useLatestCallback((evt: MessageRemovalEvent) => {
+		if(evt.room !== null) return;
 
-		return () => {
-			conn.removeEventListener.call(undefined, "message", onMessage);
-		};
-	}, [onMessage, conn.addEventListener, conn.removeEventListener]);
+		setMessagesData(current => {
+			const newMessageMap = new Map(current.messageMap);
+
+			let anyHit = false;
+
+			const newMessages = current.messages.map(message => {
+				if(message.ids.some(x => x.equals(evt.target))) {
+					if(messageRemovalIsAllowed(message, evt)) {
+						const newValue: Message = {
+							...message,
+							removal: evt.removal,
+						};
+
+						message.ids.forEach(id => {
+							newMessageMap.set(id.toString(), newValue);
+						});
+
+						anyHit = true;
+
+						return newValue;
+					}
+				}
+
+				return message;
+			});
+
+			if(anyHit) {
+				return {messages: newMessages, messageMap: newMessageMap};
+			}
+			else {
+				console.log("got unresolved removal", evt);
+
+				unresolvedRemovalsRef.current.set(evt.target.toString(), evt);
+
+				return current;
+			}
+		});
+	});
+	useEventHandler(conn, "messageRemove", onMessageRemove);
 
 	const [pageState, setPageState] = useState<LoadState<ResultSetInfo | null> | null>(null);
 
@@ -155,8 +210,10 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 				typeof counterpart !== "undefined"
 		) {
 			const lastMessage = messagesData.messages[messagesData.messages.length - 1];
-			if(lastMessage.id !== null && counterpart.lastReadMessageID !== lastMessage.id) {
-				conn.markCounterpartAsRead.call(undefined, account.jid, counterpart.jid, lastMessage.id, false);
+			const lastMessageID =
+				lastMessage.ids.find(x => x.type === StanzaIDType.Stanza && x.by.equals(account.jid));
+			if(typeof lastMessageID !== "undefined" && counterpart.lastReadMessageID !== lastMessageID.id) {
+				conn.markCounterpartAsRead.call(undefined, account.jid, counterpart.jid, lastMessageID.id, false);
 			}
 		}
 	}, [account.jid, conn.markCounterpartAsRead, counterpart, messagesData.messages, pageState]);
