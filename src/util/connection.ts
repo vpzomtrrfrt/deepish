@@ -27,6 +27,7 @@ const FEATURES: string[] = [
 	"urn:xmpp:mds:displayed:0+notify",
 	"http://jabber.org/protocol/nick+notify",
 	"http://jabber.org/protocol/chatstates",
+	"urn:xmpp:message-retract:1",
 ];
 const IDENTITY = {category: "client", type: "web", lang: "", name: "Deepish"};
 const NODE_URL = "https://deepish.vpzom.click";
@@ -104,7 +105,9 @@ export interface MessageEvent {
 
 export interface MessageRemovalEvent {
 	removal: MessageRemoval;
-	targeting: {type: "retract"; id: string; from: JID};
+	room: JID | null;
+	target: StanzaID;
+	from: JID;
 }
 
 interface AppEventMap {
@@ -773,8 +776,30 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 				handleChatStateUpdate(client, elem, from);
 
 				const content = elem.getChildText("body");
+				let ignore = false;
 
-				if(content !== null) {
+				const retractElem = elem.getChild("retract", "urn:xmpp:message-retract:1");
+
+				if(typeof retractElem !== "undefined") {
+					const targetID = retractElem.getAttr("id");
+
+					if(typeof targetID === "string") {
+						emit("messageRemove", {
+							removal: {type: "retract"},
+							target: new StanzaID(
+								StanzaIDType.Stanza,
+								from.bare(),
+								targetID,
+							),
+							room: from.bare(),
+							from,
+						});
+
+						ignore = true;
+					}
+				}
+
+				if(content !== null && !ignore) {
 					let timestamp: Date | null = timestampFromWrapper ?? null;
 
 					const delayElem = elem.getChild("delay", "urn:xmpp:delay");
@@ -2401,4 +2426,18 @@ export function useAccount() {
 	if(typeof account === "undefined") throw new Error("Attempted to read account while not logged in");
 
 	return account;
+}
+
+export function messageRemovalIsAllowed(message: Message, evt: MessageRemovalEvent) {
+	if(evt.removal.type === "retract") {
+		// Allow retractions for one's own messages
+
+		return (evt.room === null ? evt.from.bare() : evt.from)
+			.equals(evt.room === null ? message.from.bare() : message.from)
+	}
+	else {
+		const _: never = evt.removal.type;
+		console.warn("Unknown removal type");
+		return false;
+	}
 }
