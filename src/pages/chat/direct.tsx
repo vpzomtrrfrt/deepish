@@ -9,7 +9,7 @@ import { DataNonDoneView } from "../../components/DataView";
 import MessageInput from "../../components/MessageInput";
 import MessageList, { LoadMoreTriggerer } from "../../components/MessageList";
 import TypingIndicator from "../../components/TypingIndicator";
-import { Message, MessageEvent, ResultSetInfo, useAccount, useConnectionContext } from "../../util/connection";
+import { Message, MessageEvent, MessageRemovalEvent, messageRemovalIsAllowed, ResultSetInfo, useAccount, useConnectionContext } from "../../util/connection";
 import { getNickForCounterpart } from "../../util/profileUtil";
 import { LoadState } from "../../util/useData";
 import useEventHandler from "../../util/useEventHandler";
@@ -95,8 +95,37 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 			});
 		}
 	});
-
 	useEventHandler(conn, "message", onMessage);
+
+	const onMessageRemove = useLatestCallback((evt: MessageRemovalEvent) => {
+		if(evt.room !== null) return;
+
+		setMessagesData(current => {
+			const newMessageMap = new Map(current.messageMap);
+
+			const newMessages = current.messages.map(message => {
+				if(message.ids.some(x => x.equals(evt.target))) {
+					if(messageRemovalIsAllowed(message, evt)) {
+						const newValue: Message = {
+							...message,
+							removal: evt.removal,
+						};
+
+						message.ids.forEach(id => {
+							newMessageMap.set(id.toString(), newValue);
+						});
+
+						return newValue;
+					}
+				}
+
+				return message;
+			});
+
+			return {messages: newMessages, messageMap: newMessageMap};
+		});
+	});
+	useEventHandler(conn, "messageRemove", onMessageRemove);
 
 	const [pageState, setPageState] = useState<LoadState<ResultSetInfo | null> | null>(null);
 

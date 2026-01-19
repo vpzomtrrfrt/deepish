@@ -891,8 +891,30 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 			if(typeof from !== "undefined") handleChatStateUpdate(client, elem, from.bare());
 
 			const content = elem.getChildText("body");
+			let ignore = false;
 
-			if(content !== null && typeof from !== "undefined" && typeof to !== "undefined") {
+			const retractElem = elem.getChild("retract", "urn:xmpp:message-retract:1");
+
+			if(typeof retractElem !== "undefined" && typeof from !== "undefined") {
+				const targetID = retractElem.getAttr("id");
+
+				if(typeof targetID === "string") {
+					emit("messageRemove", {
+						removal: {type: "retract"},
+						target: new StanzaID(
+							StanzaIDType.Element,
+							from.bare(),
+							targetID,
+						),
+						room: null,
+						from,
+					});
+
+					ignore = true;
+				}
+			}
+
+			if(content !== null && typeof from !== "undefined" && typeof to !== "undefined" && !ignore) {
 				let timestamp: Date | null = timestampFromWrapper ?? null;
 
 				const delayElem = elem.getChild("delay", "urn:xmpp:delay");
