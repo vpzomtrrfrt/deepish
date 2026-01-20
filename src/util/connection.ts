@@ -37,7 +37,9 @@ const DEFAULT_COUNTERPART_INFO: Omit<Counterpart, "jid"> = {
 	rosterEntry: null,
 	requestingMySubscription: false,
 	lastMessageID: null,
+	lastMessageIDForUnread: null,
 	lastMessageTimestamp: null,
+	lastMessageTimestampForUnread: null,
 	lastMessageTimestampFromInbox: null,
 	overrideVisibleTimestamp: null,
 	avatarHashes: [],
@@ -70,6 +72,7 @@ export interface Room {
 	notificationLevel: NotificationLevel | null;
 
 	connected: boolean;
+	connectedNick: string | null;
 	error: unknown;
 	infoState: LoadState<RoomDiscoInfo>;
 	lastReportedComposing: boolean;
@@ -328,6 +331,8 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 				if(!extraRooms.delete(entry.jid)) {
 					const jid = parseJID(entry.jid);
 
+					const nick = entry.nick ?? client.jid!.local;
+
 					rooms.set(entry.jid, {
 						jid,
 						nick: null,
@@ -337,11 +342,12 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 						notificationLevel: entry.notificationLevel,
 
 						connected: false,
+						connectedNick: nick,
 						error: null,
 						infoState: LoadState.loading,
 						lastReportedComposing: false,
 					});
-					connectMUC(client, jid, entry.nick);
+					connectMUC(client, jid, nick);
 				}
 			});
 
@@ -507,7 +513,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 
 					remaining.forEach((_, itemJID) => {
 						const counterpart = account.counterparts.get(itemJID);
-						if(typeof counterpart !== "undefined" && counterpart.lastMessageID !== null) {
+						if(typeof counterpart !== "undefined" && counterpart.lastMessageIDForUnread !== null) {
 							remaining.delete(itemJID);
 						}
 					});
@@ -912,19 +918,44 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 						isNew,
 					});
 
-					upsertCounterpart(client, room, entry => {
-						if(
-							entry.lastMessageTimestamp === null ||
-								entry.lastMessageTimestamp.getTime() < timestamp.getTime()
-						) {
-							return {
-								...entry,
-								lastMessageTimestamp: timestamp,
-								lastMessageID: archiveID ?? entry.lastMessageID,
-							};
-						}
-						else return entry;
-					});
+					const account = accountsSig.value.find(x => x.client === client);
+					const roomInfo = account?.rooms.get(room.toString());
+
+					if(typeof roomInfo !== "undefined") {
+						const isMe = from.resource === roomInfo.connectedNick;
+
+						upsertCounterpart(client, room, entry => {
+							if(
+								entry.lastMessageTimestamp === null ||
+									entry.lastMessageTimestamp.getTime() < timestamp.getTime() ||
+									entry.lastMessageTimestampForUnread === null ||
+									entry.lastMessageTimestampForUnread.getTime() < timestamp.getTime()
+							) {
+								return {
+									...entry,
+									lastMessageTimestamp: (
+										entry.lastMessageTimestamp === null ||
+											entry.lastMessageTimestamp.getTime() < timestamp.getTime()
+									) ?
+										timestamp :
+										entry.lastMessageTimestamp,
+									lastMessageID: (
+										entry.lastMessageTimestamp === null ||
+											entry.lastMessageTimestamp.getTime() < timestamp.getTime()
+									) ?
+										archiveID :
+										entry.lastMessageID,
+									lastMessageTimestampForUnread: (archiveID === null || isMe) ?
+										entry.lastMessageTimestampForUnread :
+										timestamp,
+									lastMessageIDForUnread: (archiveID === null || isMe) ?
+										entry.lastMessageIDForUnread :
+										archiveID,
+								};
+							}
+							else return entry;
+						});
+					}
 				}
 
 				outgoingListener?.resolve();
@@ -1007,17 +1038,36 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 				console.log("got a message", timestamp, archiveID);
 
 				// Messages might be from me, should count against the recipient in that case
-				const conversation = from.bare().equals(client.jid!.bare()) ? to : from.bare();
+				const isMe = from.bare().equals(client.jid!.bare());
+				const conversation = isMe ? to : from.bare();
 
 				upsertCounterpart(client, conversation, entry => {
 					if(
 						entry.lastMessageTimestamp === null ||
-							entry.lastMessageTimestamp.getTime() < timestamp.getTime()
+							entry.lastMessageTimestamp.getTime() < timestamp.getTime() ||
+							entry.lastMessageTimestampForUnread === null ||
+							entry.lastMessageTimestampForUnread.getTime() < timestamp.getTime()
 					) {
 						return {
 							...entry,
-							lastMessageTimestamp: timestamp,
-							lastMessageID: archiveID ?? entry.lastMessageID,
+							lastMessageTimestamp: (
+								entry.lastMessageTimestamp === null ||
+									entry.lastMessageTimestamp.getTime() < timestamp.getTime()
+							) ?
+								timestamp :
+								entry.lastMessageTimestamp,
+							lastMessageID: (
+								entry.lastMessageTimestamp === null ||
+									entry.lastMessageTimestamp.getTime() < timestamp.getTime()
+							) ?
+								archiveID :
+								entry.lastMessageID,
+							lastMessageTimestampForUnread: (archiveID === null || isMe) ?
+								entry.lastMessageTimestampForUnread :
+								timestamp,
+							lastMessageIDForUnread: (archiveID === null || isMe) ?
+								entry.lastMessageIDForUnread :
+								archiveID,
 						};
 					}
 					else return entry;
@@ -2093,6 +2143,8 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 
 			if(!isRoom) throw new Error("That doesn't appear to be a room");
 
+			const connectNick = nick ?? accountJID.local;
+
 			updateAccount(accountJID, account => {
 				const rooms = new Map(account.rooms);
 
@@ -2105,6 +2157,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 					notificationLevel: null,
 
 					connected: false,
+					connectedNick: connectNick,
 					error: null,
 					infoState: LoadState.loading,
 					lastReportedComposing: false,
@@ -2118,7 +2171,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 
 				newRoomsRef.current.set(room.toString(), defer);
 
-				connectMUC(account.client, room, nick);
+				connectMUC(account.client, room, connectNick);
 
 				await defer.promise;
 			}
@@ -2650,9 +2703,7 @@ export function useConnectionContext() {
 	return value;
 }
 
-function connectMUC(client: xmppClient.Client, roomJID: JID, preferredNick: string | undefined) {
-	const nick = preferredNick ?? client.jid!.local;
-
+function connectMUC(client: xmppClient.Client, roomJID: JID, nick: string) {
 	client.send(
 		xml(
 			"presence",

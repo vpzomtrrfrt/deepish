@@ -30,7 +30,9 @@ export interface Counterpart {
 	rosterEntry: null | RosterEntry;
 	requestingMySubscription: boolean;
 	lastMessageID: string | null;
+	lastMessageIDForUnread: string | null;
 	lastMessageTimestamp: Date | null;
+	lastMessageTimestampForUnread: Date | null;
 	lastMessageTimestampFromInbox: Date | null;
 	overrideVisibleTimestamp: Date | null;
 	avatarHashes: string[];

@@ -368,7 +368,8 @@ function RoomLink(props: {
 
 	const counterpart = account.counterparts.get(props.room.jid.toString());
 	const unread = typeof counterpart !== "undefined" &&
-		counterpart.lastMessageID !== null &&
+		counterpart.lastMessageIDForUnread !== null &&
+		counterpart.lastReadMessageID !== counterpart.lastMessageIDForUnread &&
 		counterpart.lastReadMessageID !== counterpart.lastMessageID;
 
 	const ref = useRef<HTMLDivElement>(null);
@@ -507,7 +508,8 @@ function ChatHomePage() {
 						<AvatarWithStatus size="md" jid={item} />
 						<span style={{flexGrow: 1}}>{getNickForCounterpart(counterpart)}</span>
 						{
-							counterpart.lastMessageID !== null &&
+							counterpart.lastMessageIDForUnread !== null &&
+								counterpart.lastReadMessageID !== counterpart.lastMessageIDForUnread &&
 								counterpart.lastReadMessageID !== counterpart.lastMessageID &&
 								<div class={styles.counterpartUnreadIndicator} />
 						}
