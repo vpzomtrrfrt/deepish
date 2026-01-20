@@ -25,6 +25,7 @@ import IconButton from "../../components/IconButton";
 import Input from "../../components/Input";
 import Menu, { MenuItem } from "../../components/Menu";
 import PriorityUnreadIndicator from "../../components/PriorityUnreadIndicator";
+import SettingsDialog from "../../components/SettingsDialog";
 import { ManualTabsContainer, TabLink, TabsList } from "../../components/Tabs";
 import WithTooltip from "../../components/WithTooltip";
 import * as commonStyles from "../../util/commonStyles";
@@ -772,6 +773,10 @@ function SelfBox() {
 
 	const counterpart = account.counterparts.get(account.jid.toString());
 
+	const openSettings = useCallback(() => {
+		appCtx.showDialog.call(undefined, <SettingsDialog />);
+	}, [appCtx.showDialog]);
+
 	const editProfile = useLatestCallback(() => {
 		appCtx.showDialog(<EditProfileDialog />);
 	});
@@ -787,9 +792,7 @@ function SelfBox() {
 			<div class={styles.friendEntryJID}>{account.jid.toString()}</div>
 		</div>
 		<Menu>
-			{LoadState.ifDone(appCtx.notificationsPermissionState, state => state === "prompt", () => false) &&
-				<MenuItem onClick={appCtx.requestNotificationsPermission}>Enable Notifications</MenuItem>
-			}
+			<MenuItem onClick={openSettings}>{$t({defaultMessage: "Settings"})}</MenuItem>
 			<MenuItem onClick={editProfile}>{$t({defaultMessage: "Edit Profile"})}</MenuItem>
 			<MenuItem onClick={logout}>{$t({defaultMessage: "Log out"})}</MenuItem>
 		</Menu>

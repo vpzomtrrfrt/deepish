@@ -28,7 +28,7 @@ const DEFAULT_LANGUAGE = "en";
 
 export interface AppContext {
 	cache: IDBCache;
-	notificationsPermissionState: LoadState<string>;
+	notificationsPermissionState: LoadState<PermissionState>;
 
 	portalContainerRef: RefObject<HTMLDivElement>;
 
