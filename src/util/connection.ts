@@ -92,6 +92,7 @@ export type MessageRemoval = {
 export interface Message {
 	room: JID | null;
 	from: JID;
+	occupantID: string | null;
 	to: JID | null;
 	content: string;
 	ids: StanzaID[];
@@ -111,7 +112,7 @@ export interface MessageRemovalEvent {
 	removal: MessageRemoval;
 	room: JID | null;
 	target: StanzaID;
-	from: JID;
+	from: {jid: JID; occupantID?: string};
 }
 
 interface AppEventMap {
@@ -795,6 +796,15 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 
 				handleChatStateUpdate(client, elem, from);
 
+				let occupantID: string | null = null;
+				{
+					const occupantIDElem = elem.getChild("occupant-id", "urn:xmpp:occupant-id:0");
+					if(typeof occupantIDElem !== "undefined") {
+						const maybeID = occupantIDElem.getAttr("id");
+						if(typeof maybeID === "string") occupantID = maybeID;
+					}
+				}
+
 				const content = elem.getChildText("body");
 				let ignore = false;
 
@@ -812,7 +822,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 								targetID,
 							),
 							room: from.bare(),
-							from,
+							from: {jid: from, occupantID: occupantID === null ? undefined : occupantID},
 						});
 
 						ignore = true;
@@ -844,6 +854,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 						message: {
 							room, // TODO is this correct for non-anonymous MUCs?
 							from: from,
+							occupantID,
 							to: null,
 							content,
 							ids,
@@ -927,7 +938,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 							targetID,
 						),
 						room: null,
-						from,
+						from: {jid: from},
 					});
 
 					ignore = true;
@@ -978,6 +989,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 					message: {
 						room: null,
 						from,
+						occupantID: null,
 						to,
 						content,
 						ids,
@@ -1658,6 +1670,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 			message: {
 				room: null,
 				from: accountJID,
+				occupantID: null,
 				to: targetJID,
 				content: message.body,
 				ids: [
@@ -2593,7 +2606,21 @@ export function messageRemovalIsAllowed(message: Message, evt: MessageRemovalEve
 	if(evt.removal.type === "retract") {
 		// Allow retractions for one's own messages
 
-		return (evt.room === null ? evt.from.bare() : evt.from)
+		if(evt.room === null) {
+			return evt.from.jid.bare().equals(message.from.bare());
+		}
+		else {
+			if(evt.from.jid.equals(message.from)) {
+				// JID matches, but this is a MUC, so it could be a reused nick
+				// Check occupant ID if available
+
+				if(message.occupantID === null) return true;
+				else return message.occupantID === evt.from.occupantID;
+			}
+			else return false;
+		}
+
+		return (evt.room === null ? evt.from.jid.bare() : evt.from.jid)
 			.equals(evt.room === null ? message.from.bare() : message.from)
 	}
 	else {
