@@ -27,6 +27,8 @@ export const styles = {
 		cursor: "pointer",
 
 		display: "flex",
+		alignItems: "center",
+		lineHeight: 1.3,
 
 		"&[data-highlighted]": {
 			backgroundColor: themeVars.hoverOverlay,
@@ -35,6 +37,12 @@ export const styles = {
 	itemRadioIndicatorArea: css({
 		width: "1rem",
 		marginInlineEnd: ".25rem",
+
+		lineHeight: 0,
+	}),
+	groupLabel: css({
+		paddingInline: ".5rem",
+		fontWeight: "bold",
 	}),
 };
 
@@ -81,8 +89,8 @@ export function MenuItem(props: Omit<BaseMenu.Item.Props, "className">) {
 	return <BaseMenu.Item {...props} className={cx(styles.item, unsignal(props.class))} />;
 }
 
-export function MenuRadioGroup(props: Omit<BaseMenu.RadioGroup.Props, "className">) {
-	return <BaseMenu.RadioGroup {...props} />;
+export function MenuRadioGroup(props: Omit<BaseMenu.RadioGroup.Props, "className" | "style">) {
+	return <BaseMenu.Group {...props} render={<BaseMenu.RadioGroup />} />;
 }
 
 export function MenuRadioItem(props: Omit<BaseMenu.RadioItem.Props, "className">) {
@@ -94,4 +102,8 @@ export function MenuRadioItem(props: Omit<BaseMenu.RadioItem.Props, "className">
 		</div>
 		{props.children}
 	</BaseMenu.RadioItem>;
+}
+
+export function MenuGroupLabel(props: Omit<BaseMenu.GroupLabel.Props, "className">) {
+	return <BaseMenu.GroupLabel {...props} className={cx(styles.groupLabel, unsignal(props.class))} />;
 }

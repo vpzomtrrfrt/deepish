@@ -12,7 +12,7 @@ import AvatarWithStatus from "../../../components/AvatarWithStatus";
 import ConfirmDialog from "../../../components/ConfirmDialog";
 import ConfirmTaskDialog from "../../../components/ConfirmTaskDialog";
 import { DataNonDoneView, ErrorAlert } from "../../../components/DataView";
-import Menu, { MenuItem, MenuRadioGroup, MenuRadioItem, Submenu } from "../../../components/Menu";
+import Menu, { MenuGroupLabel, MenuItem, MenuRadioGroup, MenuRadioItem } from "../../../components/Menu";
 import MessageInput from "../../../components/MessageInput";
 import MessageList, { LoadMoreTriggerer } from "../../../components/MessageList";
 import TaskDialog from "../../../components/TaskDialog";
@@ -378,18 +378,17 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 				</div>
 				<div>
 					<Menu>
-						<Submenu label={$t({defaultMessage: "Notifications"})}>
-							{typeof room !== "undefined" &&
-								<MenuRadioGroup value={room.notificationLevel} onValueChange={onChangeNotificationLevel}>
-									<MenuRadioItem value={null}>
-										{$t({defaultMessage: "Default"})}
-									</MenuRadioItem>
-									{Array.from(Object.entries(NOTIFICATION_LEVEL_NAMES), ([key, value]) => {
-										return <MenuRadioItem value={key}>{$t(value)}</MenuRadioItem>;
-									})}
-								</MenuRadioGroup>
-							}
-						</Submenu>
+						{typeof room !== "undefined" &&
+							<MenuRadioGroup value={room.notificationLevel} onValueChange={onChangeNotificationLevel}>
+								<MenuGroupLabel>{$t({defaultMessage: "Notifications"})}</MenuGroupLabel>
+								<MenuRadioItem value={null}>
+									{$t({defaultMessage: "Default"})}
+								</MenuRadioItem>
+								{Array.from(Object.entries(NOTIFICATION_LEVEL_NAMES), ([key, value]) => {
+									return <MenuRadioItem value={key}>{$t(value)}</MenuRadioItem>;
+								})}
+							</MenuRadioGroup>
+						}
 						<MenuItem onClick={leaveRoom}>{$t({defaultMessage: "Leave Channel"})}</MenuItem>
 					</Menu>
 				</div>
