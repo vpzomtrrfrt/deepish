@@ -82,6 +82,9 @@ const styles = {
 		opacity: 0.65,
 		fontSize: "80%",
 	}),
+	messageInputArea: css({
+		marginInlineStart: "250px",
+	}),
 };
 
 export default function ChatRoomPage(props: {params: {roomJID: string}}) {
@@ -366,7 +369,6 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 		);
 
 	return <Fragment>
-		<MembersList roomJID={props.roomJID} />
 		<div class={styles.page}>
 			<div class={styles.header}>
 				<div class={styles.headerStart}>
@@ -404,11 +406,18 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 							loaderContent={loaderContent}
 							renderMenu={renderMenu}
 						/>
-						<TypingIndicator usersTyping={usersTyping} inRoom={true} />
-						<MessageInput submitMessage={submitMessage} autofocus onChangeComposing={onChangeComposing} />
+						<div class={styles.messageInputArea}>
+							<TypingIndicator usersTyping={usersTyping} inRoom={true} />
+							<MessageInput
+								submitMessage={submitMessage}
+								autofocus
+								onChangeComposing={onChangeComposing}
+							/>
+						</div>
 					</>
 			}
 		</div>
+		<MembersList roomJID={props.roomJID} />
 	</Fragment>;
 }
 
