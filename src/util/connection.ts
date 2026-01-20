@@ -1626,7 +1626,8 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 	);
 
 	const shouldNotifyForMessage = useCallback((evt: Omit<MessageEvent, "shouldNotify">) => {
-		// TODO add configurable logic
+		const account = accountsSig.value.find(x => x.jid.equals(evt.account));
+		if(typeof account === "undefined") return false;
 
 		if(!evt.isNew) return false;
 
@@ -1636,9 +1637,20 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 			return true;
 		}
 		else {
-			return false;
+			const room = account.rooms.get(evt.message.room.toString());
+			if(typeof room === "undefined") return false;
+
+			const level = room.notificationLevel ?? NotificationLevel.Never;
+
+			if(level === NotificationLevel.Always) {
+				return true;
+			}
+			else {
+				// TODO implement mention parsing
+				return false;
+			}
 		}
-	}, []);
+	}, [accountsSig]);
 
 	const handleMessage = useCallback((evt: Omit<MessageEvent, "shouldNotify">) => {
 		emit("message", {...evt, shouldNotify: shouldNotifyForMessage(evt)});
