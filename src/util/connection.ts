@@ -55,11 +55,19 @@ export interface RoomDiscoInfo {
 	avatarHashes: string[];
 }
 
+export enum NotificationLevel {
+	Never,
+	OnMention,
+	Always,
+}
+
 export interface Room {
 	jid: JID;
 	nick: string | null;
-	rank: string;
+
 	extensionsContent: Node[];
+	rank: string;
+	notificationLevel: NotificationLevel | null;
 
 	connected: boolean;
 	error: unknown;
@@ -184,6 +192,7 @@ export interface ConnectionContext {
 	setNick(account: JID, value: string): Promise<void>;
 	setAvatar(account: JID, info: ImageInfo): Promise<void>;
 	reorderRoom(account: JID, room: JID, to: {before: JID | null; after: JID | null}): Promise<void>;
+	setRoomNotificationLevel(account: JID, room: JID, level: NotificationLevel): Promise<void>;
 }
 
 export const ConnectionContext = createContext<ConnectionContext | undefined>(undefined);
@@ -193,6 +202,12 @@ const BOOKMARKS_PUBLISH_OPTIONS: PubsubPublishOptions = {
 	maxItems: "max",
 	sendLastPublishedItem: "never",
 	accessModel: "whitelist",
+};
+
+const NOTIFICATION_LEVEL_ELEMENT_MAP: Record<NotificationLevel, string> = {
+	[NotificationLevel.Always]: "always",
+	[NotificationLevel.OnMention]: "on-mention",
+	[NotificationLevel.Never]: "never",
 };
 
 export function useCreateConnection(cache: IDBCache): ConnectionContext {
@@ -243,8 +258,10 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 		const wantedRooms: Array<{
 			jid: string;
 			nick?: string;
-			rank: string;
+
 			extensionsContent: Node[];
+			rank: string;
+			notificationLevel: NotificationLevel | null;
 		}> = [];
 
 		if(typeof newItems !== "undefined") {
@@ -255,7 +272,13 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 				if(typeof conf !== "undefined") {
 					const autojoinValue = conf.getAttr("autojoin");
 					if(autojoinValue === "true" || autojoinValue === "1") {
-						const entry: typeof wantedRooms[0] = {jid, rank: DEFAULT_RANK, extensionsContent: []};
+						const entry: typeof wantedRooms[0] = {
+							jid,
+
+							extensionsContent: [],
+							rank: DEFAULT_RANK,
+							notificationLevel: null,
+						};
 
 						const nickNode = conf.getChild("nick");
 						if(typeof nickNode !== "undefined") {
@@ -269,6 +292,24 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 							const rankNode = extensionsNode.getChild("rank", "http://deepish.vpzom.click/ns/rank");
 							if(typeof rankNode !== "undefined") {
 								entry.rank = rankNode.getText();
+							}
+
+							const notifyNode = extensionsNode.getChild("notify", "urn:xmpp:notification-settings:1");
+							if(typeof notifyNode !== "undefined") {
+								for(const key_ in NOTIFICATION_LEVEL_ELEMENT_MAP) {
+									const key = parseInt(key_, 10) as NotificationLevel;
+
+									notifyNode.getChildren(NOTIFICATION_LEVEL_ELEMENT_MAP[key]).forEach(levelElem => {
+										// Currently we always use the fallback setting
+
+										if(
+											typeof levelElem.getAttr("identity-category") !== "string" &&
+												typeof levelElem.getAttr("identity-type") !== "string"
+										) {
+											entry.notificationLevel = key;
+										}
+									});
+								}
 							}
 						}
 
@@ -290,8 +331,11 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 					rooms.set(entry.jid, {
 						jid,
 						nick: null,
-						rank: entry.rank,
+
 						extensionsContent: entry.extensionsContent,
+						rank: entry.rank,
+						notificationLevel: entry.notificationLevel,
+
 						connected: false,
 						error: null,
 						infoState: LoadState.loading,
@@ -1582,7 +1626,8 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 	);
 
 	const shouldNotifyForMessage = useCallback((evt: Omit<MessageEvent, "shouldNotify">) => {
-		// TODO add configurable logic
+		const account = accountsSig.value.find(x => x.jid.equals(evt.account));
+		if(typeof account === "undefined") return false;
 
 		if(!evt.isNew) return false;
 
@@ -1592,9 +1637,20 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 			return true;
 		}
 		else {
-			return false;
+			const room = account.rooms.get(evt.message.room.toString());
+			if(typeof room === "undefined") return false;
+
+			const level = room.notificationLevel ?? NotificationLevel.Never;
+
+			if(level === NotificationLevel.Always) {
+				return true;
+			}
+			else {
+				// TODO implement mention parsing
+				return false;
+			}
 		}
-	}, []);
+	}, [accountsSig]);
 
 	const handleMessage = useCallback((evt: Omit<MessageEvent, "shouldNotify">) => {
 		emit("message", {...evt, shouldNotify: shouldNotifyForMessage(evt)});
@@ -2043,8 +2099,11 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 				rooms.set(room.toString(), {
 					jid: room,
 					nick: nick ?? null,
-					rank: DEFAULT_RANK,
+
 					extensionsContent: [],
+					rank: DEFAULT_RANK,
+					notificationLevel: null,
+
 					connected: false,
 					error: null,
 					infoState: LoadState.loading,
@@ -2390,39 +2449,14 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 		const room = account.rooms.get(roomJID.toString());
 		if(typeof room === "undefined") throw new Error("Unknown room");
 
-		await publishPubsubItem(
+		await publishRoomBookmarkExtension(
 			account.client,
-			"urn:xmpp:bookmarks:1",
+			room,
 			xml(
-				"item",
-				{id: roomJID.toString()},
-				xml(
-					"conference",
-					{xmlns: "urn:xmpp:bookmarks:1", autojoin: "true"},
-					...(
-						room.nick === null ?
-							[] :
-							[xml("nick", {}, room.nick)]
-					),
-					xml(
-						"extensions",
-						{},
-						...room.extensionsContent.filter(x => {
-							return !(
-								x instanceof Element &&
-									x.name === "rank" &&
-									x.getNS() === "http://deepish.vpzom.click/ns/rank"
-							);
-						}),
-						xml(
-							"rank",
-							"http://deepish.vpzom.click/ns/rank",
-							newRank,
-						),
-					),
-				),
+				"rank",
+				"http://deepish.vpzom.click/ns/rank",
+				newRank,
 			),
-			BOOKMARKS_PUBLISH_OPTIONS,
 		);
 
 		updateAccount(accountJID, current => {
@@ -2485,6 +2519,40 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 
 	const reorderRoom = useLatestCallback(reorderRoomInner);
 
+	const setRoomNotificationLevel = useCallback(async (accountJID: JID, roomJID: JID, level: NotificationLevel) => {
+		const account = accountsSig.value.find(x => x.jid.equals(accountJID));
+		if(typeof account === "undefined") throw new Error("No such account");
+
+		const room = account.rooms.get(roomJID.toString());
+		if(typeof room === "undefined") throw new Error("Unknown room");
+
+		const content = xml(NOTIFICATION_LEVEL_ELEMENT_MAP[level]);
+
+		await publishRoomBookmarkExtension(
+			account.client,
+			room,
+			xml(
+				"notify",
+				{xmlns: "urn:xmpp:notification-settings:1"},
+				content,
+			),
+		);
+
+		updateAccount(accountJID, current => {
+			const rooms = new Map(current.rooms);
+			const entry = rooms.get(roomJID.toString());
+
+			if(typeof entry === "undefined") return current;
+			else {
+				rooms.set(roomJID.toString(), {
+					...entry,
+					notificationLevel: level,
+				});
+				return {...current, rooms};
+			}
+		});
+	}, [accountsSig.value, updateAccount]);
+
 	useEffectOnce(() => {
 		loadAccounts();
 	});
@@ -2539,6 +2607,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 			setNick,
 			setAvatar,
 			reorderRoom,
+			setRoomNotificationLevel,
 		} satisfies ConnectionContext),
 		[
 			accounts,
@@ -2568,6 +2637,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 			setNick,
 			setAvatar,
 			reorderRoom,
+			setRoomNotificationLevel,
 		],
 	);
 }
@@ -2723,4 +2793,37 @@ export function messageRemovalIsAllowed(message: Message, evt: Pick<MessageRemov
 		console.warn("Unknown removal type");
 		return false;
 	}
+}
+
+async function publishRoomBookmarkExtension(client: xmppClient.Client, room: Room, extension: Element) {
+	await publishPubsubItem(
+		client,
+		"urn:xmpp:bookmarks:1",
+		xml(
+			"item",
+			{id: room.jid.toString()},
+			xml(
+				"conference",
+				{xmlns: "urn:xmpp:bookmarks:1", autojoin: "true"},
+				...(
+					room.nick === null ?
+						[] :
+						[xml("nick", {}, room.nick)]
+				),
+				xml(
+					"extensions",
+					{},
+					...room.extensionsContent.filter(x => {
+						return !(
+							x instanceof Element &&
+								x.name === extension.name &&
+								x.getNS() === extension.getNS()
+						);
+					}),
+					extension,
+				),
+			),
+		),
+		BOOKMARKS_PUBLISH_OPTIONS,
+	);
 }

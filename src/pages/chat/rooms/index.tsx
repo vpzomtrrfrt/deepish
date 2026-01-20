@@ -3,7 +3,7 @@ import { JID, parse as parseJID } from "@xmpp/jid";
 import { pushAtSortPosition } from "array-push-at-sort-position";
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { Fragment } from "preact/jsx-runtime";
-import { useIntl } from "react-intl";
+import { defineMessage, MessageDescriptor, useIntl } from "react-intl";
 import useLatestCallback from "use-latest-callback";
 import { useLocation } from "wouter-preact";
 
@@ -12,12 +12,12 @@ import AvatarWithStatus from "../../../components/AvatarWithStatus";
 import ConfirmDialog from "../../../components/ConfirmDialog";
 import ConfirmTaskDialog from "../../../components/ConfirmTaskDialog";
 import { DataNonDoneView, ErrorAlert } from "../../../components/DataView";
-import Menu, { MenuItem } from "../../../components/Menu";
+import Menu, { MenuGroupLabel, MenuItem, MenuRadioGroup, MenuRadioItem } from "../../../components/Menu";
 import MessageInput from "../../../components/MessageInput";
 import MessageList, { LoadMoreTriggerer } from "../../../components/MessageList";
 import TaskDialog from "../../../components/TaskDialog";
 import TypingIndicator from "../../../components/TypingIndicator";
-import { Message, MessageEvent, MessageRemovalEvent, messageRemovalIsAllowed, ResultSetInfo, useAccount, useConnectionContext } from "../../../util/connection";
+import { Message, MessageEvent, MessageRemovalEvent, messageRemovalIsAllowed, NotificationLevel, ResultSetInfo, useAccount, useConnectionContext } from "../../../util/connection";
 import { msgActionDelete, presenceShowTypeNames } from "../../../util/langCommon";
 import { getShowTypeForCounterpart } from "../../../util/statusUtil";
 import { themeVars } from "../../../util/theme";
@@ -349,6 +349,12 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 		}
 	}, [$t, retractMessage, room, selfCounterpartInRoom]);
 
+	const onChangeNotificationLevel = useCallback((newValue: NotificationLevel) => {
+		console.log("onChangeNotificationLevel");
+
+		conn.setRoomNotificationLevel.call(undefined, account.jid, parseJID(props.roomJID), newValue);
+	}, [account.jid, conn.setRoomNotificationLevel, props.roomJID]);
+
 	const loaderContent = pageState === null ?
 		<p>{$t({defaultMessage: "Connecting…"})}</p> :
 		LoadState.ifDone(
@@ -372,6 +378,17 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 				</div>
 				<div>
 					<Menu>
+						{typeof room !== "undefined" &&
+							<MenuRadioGroup value={room.notificationLevel} onValueChange={onChangeNotificationLevel}>
+								<MenuGroupLabel>{$t({defaultMessage: "Notifications"})}</MenuGroupLabel>
+								<MenuRadioItem value={null}>
+									{$t({defaultMessage: "Default"})}
+								</MenuRadioItem>
+								{Array.from(Object.entries(NOTIFICATION_LEVEL_NAMES), ([key, value]) => {
+									return <MenuRadioItem value={parseInt(key, 10)}>{$t(value)}</MenuRadioItem>;
+								})}
+							</MenuRadioGroup>
+						}
 						<MenuItem onClick={leaveRoom}>{$t({defaultMessage: "Leave Channel"})}</MenuItem>
 					</Menu>
 				</div>
@@ -429,3 +446,12 @@ function MembersList(props: {roomJID: string}) {
 		}
 	</SidebarSegment>;
 }
+
+const NOTIFICATION_LEVEL_NAMES: Record<NotificationLevel.Never | NotificationLevel.Always, MessageDescriptor> = {
+	[NotificationLevel.Never]: defineMessage({
+		defaultMessage: "Never",
+	}),
+	[NotificationLevel.Always]: defineMessage({
+		defaultMessage: "All Messages",
+	}),
+};

@@ -162,6 +162,7 @@ function AppContent() {
 	const connection = useConnectionContext();
 
 	const directMatch = useRoute("/chat/direct/:counterpartJID");
+	const roomMatch = useRoute("/chat/rooms/:roomJID");
 
 	const onMessage = useLatestCallback((evt: MessageEvent) => {
 		if(evt.shouldNotify) {
@@ -171,6 +172,14 @@ function AppContent() {
 			let isActive = false;
 			if(directMatch[0]) {
 				if(decodeURIComponent(directMatch[1].counterpartJID) === contact.toString()) isActive = true;
+			}
+			if(roomMatch[0]) {
+				if(
+					evt.message.room !== null &&
+						decodeURIComponent(roomMatch[1].roomJID) === evt.message.room.toString()
+				) {
+					isActive = true;
+				}
 			}
 
 			if(!isActive) {
