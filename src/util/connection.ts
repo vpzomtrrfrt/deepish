@@ -262,7 +262,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 						if(typeof extensionsNode !== "undefined") {
 							entry.extensionsContent = extensionsNode.children;
 
-							const rankNode = conf.getChild("rank", "http://deepish.vpzom.click/ns/rank");
+							const rankNode = extensionsNode.getChild("rank", "http://deepish.vpzom.click/ns/rank");
 							if(typeof rankNode !== "undefined") {
 								entry.rank = rankNode.getText();
 							}
