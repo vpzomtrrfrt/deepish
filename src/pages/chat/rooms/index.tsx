@@ -385,7 +385,7 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 									{$t({defaultMessage: "Default"})}
 								</MenuRadioItem>
 								{Array.from(Object.entries(NOTIFICATION_LEVEL_NAMES), ([key, value]) => {
-									return <MenuRadioItem value={key}>{$t(value)}</MenuRadioItem>;
+									return <MenuRadioItem value={parseInt(key, 10)}>{$t(value)}</MenuRadioItem>;
 								})}
 							</MenuRadioGroup>
 						}
