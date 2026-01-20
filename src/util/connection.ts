@@ -168,6 +168,7 @@ export interface ConnectionContext {
 	sendMessageToRoom(account: JID, room: JID, message: {body: string}): Promise<void>;
 	sendMessageToCounterpart(account: JID, target: JID, message: {body: string}): Promise<void>;
 	retractMessageToRoom(account: JID, room: JID, messageID: string): Promise<void>;
+	retractMessageToCounterpart(account: JID, target: JID, messageID: string): Promise<void>;
 	markCounterpartAsVisible(account: JID, target: JID): void;
 	acceptFriendRequest(account: JID, target: JID): void;
 	rejectFriendRequest(account: JID, target: JID): void;
@@ -1727,6 +1728,46 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 		await reflectDefer.promise;
 	});
 
+	const retractMessageToCounterpart = useLatestCallback(async (accountJID: JID, targetJID: JID, messageID: string) => {
+		const account = accounts.find(x => x.jid.equals(accountJID));
+		if(typeof account === "undefined") throw new Error("No such account");
+
+		await account.client.send(
+			xml(
+				"message",
+				{id: xid(), to: targetJID.toString(), type: "chat"},
+				xml(
+					"retract",
+					{xmlns: "urn:xmpp:message-retract:1", id: messageID},
+				),
+				xml(
+					"fallback",
+					{xmlns: "urn:xmpp:fallback:0", for: "urn:xmpp:message-retract:1"},
+				),
+				xml(
+					"body",
+					{},
+					"/me retracted a previous message, but it's unsupported by your client.",
+				),
+				xml(
+					"store",
+					{xmlns: "urn:xmpp:hints"},
+				),
+			),
+		);
+
+		emit("messageRemove", {
+			removal: {type: "retract"},
+			target: new StanzaID(
+				StanzaIDType.Element,
+				accountJID,
+				messageID,
+			),
+			room: null,
+			from: {jid: accountJID},
+		});
+	});
+
 	const retractMessageToRoom = useLatestCallback(async (accountJID: JID, roomJID: JID, messageID: string) => {
 		const id = xid();
 
@@ -2481,6 +2522,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 			requestArchive,
 			sendMessageToCounterpart,
 			sendMessageToRoom,
+			retractMessageToCounterpart,
 			retractMessageToRoom,
 			markCounterpartAsVisible,
 			markCounterpartAsRead,
@@ -2508,6 +2550,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 			requestArchive,
 			sendMessageToCounterpart,
 			sendMessageToRoom,
+			retractMessageToCounterpart,
 			retractMessageToRoom,
 			loadAccounts,
 			markCounterpartAsVisible,

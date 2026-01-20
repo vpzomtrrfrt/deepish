@@ -5,11 +5,15 @@ import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import { useIntl } from "react-intl";
 import useLatestCallback from "use-latest-callback";
 
+import { useAppContext } from "../..";
+import ConfirmTaskDialog from "../../components/ConfirmTaskDialog";
 import { DataNonDoneView } from "../../components/DataView";
+import Menu, { MenuItem } from "../../components/Menu";
 import MessageInput from "../../components/MessageInput";
 import MessageList, { LoadMoreTriggerer } from "../../components/MessageList";
 import TypingIndicator from "../../components/TypingIndicator";
 import { Message, MessageEvent, MessageRemovalEvent, messageRemovalIsAllowed, ResultSetInfo, useAccount, useConnectionContext } from "../../util/connection";
+import { msgActionDelete } from "../../util/langCommon";
 import { getNickForCounterpart } from "../../util/profileUtil";
 import { LoadState } from "../../util/useData";
 import useEventHandler from "../../util/useEventHandler";
@@ -43,6 +47,7 @@ export default function DirectChatPage(props: {params: {counterpartJID: string}}
 function DirectChatPageInner(props: {counterpartJID: string}) {
 	const { $t } = useIntl();
 
+	const appCtx = useAppContext();
 	const conn = useConnectionContext();
 	const account = useAccount();
 	const counterpart = account.counterparts.get(props.counterpartJID);
@@ -226,7 +231,42 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 		conn.setComposingToCounterpart(account.jid, parseJID(props.counterpartJID), composing);
 	});
 
-	const renderMenu = useCallback(() => null, []);
+	const retractMessage = useCallback((messageID: string) => {
+		appCtx.showDialog.call(
+			undefined,
+			<ConfirmTaskDialog
+				submit={async () => {
+					return conn.retractMessageToCounterpart.call(
+						undefined,
+						account.jid,
+						parseJID(props.counterpartJID),
+						messageID,
+					);
+				}}
+				confirmText={$t(msgActionDelete)}
+			>
+				{$t({defaultMessage: "Are you sure you want to delete this message?"})}
+			</ConfirmTaskDialog>
+		);
+	}, [$t, account.jid, appCtx.showDialog, conn.retractMessageToCounterpart, props.counterpartJID]);
+
+	const renderMenu = useCallback((message: Message) => {
+		const items = [];
+
+		if(message.from.bare().equals(account.jid)) {
+			const id = message.ids.find(x => x.type === StanzaIDType.Element && x.by.equals(account.jid));
+			if(typeof id !== "undefined") {
+				items.push(
+					<MenuItem onClick={retractMessage.bind(undefined, id.id)}>{$t({defaultMessage: "Delete Message"})}</MenuItem>
+				);
+			}
+		}
+
+		if(items.length < 1) return null;
+		else {
+			return <Menu>{items}</Menu>;
+		}
+	}, [$t, account.jid, retractMessage]);
 
 	useEffect(() => {
 		return () => onChangeComposing(false);
