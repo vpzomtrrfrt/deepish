@@ -45,6 +45,7 @@ const DEFAULT_COUNTERPART_INFO: Omit<Counterpart, "jid"> = {
 	lastReportedComposing: false,
 	composingFrom: null,
 	nick: null,
+	occupantID: null,
 
 	lastReadMessageID: null,
 };
@@ -166,6 +167,7 @@ export interface ConnectionContext {
 	requestArchive(account: JID, entity: JID, params: {with?: JID}, before?: string): Promise<ResultSetInfo | null>;
 	sendMessageToRoom(account: JID, room: JID, message: {body: string}): Promise<void>;
 	sendMessageToCounterpart(account: JID, target: JID, message: {body: string}): Promise<void>;
+	retractMessageToRoom(account: JID, room: JID, messageID: string): Promise<void>;
 	markCounterpartAsVisible(account: JID, target: JID): void;
 	acceptFriendRequest(account: JID, target: JID): void;
 	rejectFriendRequest(account: JID, target: JID): void;
@@ -1330,6 +1332,17 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 						callback?.reject(new Error("Failed to join room"));
 					}
 				}
+
+				const occupantIDElem = elem.getChild("occupant-id", "urn:xmpp:occupant-id:0");
+				if(typeof occupantIDElem !== "undefined") {
+					const occupantID = occupantIDElem.getAttr("id");
+					if(typeof occupantID === "string") {
+						upsertCounterpart(client, srcJID, current => ({
+							...current,
+							occupantID,
+						}));
+					}
+				}
 			}
 
 			const contact = typeof userInfo === "undefined" ? srcJID.bare() : srcJID;
@@ -1707,6 +1720,43 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 					"body",
 					{},
 					message.body,
+				),
+			),
+		);
+
+		await reflectDefer.promise;
+	});
+
+	const retractMessageToRoom = useLatestCallback(async (accountJID: JID, roomJID: JID, messageID: string) => {
+		const id = xid();
+
+		const account = accounts.find(x => x.jid.equals(accountJID));
+		if(typeof account === "undefined") throw new Error("No such account");
+
+		const reflectDefer = Promise.withResolvers<void>();
+
+		outgoingMessagesRef.current.set(id, reflectDefer);
+
+		await account.client.send(
+			xml(
+				"message",
+				{id, to: roomJID.toString(), type: "groupchat"},
+				xml(
+					"retract",
+					{xmlns: "urn:xmpp:message-retract:1", id: messageID},
+				),
+				xml(
+					"fallback",
+					{xmlns: "urn:xmpp:fallback:0", for: "urn:xmpp:message-retract:1"},
+				),
+				xml(
+					"body",
+					{},
+					"/me retracted a previous message, but it's unsupported by your client.",
+				),
+				xml(
+					"store",
+					{xmlns: "urn:xmpp:hints"},
 				),
 			),
 		);
@@ -2431,6 +2481,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 			requestArchive,
 			sendMessageToCounterpart,
 			sendMessageToRoom,
+			retractMessageToRoom,
 			markCounterpartAsVisible,
 			markCounterpartAsRead,
 			acceptFriendRequest,
@@ -2457,6 +2508,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 			requestArchive,
 			sendMessageToCounterpart,
 			sendMessageToRoom,
+			retractMessageToRoom,
 			loadAccounts,
 			markCounterpartAsVisible,
 			markCounterpartAsRead,
@@ -2602,7 +2654,7 @@ export function useAccount() {
 	return account;
 }
 
-export function messageRemovalIsAllowed(message: Message, evt: MessageRemovalEvent) {
+export function messageRemovalIsAllowed(message: Message, evt: Pick<MessageRemovalEvent, "from" | "removal" | "room">) {
 	if(evt.removal.type === "retract") {
 		// Allow retractions for one's own messages
 

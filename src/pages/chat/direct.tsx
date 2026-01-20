@@ -1,7 +1,7 @@
 import { css } from "@emotion/css";
 import { parse as parseJID } from "@xmpp/jid";
 import { pushAtSortPosition } from "array-push-at-sort-position";
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import { useIntl } from "react-intl";
 import useLatestCallback from "use-latest-callback";
 
@@ -226,6 +226,8 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 		conn.setComposingToCounterpart(account.jid, parseJID(props.counterpartJID), composing);
 	});
 
+	const renderMenu = useCallback(() => null, []);
+
 	useEffect(() => {
 		return () => onChangeComposing(false);
 	}, [onChangeComposing]);
@@ -250,6 +252,7 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 		<MessageList
 			messages={messagesData.messages}
 			loaderContent={loaderContent}
+			renderMenu={renderMenu}
 		/>
 		<TypingIndicator
 			usersTyping={(typeof counterpart !== "undefined" && counterpart.composingFrom) ? [counterpart.jid] : []}

@@ -4,6 +4,7 @@ import { PresenceShowTypeExtended } from "./types";
 
 export const msgActionAdd = defineMessage({defaultMessage: "Add"});
 export const msgActionCreate = defineMessage({defaultMessage: "Create"});
+export const msgActionDelete = defineMessage({defaultMessage: "Delete"});
 
 export const msgCancel = defineMessage({
 	defaultMessage: "Cancel",

@@ -1,5 +1,5 @@
-import { css } from "@emotion/css";
-import { JSX, VNode } from "preact";
+import { css, cx } from "@emotion/css";
+import { ComponentChildren, JSX, VNode } from "preact";
 import { useCallback, useEffect, useLayoutEffect, useRef } from "preact/hooks";
 import { useIntl } from "react-intl";
 import { List, ListImperativeAPI, RowComponentProps, useDynamicRowHeight } from "react-window";
@@ -18,17 +18,37 @@ const styles = {
 		display: "flex",
 		gap: ".5rem",
 		paddingBlock: ".5rem",
+
+		"&:hover": {
+			"> .messageMenuArea": {
+				visibility: "visible",
+			},
+		},
+	}),
+	messageContentArea: css({
+		flexGrow: 1,
 	}),
 	messageTimestamp: css({
 		marginInlineStart: ".5em",
 		color: "#888",
 	}),
+	messageMenuArea: cx("messageMenuArea", css({
+		visibility: "hidden",
+
+		"&:focus-within": {
+			visibility: "visible",
+		},
+	})),
 	typingIndicatorPlaceholder: css({
 		height: "1.5rem",
 	}),
 };
 
-export default function MessageList(props: {messages: Message[]; loaderContent: VNode}) {
+export default function MessageList(props: {
+	messages: Message[];
+	loaderContent: VNode;
+	renderMenu(message: Message): ComponentChildren;
+}) {
 	const messages = props.messages;
 
 	const rowHeight = useDynamicRowHeight({defaultRowHeight: DEFAULT_ROW_HEIGHT});
@@ -125,6 +145,7 @@ export default function MessageList(props: {messages: Message[]; loaderContent: 
 		rowProps={{
 			messages,
 			loaderContent: props.loaderContent,
+			renderMenu: props.renderMenu,
 		}}
 		listRef={listRef}
 		onResize={onResize}
@@ -132,7 +153,11 @@ export default function MessageList(props: {messages: Message[]; loaderContent: 
 	/>;
 }
 
-function MessageRow(props: RowComponentProps<{messages: Message[]; loaderContent: VNode}>) {
+function MessageRow(props: RowComponentProps<{
+	messages: Message[];
+	loaderContent: VNode;
+	renderMenu(message: Message): ComponentChildren;
+}>) {
 	if(props.index === 0) {
 		return props.loaderContent;
 	}
@@ -148,7 +173,7 @@ function MessageRow(props: RowComponentProps<{messages: Message[]; loaderContent
 	return <RealMessageRow {...props} message={message} />;
 }
 
-function RealMessageRow(props: RowComponentProps<{message: Message}>) {
+function RealMessageRow(props: RowComponentProps<{message: Message; renderMenu(message: Message): ComponentChildren}>) {
 	const message = props.message;
 
 	const { $t } = useIntl();
@@ -162,7 +187,7 @@ function RealMessageRow(props: RowComponentProps<{message: Message}>) {
 		<div>
 			<Avatar size="md" jid={from} />
 		</div>
-		<div>
+		<div class={styles.messageContentArea}>
 			<div>
 				<span>{maybeGetNickForCounterpart(from, counterpart)}</span>
 				<span class={styles.messageTimestamp}>{message.timestamp.toLocaleString()}</span>
@@ -174,6 +199,9 @@ function RealMessageRow(props: RowComponentProps<{message: Message}>) {
 						<em>{$t({defaultMessage: "This message has been deleted"})}</em>
 				}
 			</div>
+		</div>
+		<div class={styles.messageMenuArea}>
+			{props.renderMenu(message)}
 		</div>
 	</div>;
 }

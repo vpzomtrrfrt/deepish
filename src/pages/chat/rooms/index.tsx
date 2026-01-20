@@ -1,7 +1,7 @@
 import { css } from "@emotion/css";
 import { JID, parse as parseJID } from "@xmpp/jid";
 import { pushAtSortPosition } from "array-push-at-sort-position";
-import { useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { Fragment } from "preact/jsx-runtime";
 import { useIntl } from "react-intl";
 import useLatestCallback from "use-latest-callback";
@@ -10,6 +10,7 @@ import { useLocation } from "wouter-preact";
 import { useAppContext } from "../../..";
 import AvatarWithStatus from "../../../components/AvatarWithStatus";
 import ConfirmDialog from "../../../components/ConfirmDialog";
+import ConfirmTaskDialog from "../../../components/ConfirmTaskDialog";
 import { DataNonDoneView, ErrorAlert } from "../../../components/DataView";
 import Menu, { MenuItem } from "../../../components/Menu";
 import MessageInput from "../../../components/MessageInput";
@@ -17,7 +18,7 @@ import MessageList, { LoadMoreTriggerer } from "../../../components/MessageList"
 import TaskDialog from "../../../components/TaskDialog";
 import TypingIndicator from "../../../components/TypingIndicator";
 import { Message, MessageEvent, MessageRemovalEvent, messageRemovalIsAllowed, ResultSetInfo, useAccount, useConnectionContext } from "../../../util/connection";
-import { presenceShowTypeNames } from "../../../util/langCommon";
+import { msgActionDelete, presenceShowTypeNames } from "../../../util/langCommon";
 import { getShowTypeForCounterpart } from "../../../util/statusUtil";
 import { themeVars } from "../../../util/theme";
 import { LoadState } from "../../../util/useData";
@@ -271,6 +272,12 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 		);
 	});
 
+	const selfJIDInRoom = useMemo(() => {
+		if(typeof room === "undefined") return undefined;
+
+		return new JID(room.jid.local, room.jid.domain, room.nick ?? account.jid.local);
+	}, [account.jid.local, room]);
+
 	const usersTyping = useMemo(() => {
 		if(typeof room === "undefined") return [];
 
@@ -280,7 +287,7 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 				if(
 					value.composingFrom === true &&
 						// Don't show myself
-						!value.jid.equals(new JID(room.jid.local, room.jid.domain, room.nick ?? account.jid.local))
+						!value.jid.equals(selfJIDInRoom!)
 				) {
 					result.push(value.jid);
 				}
@@ -288,7 +295,59 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 		}
 
 		return result;
-	}, [account.counterparts, account.jid.local, room]);
+	}, [account.counterparts, room, selfJIDInRoom]);
+
+	const selfCounterpartInRoom = typeof selfJIDInRoom === "undefined" ?
+		undefined :
+		account.counterparts.get(selfJIDInRoom.toString());
+
+	const retractMessage = useCallback((messageID: string) => {
+		appCtx.showDialog.call(
+			undefined,
+			<ConfirmTaskDialog
+				submit={async () => {
+					return conn.retractMessageToRoom.call(undefined, account.jid, parseJID(props.roomJID), messageID);
+				}}
+				confirmText={$t(msgActionDelete)}
+			>
+				{$t({defaultMessage: "Are you sure you want to delete this message?"})}
+			</ConfirmTaskDialog>
+		);
+	}, [$t, account.jid, appCtx.showDialog, conn.retractMessageToRoom, props.roomJID]);
+
+	const renderMenu = useCallback((message: Message) => {
+		const items = [];
+
+		if(typeof selfCounterpartInRoom !== "undefined") {
+			if(
+				messageRemovalIsAllowed(
+					message,
+					{
+						from: {
+							jid: selfCounterpartInRoom.jid,
+							occupantID: selfCounterpartInRoom.occupantID === null ?
+								undefined :
+								selfCounterpartInRoom.occupantID,
+						},
+						removal: {type: "retract"},
+						room: room!.jid,
+					},
+				)
+			) {
+				const id = message.ids.find(x => x.type === StanzaIDType.Stanza && x.by.equals(room!.jid));
+				if(typeof id !== "undefined") {
+					items.push(
+						<MenuItem onClick={retractMessage.bind(undefined, id.id)}>{$t({defaultMessage: "Delete Message"})}</MenuItem>
+					);
+				}
+			}
+		}
+
+		if(items.length < 1) return null;
+		else {
+			return <Menu>{items}</Menu>;
+		}
+	}, [$t, retractMessage, room, selfCounterpartInRoom]);
 
 	const loaderContent = pageState === null ?
 		<p>{$t({defaultMessage: "Connecting…"})}</p> :
@@ -326,6 +385,7 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 						<MessageList
 							messages={messagesData.messages}
 							loaderContent={loaderContent}
+							renderMenu={renderMenu}
 						/>
 						<TypingIndicator usersTyping={usersTyping} inRoom={true} />
 						<MessageInput submitMessage={submitMessage} autofocus onChangeComposing={onChangeComposing} />
