@@ -1,9 +1,13 @@
+import { combine } from "@atlaskit/pragmatic-drag-and-drop/combine";
+import { draggable, dropTargetForElements } from "@atlaskit/pragmatic-drag-and-drop/element/adapter";
+import { attachInstruction, extractInstruction, Instruction } from "@atlaskit/pragmatic-drag-and-drop-hitbox/list-item";
+import { DropIndicator } from "@atlaskit/pragmatic-drag-and-drop-react-drop-indicator/list-item";
 import { css, cx } from "@emotion/css";
 import { mdiAccountMultiple, mdiCheck, mdiClose, mdiHome, mdiPlus } from "@mdi/js";
 import { JID, parse as parseJID } from "@xmpp/jid";
 import useLinkState from "linkstate/hook";
 import { JSX } from "preact";
-import { useCallback, useEffect, useMemo, useState } from "preact/hooks";
+import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { useIntl } from "react-intl";
 import useLatestCallback from "use-latest-callback";
 import { Link, Route, Switch, useLocation, useRoute } from "wouter-preact";
@@ -24,7 +28,7 @@ import PriorityUnreadIndicator from "../../components/PriorityUnreadIndicator";
 import { ManualTabsContainer, TabLink, TabsList } from "../../components/Tabs";
 import WithTooltip from "../../components/WithTooltip";
 import * as commonStyles from "../../util/commonStyles";
-import { useAccount, useConnectionContext } from "../../util/connection";
+import { Room, useAccount, useConnectionContext } from "../../util/connection";
 import { msgActionAdd, presenceShowTypeNames } from "../../util/langCommon";
 import { compareRanks } from "../../util/lexrank";
 import { getNickForCounterpart } from "../../util/profileUtil";
@@ -273,7 +277,10 @@ export function SpaceItemsList(props: JSX.HTMLAttributes<HTMLDivElement>) {
 	/>;
 }
 
+type PendingReorder = {movingRoom: JID; to: {after: JID | null; before: JID | null}};
+
 function ChatView() {
+	const conn = useConnectionContext();
 	const account = useAccount();
 
 	const roomMatch = useRoute("/rooms/:roomJID");
@@ -284,8 +291,36 @@ function ChatView() {
 	const incomingRequestCounterparts = Array.from(account.counterparts.values())
 		.filter(counterpartIsIncomingRequest);
 
+	const [pendingReorders, setPendingReorders] =
+		useState<Set<PendingReorder>>(new Set());
+
+	const reorderRoom = useLatestCallback((movingRoom: JID, to: {after: JID | null; before: JID | null}) => {
+		(async () => {
+			const entry = {movingRoom, to};
+			setPendingReorders(current => {
+				const result = new Set(current);
+				result.add(entry);
+				return result;
+			});
+			try {
+				await conn.reorderRoom(account.jid, movingRoom, to);
+			}
+			catch(err) {
+				alert(err);
+			}
+			finally {
+				setPendingReorders(current => {
+					const result = new Set(current);
+					result.delete(entry);
+					return result;
+				});
+			}
+		})();
+	});
+
 	const rooms = Array.from(account.rooms.values());
 	rooms.sort((a, b) => compareRanks(a.rank, b.rank));
+	applyPendingReorders(rooms, pendingReorders);
 
 	return <div class={cx(styles.sidebarSegment, styles.roomList)}>
 		<div>
@@ -301,26 +336,13 @@ function ChatView() {
 		</div>
 		{
 			rooms.map(info => {
-				const name = LoadState.ifDone(info.infoState, disco => disco.name, () => null) ?? info.jid.toString();
-
-				const counterpart = account.counterparts.get(info.jid.toString());
-				const unread = typeof counterpart !== "undefined" &&
-					counterpart.lastMessageID !== null &&
-					counterpart.lastReadMessageID !== counterpart.lastMessageID;
-
-				return <div key={info.jid.toString()}>
-					<WithTooltip tooltip={name} side="inline-end">
-						<Link
-							to={"~/chat/rooms/" + encodeURIComponent(info.jid.toString())}
-							class={cx(styles.roomLink, currentRoom === info.jid.toString() && styles.currentRoomLink)}
-						>
-							<Avatar size="lg" jid={info.jid.toString()} />
-							{
-								unread && <div class={styles.roomUnreadIndicator} />
-							}
-						</Link>
-					</WithTooltip>
-				</div>;
+				return <RoomLink
+					key={info.jid.toString()}
+					room={info}
+					isCurrent={currentRoom === info.jid.toString()}
+					reorderRoom={reorderRoom}
+					pendingReorders={pendingReorders}
+				/>;
 			})
 		}
 		<div>
@@ -330,6 +352,125 @@ function ChatView() {
 				</div>
 			</Link>
 		</div>
+	</div>;
+}
+
+function RoomLink(props: {
+	room: Room;
+	isCurrent: boolean;
+	reorderRoom(movingRoom: JID, to: {before: JID | null; after: JID | null}): void;
+	pendingReorders: Set<PendingReorder>;
+}) {
+	const conn = useConnectionContext();
+	const account = useAccount();
+
+	const name = LoadState.ifDone(props.room.infoState, disco => disco.name, () => null) ?? props.room.jid.toString();
+
+	const counterpart = account.counterparts.get(props.room.jid.toString());
+	const unread = typeof counterpart !== "undefined" &&
+		counterpart.lastMessageID !== null &&
+		counterpart.lastReadMessageID !== counterpart.lastMessageID;
+
+	const ref = useRef<HTMLDivElement>(null);
+
+	const [dragging, setDragging] = useState(false);
+	const [instruction, setInstruction] = useState<null | Instruction>(null);
+
+	useEffect(() => {
+		return combine(
+			draggable({
+				element: ref.current!,
+				onDragStart: () => {
+					console.log("drag start");
+					setDragging(true);
+				},
+				getInitialData() {
+					return {jid: props.room.jid};
+				},
+				onDrop: setDragging.bind(undefined, false),
+			}),
+			dropTargetForElements({
+				element: ref.current!,
+				getData({input, element}) {
+					return attachInstruction({}, {
+						input,
+						element,
+						operations: {
+							"reorder-before": "available",
+							"reorder-after": "available",
+						},
+					});
+				},
+				onDrag(args) {
+					setInstruction(extractInstruction(args.self.data));
+				},
+				onDragLeave() {
+					setInstruction(null);
+				},
+				onDrop(args) {
+					try {
+						console.log("drop", args);
+
+						const movingRoom = args.source.data.jid as JID;
+
+						const finalInstruction = extractInstruction(args.self.data);
+
+						if(finalInstruction !== null) {
+							const accountNow = conn.accountsSig.value.find(x => x.jid.equals(account.jid));
+							if(typeof accountNow === "undefined") throw new Error("Missing account");
+
+							const rooms = Array.from(accountNow.rooms.values());
+							rooms.sort((a, b) => compareRanks(a.rank, b.rank));
+
+							const targetIdx = rooms.findIndex(x => x.jid.equals(props.room.jid));
+							if(targetIdx < 0) throw new Error("Couldn't find anchor room");
+
+							let to: {after: JID | null; before: JID | null};
+							if(finalInstruction.operation === "reorder-after") {
+								to = {
+									after: props.room.jid,
+									before: (targetIdx + 1 < rooms.length) ? rooms[targetIdx + 1].jid : null,
+								};
+							}
+							else if(finalInstruction.operation === "reorder-before") {
+								to = {
+									before: props.room.jid,
+									after: targetIdx > 0 ? rooms[targetIdx - 1].jid : null,
+								};
+							}
+							else {
+								throw new Error("Unsupported operation");
+							}
+
+							props.reorderRoom.call(undefined,movingRoom, to);
+						}
+					}
+					finally {
+						setInstruction(null);
+					}
+				},
+			}),
+		);
+	}, [account.jid, conn.accountsSig, props.reorderRoom, props.room.jid]);
+
+	return <div
+		key={props.room.jid.toString()}
+		ref={ref}
+		style={{visibility: dragging ? "hidden" : undefined, position: "relative"}}
+	>
+		<WithTooltip tooltip={name} side="inline-end">
+			<Link
+				to={"~/chat/rooms/" + encodeURIComponent(props.room.jid.toString())}
+				class={cx(styles.roomLink, props.isCurrent && styles.currentRoomLink)}
+				draggable={false}
+			>
+				<Avatar size="lg" jid={props.room.jid.toString()} />
+				{
+					unread && <div class={styles.roomUnreadIndicator} />
+				}
+			</Link>
+		</WithTooltip>
+		{instruction !== null && <DropIndicator instruction={instruction} />}
 	</div>;
 }
 
@@ -655,4 +796,31 @@ function SelfBox() {
 
 function counterpartIsIncomingRequest(info: Counterpart) {
 	return info.requestingMySubscription;
+}
+
+function applyPendingReorders(rooms: Room[], pendingReorders: Set<PendingReorder>) {
+	pendingReorders.forEach(entry => {
+		const currentIndex = rooms.findIndex(x => x.jid.equals(entry.movingRoom));
+		if(currentIndex < 0) return;
+
+		let targetIndex;
+		if(entry.to.after !== null) {
+			const refIndex = rooms.findIndex(x => x.jid.equals(entry.to.after!));
+			if(refIndex < 0) return;
+
+			targetIndex = refIndex + 1;
+		}
+		else if(entry.to.before !== null) {
+			const refIndex = rooms.findIndex(x => x.jid.equals(entry.to.before!));
+			if(refIndex < 0) return;
+
+			targetIndex = refIndex - 1;
+		}
+		else {
+			return;
+		}
+
+		const [room] = rooms.splice(currentIndex, 1);
+		rooms.splice(currentIndex < targetIndex ? (targetIndex - 1) : targetIndex, 0, room);
+	});
 }

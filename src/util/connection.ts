@@ -1,5 +1,5 @@
 import { IDBCache } from "@instructure/idb-cache";
-import { useSignal } from "@preact/signals";
+import { Signal, useSignal } from "@preact/signals";
 import Connection from "@xmpp/connection";
 import xid from "@xmpp/id";
 import { JID, parse as parseJID } from "@xmpp/jid";
@@ -148,6 +148,7 @@ interface ImageInfo {
 
 export interface ConnectionContext {
 	accounts: Account[];
+	accountsSig: Signal<Account[]>;
 	inited: boolean;
 	idle: IdleState;
 
@@ -2396,6 +2397,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 	return useMemo(
 		() => ({
 			accounts,
+			accountsSig,
 			inited,
 			idle,
 
@@ -2434,6 +2436,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 		} satisfies ConnectionContext),
 		[
 			accounts,
+			accountsSig,
 			inited,
 			idle,
 			addEventListener,
