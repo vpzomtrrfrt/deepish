@@ -14,6 +14,7 @@ import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "p
 import useLatestCallback from "use-latest-callback";
 
 import { compareRanks, DEFAULT_RANK, genRankBetween } from "./lexrank";
+import { markdownHasAnyFormatting, parseMarkdown, renderMarkdownTo0393, renderMarkdownToXHTML } from "./markdown";
 import { Counterpart, Presence, PresenceShowType, RosterEntry } from "./types";
 import { LoadState } from "./useData";
 import useEffectOnce from "./useEffectOnce";
@@ -30,6 +31,7 @@ const FEATURES: string[] = [
 	"http://jabber.org/protocol/chatstates",
 	"urn:xmpp:message-retract:1",
 	"urn:xmpp:styling:0",
+	"urn:xmpp:content",
 ];
 const IDENTITY = {category: "client", type: "web", lang: "", name: "Deepish"};
 const NODE_URL = "https://deepish.vpzom.click";
@@ -111,6 +113,9 @@ export type MessageContent = {
 } | {
 	type: "xhtml";
 	content: Element;
+} | {
+	type: "markdown";
+	content: string;
 };
 
 export interface Message {
@@ -893,28 +898,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 					}
 				}
 
-				const content: MessageContent[] = [];
-
-				const htmlElem = elem.getChild("html", "http://jabber.org/protocol/xhtml-im");
-				if(typeof htmlElem !== "undefined") {
-					const htmlBodyElem = htmlElem.getChild("body", "http://www.w3.org/1999/xhtml");
-					if(typeof htmlBodyElem !== "undefined") {
-						content.push({
-							type: "xhtml",
-							content: htmlBodyElem,
-						});
-					}
-				}
-
-				const body = elem.getChildText("body");
-				if(body !== null) {
-					const unstyledElem = elem.getChild("unstyled", "urn:xmpp:styling:0");
-
-					content.push({
-						type: typeof unstyledElem === "undefined" ? "0393" : "plain",
-						content: body,
-					});
-				}
+				const content = getContentFromMessageElement(elem);
 
 				if(content.length > 0 && !ignore) {
 					let timestamp: Date | null = timestampFromWrapper ?? null;
@@ -1056,26 +1040,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 				}
 			}
 
-			const content: MessageContent[] = [];
-
-			const htmlElem = elem.getChild("html", "http://jabber.org/protocol/xhtml-im");
-			if(typeof htmlElem !== "undefined") {
-				const htmlBodyElem = htmlElem.getChild("body", "http://www.w3.org/1999/xhtml");
-				if(typeof htmlBodyElem !== "undefined") {
-					content.push({
-						type: "xhtml",
-						content: htmlBodyElem,
-					});
-				}
-			}
-
-			const body = elem.getChildText("body");
-			if(body !== null) {
-				content.push({
-					type: "plain",
-					content: body,
-				});
-			}
+			const content = getContentFromMessageElement(elem);
 
 			if(content.length > 0 && typeof from !== "undefined" && typeof to !== "undefined" && !ignore) {
 				let timestamp: Date | null = timestampFromWrapper ?? null;
@@ -1827,15 +1792,13 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 		const account = accounts.find(x => x.jid.equals(accountJID));
 		if(typeof account === "undefined") throw new Error("No such account");
 
+		const contentResult = convertMarkdownForSend(message.body);
+
 		await account.client.send(
 			xml(
 				"message",
 				{id: localID, to: targetJID.toString(), type: "chat"},
-				xml(
-					"body",
-					{},
-					message.body,
-				),
+				...contentResult.elements,
 			),
 		);
 
@@ -1846,7 +1809,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 				from: accountJID,
 				occupantID: null,
 				to: targetJID,
-				content: [{type: "plain", content: message.body}],
+				content: contentResult.content,
 				ids: [
 					new StanzaID(StanzaIDType.Element, accountJID, localID),
 				],
@@ -1873,15 +1836,13 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 
 		outgoingMessagesRef.current.set(id, reflectDefer);
 
+		const contentResult = convertMarkdownForSend(message.body);
+
 		await account.client.send(
 			xml(
 				"message",
 				{id, to: roomJID.toString(), type: "groupchat"},
-				xml(
-					"body",
-					{},
-					message.body,
-				),
+				...contentResult.elements,
 			),
 		);
 
@@ -2931,4 +2892,94 @@ async function publishRoomBookmarkExtension(client: xmppClient.Client, room: Roo
 		),
 		BOOKMARKS_PUBLISH_OPTIONS,
 	);
+}
+
+function convertMarkdownForSend(src: string): {content: MessageContent[]; elements: Element[]} {
+	const tokens = parseMarkdown(src);
+
+	if(markdownHasAnyFormatting(tokens)) {
+		const body = renderMarkdownTo0393(tokens);
+		const xhtml = renderMarkdownToXHTML(tokens);
+
+		return {
+			content: [
+				{type: "0393", content: body},
+				{type: "xhtml", content: xhtml},
+				{type: "markdown", content: src},
+			],
+			elements: [
+				xml(
+					"body",
+					{},
+					renderMarkdownTo0393(tokens),
+				),
+				xml(
+					"html",
+					"http://jabber.org/protocol/xhtml-im",
+					renderMarkdownToXHTML(tokens),
+				),
+				xml(
+					"content",
+					{xmlns: "urn:xmpp:content", type: "text/markdown"},
+					src,
+				),
+			],
+		};
+	}
+	else {
+		return {
+			content: [
+				{type: "plain", content: src},
+			],
+			elements: [
+				xml("body", {}, src),
+				xml("unstyled", "urn:xmpp:styling:0"),
+			],
+		};
+	}
+}
+
+function getContentFromMessageElement(elem: Element): MessageContent[] {
+	const content: MessageContent[] = [];
+
+	const htmlElem = elem.getChild("html", "http://jabber.org/protocol/xhtml-im");
+	if(typeof htmlElem !== "undefined") {
+		const htmlBodyElem = htmlElem.getChild("body", "http://www.w3.org/1999/xhtml");
+		if(typeof htmlBodyElem !== "undefined") {
+			content.push({
+				type: "xhtml",
+				content: htmlBodyElem,
+			});
+		}
+	}
+
+	const contentElems = elem.getChildren("content", "urn:xmpp:content");
+
+	const body = elem.getChildText("body");
+	if(body !== null) {
+		const unstyledElem = elem.getChild("unstyled", "urn:xmpp:styling:0");
+
+		const typeHint = contentElems.find(x => x.children.length === 0);
+
+		content.push({
+			type: typeHint?.getAttr("type") === "text/markdown" ?
+				"markdown" :
+				(typeof unstyledElem === "undefined" ? "0393" : "plain"),
+			content: body,
+		});
+	}
+
+	contentElems.forEach(contentElem => {
+		if(contentElem.children.length < 1) return;
+
+		const value = contentElem.getText();
+		if(contentElem.getAttr("type") === "text/markdown") {
+			content.push({
+				type: "markdown",
+				content: value,
+			});
+		}
+	});
+
+	return content;
 }

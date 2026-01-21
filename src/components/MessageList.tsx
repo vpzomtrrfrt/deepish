@@ -1,12 +1,13 @@
 import { css, cx } from "@emotion/css";
 import * as xml from "@xmpp/xml";
 import inlineStyleParser from "inline-style-parser";
-import { ComponentChildren, JSX, VNode } from "preact";
+import { ComponentChildren, h, JSX, VNode } from "preact";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "preact/hooks";
 import { useIntl } from "react-intl";
 import { List, ListImperativeAPI, RowComponentProps, useDynamicRowHeight } from "react-window";
 
 import { Message, MessageContent, useAccount } from "../util/connection";
+import { parseMarkdown, renderMarkdownToXHTML } from "../util/markdown";
 import { maybeGetNickForCounterpart } from "../util/profileUtil";
 import { parse0393, StylingBlock0393, StylingSpan0393 } from "../util/xmpp/styling";
 import Avatar from "./Avatar";
@@ -31,6 +32,11 @@ const styles = {
 	}),
 	messageContentArea: css({
 		flexGrow: 1,
+
+		"p, ul, ol": {
+			marginBlockStart: 0,
+			marginBlockEnd: ".5rem",
+		},
 	}),
 	messageTimestamp: css({
 		marginInlineStart: ".5em",
@@ -228,7 +234,7 @@ export function LoadMoreTriggerer(props: {loadMore: () => void}) {
 	return <div ref={elemRef} />;
 }
 
-const MESSAGE_CONTENT_TYPE_PRIORITY: Array<MessageContent["type"]> = ["plain", "0393", "xhtml"];
+const MESSAGE_CONTENT_TYPE_PRIORITY: Array<MessageContent["type"]> = ["plain", "0393", "markdown", "xhtml"];
 
 function MessageContentView(props: {content: MessageContent[] | MessageContent}) {
 	const content = useMemo(() => {
@@ -255,6 +261,7 @@ function MessageContentView(props: {content: MessageContent[] | MessageContent})
 	if(content.type === "plain") return <span>{content.content}</span>;
 	else if(content.type === "0393") return <MessageContent0393 content={content.content} />;
 	else if(content.type === "xhtml") return <MessageContentXHTMLIM content={content.content} />;
+	else if(content.type === "markdown") return <MessageContentMarkdown content={content.content} />;
 	else {
 		const _: never = content;
 		return <ErrorAlert error="Unknown content type" />;
@@ -297,7 +304,7 @@ function MessageContentXHTMLIM(props: {content: xml.Element}) {
 	return children;
 }
 
-function convertXHTMLIMNodeToNode(src: xml.Node) {
+function convertXHTMLIMNodeToNode(src: xml.Node): ComponentChildren {
 	// We implement a rather conservative subset of XHTML.
 
 	if(typeof src === "string") {
@@ -346,10 +353,24 @@ function convertXHTMLIMNodeToNode(src: xml.Node) {
 			console.log("Failed to parse incoming style:", err);
 		}
 
-		return <span style={style}>{src.children.map(convertXHTMLIMNodeToNode)}</span>;
+		if(src.is("br")) return <br />;
+
+		let elem = "span";
+		if(["p", "em", "strong", "ul", "ol", "li", "blockquote", "div"].includes(src.getName())) elem = src.getName();
+		if(src.getName() === "body") elem = "div";
+
+		return h(elem, {style}, src.children.map(convertXHTMLIMNodeToNode));
 	}
 	else {
 		console.warn("Unexpected node type:", src);
 		return null;
 	}
+}
+
+function MessageContentMarkdown(props: {content: string}) {
+	const content = useMemo(() => {
+		return renderMarkdownToXHTML(parseMarkdown(props.content));
+	}, [props.content]);
+
+	return <MessageContentXHTMLIM content={content} />;
 }
