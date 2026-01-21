@@ -1417,6 +1417,8 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 					if(success) {
 						callback?.resolve({statuses});
 
+						let shouldFetchDisco = false;
+
 						accountsSig.value = accountsSig.value.map(item => {
 							if(item.client === client) {
 								const rooms = new Map(item.rooms);
@@ -1425,6 +1427,8 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 									console.log("Tried to update room missing in list");
 									return item;
 								}
+
+								if(!oldInfo.connected) shouldFetchDisco = true;
 
 								rooms.set(srcJID.bare().toString(), {
 									...oldInfo,
@@ -1440,7 +1444,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 							else return item;
 						});
 
-						fetchAndStoreRoomDisco(client, srcJID.bare());
+						if(shouldFetchDisco) fetchAndStoreRoomDisco(client, srcJID.bare());
 					}
 					else {
 						callback?.reject(new Error("Failed to join room"));
