@@ -180,3 +180,34 @@ function renderMarkdownTo0393Inner(src: Token[]) {
 
 	return result;
 }
+
+export function markdownHasAnyFormatting(src: Token[]): boolean {
+	let pCount = 0;
+
+	for(const token of src) {
+		if(token.type === "inline") {
+			if(token.children === null) {
+				// probably doesn't happen?
+				return true;
+			}
+
+			for(const child of token.children) {
+				if(child.type !== "text") {
+					return true;
+				}
+			}
+		}
+		else if(token.type === "paragraph_close") {
+			// this is fine
+		}
+		else if(token.type === "paragraph_open") {
+			pCount++;
+		}
+		else {
+			return true;
+		}
+	}
+
+	if(pCount > 1) return true;
+	else return false;
+}

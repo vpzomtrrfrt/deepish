@@ -14,7 +14,7 @@ import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "p
 import useLatestCallback from "use-latest-callback";
 
 import { compareRanks, DEFAULT_RANK, genRankBetween } from "./lexrank";
-import { parseMarkdown, renderMarkdownTo0393, renderMarkdownToXHTML } from "./markdown";
+import { markdownHasAnyFormatting, parseMarkdown, renderMarkdownTo0393, renderMarkdownToXHTML } from "./markdown";
 import { Counterpart, Presence, PresenceShowType, RosterEntry } from "./types";
 import { LoadState } from "./useData";
 import useEffectOnce from "./useEffectOnce";
@@ -1828,22 +1828,13 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 		const account = accounts.find(x => x.jid.equals(accountJID));
 		if(typeof account === "undefined") throw new Error("No such account");
 
-		const tokens = parseMarkdown(message.body);
+		const contentResult = convertMarkdownForSend(message.body);
 
 		await account.client.send(
 			xml(
 				"message",
 				{id: localID, to: targetJID.toString(), type: "chat"},
-				xml(
-					"body",
-					{},
-					renderMarkdownTo0393(tokens),
-				),
-				xml(
-					"html",
-					"http://jabber.org/protocol/xhtml-im",
-					renderMarkdownToXHTML(tokens),
-				),
+				...contentResult.elements,
 			),
 		);
 
@@ -1854,7 +1845,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 				from: accountJID,
 				occupantID: null,
 				to: targetJID,
-				content: [{type: "plain", content: message.body}],
+				content: contentResult.content,
 				ids: [
 					new StanzaID(StanzaIDType.Element, accountJID, localID),
 				],
@@ -1881,22 +1872,13 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 
 		outgoingMessagesRef.current.set(id, reflectDefer);
 
-		const tokens = parseMarkdown(message.body);
+		const contentResult = convertMarkdownForSend(message.body);
 
 		await account.client.send(
 			xml(
 				"message",
 				{id, to: roomJID.toString(), type: "groupchat"},
-				xml(
-					"body",
-					{},
-					renderMarkdownTo0393(tokens),
-				),
-				xml(
-					"html",
-					"http://jabber.org/protocol/xhtml-im",
-					renderMarkdownToXHTML(tokens),
-				),
+				...contentResult.elements,
 			),
 		);
 
@@ -2946,4 +2928,43 @@ async function publishRoomBookmarkExtension(client: xmppClient.Client, room: Roo
 		),
 		BOOKMARKS_PUBLISH_OPTIONS,
 	);
+}
+
+function convertMarkdownForSend(src: string): {content: MessageContent[]; elements: Element[]} {
+	const tokens = parseMarkdown(src);
+
+	if(markdownHasAnyFormatting(tokens)) {
+		const body = renderMarkdownTo0393(tokens);
+		const xhtml = renderMarkdownToXHTML(tokens);
+
+		return {
+			content: [
+				{type: "0393", content: body},
+				{type: "xhtml", content: xhtml},
+			],
+			elements: [
+				xml(
+					"body",
+					{},
+					renderMarkdownTo0393(tokens),
+				),
+				xml(
+					"html",
+					"http://jabber.org/protocol/xhtml-im",
+					renderMarkdownToXHTML(tokens),
+				),
+			],
+		};
+	}
+	else {
+		return {
+			content: [
+				{type: "plain", content: src},
+			],
+			elements: [
+				xml("body", {}, src),
+				xml("unstyled", "urn:xmpp:styling:0"),
+			],
+		};
+	}
 }
