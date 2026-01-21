@@ -109,6 +109,9 @@ export type MessageContent = {
 } | {
 	type: "0393";
 	content: string;
+} | {
+	type: "xhtml";
+	content: Element;
 };
 
 export interface Message {
@@ -893,6 +896,17 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 
 				const content: MessageContent[] = [];
 
+				const htmlElem = elem.getChild("html", "http://jabber.org/protocol/xhtml-im");
+				if(typeof htmlElem !== "undefined") {
+					const htmlBodyElem = htmlElem.getChild("body", "http://www.w3.org/1999/xhtml");
+					if(typeof htmlBodyElem !== "undefined") {
+						content.push({
+							type: "xhtml",
+							content: htmlBodyElem,
+						});
+					}
+				}
+
 				const body = elem.getChildText("body");
 				if(body !== null) {
 					const unstyledElem = elem.getChild("unstyled", "urn:xmpp:styling:0");
@@ -1044,6 +1058,17 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 			}
 
 			const content: MessageContent[] = [];
+
+			const htmlElem = elem.getChild("html", "http://jabber.org/protocol/xhtml-im");
+			if(typeof htmlElem !== "undefined") {
+				const htmlBodyElem = htmlElem.getChild("body", "http://www.w3.org/1999/xhtml");
+				if(typeof htmlBodyElem !== "undefined") {
+					content.push({
+						type: "xhtml",
+						content: htmlBodyElem,
+					});
+				}
+			}
 
 			const body = elem.getChildText("body");
 			if(body !== null) {

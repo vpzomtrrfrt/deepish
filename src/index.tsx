@@ -15,7 +15,7 @@ import DataView from "./components/DataView";
 import DialogContainer, { DialogContainerRef } from "./components/DialogContainer";
 import ChatPage from "./pages/chat";
 import LoginPage from "./pages/login";
-import { ConnectionContext, MessageEvent, useConnectionContext, useCreateConnection } from "./util/connection";
+import { ConnectionContext, MessageContent, MessageEvent, useConnectionContext, useCreateConnection } from "./util/connection";
 import matchLocale from "./util/matchLocale";
 import { maybeGetNickForCounterpart } from "./util/profileUtil";
 import { themeCSS, themeVars } from "./util/theme";
@@ -25,6 +25,8 @@ import useEventHandler from "./util/useEventHandler";
 
 const SUPPORTED_LANGUAGES = ["en", "eo"];
 const DEFAULT_LANGUAGE = "en";
+
+const NOTIFICATIONS_CONTENT_TYPE_PRIORITY: Array<MessageContent["type"]> = ["xhtml", "0393", "plain"];
 
 export interface AppContext {
 	cache: IDBCache;
@@ -191,7 +193,13 @@ function AppContent() {
 					let bestContent = evt.message.content[0];
 					for(let i = 1; i < evt.message.content.length; i++) {
 						const current = evt.message.content[i];
-						if(current.type === "plain") bestContent = current;
+
+						if(
+							NOTIFICATIONS_CONTENT_TYPE_PRIORITY.indexOf(current.type) >
+								NOTIFICATIONS_CONTENT_TYPE_PRIORITY.indexOf(bestContent.type)
+						) {
+							bestContent = current;
+						}
 					}
 
 					new Notification(
@@ -200,7 +208,7 @@ function AppContent() {
 							{name: maybeGetNickForCounterpart(contact, counterpart)},
 						),
 						{
-							body: bestContent.content,
+							body: bestContent.content.toString(),
 						},
 					);
 				}
