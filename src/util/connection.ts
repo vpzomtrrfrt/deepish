@@ -29,6 +29,7 @@ const FEATURES: string[] = [
 	"http://jabber.org/protocol/nick+notify",
 	"http://jabber.org/protocol/chatstates",
 	"urn:xmpp:message-retract:1",
+	"urn:xmpp:styling:0",
 ];
 const IDENTITY = {category: "client", type: "web", lang: "", name: "Deepish"};
 const NODE_URL = "https://deepish.vpzom.click";
@@ -101,12 +102,20 @@ export type MessageRemoval = {
 	"type": "retract";
 };
 
+export type MessageContent = {
+	type: "plain";
+	content: string;
+} | {
+	type: "0393";
+	content: string;
+};
+
 export interface Message {
 	room: JID | null;
 	from: JID;
 	occupantID: string | null;
 	to: JID | null;
-	content: string;
+	content: MessageContent[];
 	ids: StanzaID[];
 	localID: string;
 	timestamp: Date;
@@ -858,7 +867,6 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 					}
 				}
 
-				const content = elem.getChildText("body");
 				let ignore = false;
 
 				const retractElem = elem.getChild("retract", "urn:xmpp:message-retract:1");
@@ -882,7 +890,19 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 					}
 				}
 
-				if(content !== null && !ignore) {
+				const content: MessageContent[] = [];
+
+				const body = elem.getChildText("body");
+				if(body !== null) {
+					const unstyledElem = elem.getChild("unstyled", "urn:xmpp:styling:0");
+
+					content.push({
+						type: typeof unstyledElem === "undefined" ? "0393" : "plain",
+						content: body,
+					});
+				}
+
+				if(content.length > 0 && !ignore) {
 					let timestamp: Date | null = timestampFromWrapper ?? null;
 
 					const delayElem = elem.getChild("delay", "urn:xmpp:delay");
@@ -999,7 +1019,6 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 
 			if(typeof from !== "undefined") handleChatStateUpdate(client, elem, from.bare());
 
-			const content = elem.getChildText("body");
 			let ignore = false;
 
 			const retractElem = elem.getChild("retract", "urn:xmpp:message-retract:1");
@@ -1023,7 +1042,17 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 				}
 			}
 
-			if(content !== null && typeof from !== "undefined" && typeof to !== "undefined" && !ignore) {
+			const content: MessageContent[] = [];
+
+			const body = elem.getChildText("body");
+			if(body !== null) {
+				content.push({
+					type: "plain",
+					content: body,
+				});
+			}
+
+			if(content.length > 0 && typeof from !== "undefined" && typeof to !== "undefined" && !ignore) {
 				let timestamp: Date | null = timestampFromWrapper ?? null;
 
 				const delayElem = elem.getChild("delay", "urn:xmpp:delay");
@@ -1792,7 +1821,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 				from: accountJID,
 				occupantID: null,
 				to: targetJID,
-				content: message.body,
+				content: [{type: "plain", content: message.body}],
 				ids: [
 					new StanzaID(StanzaIDType.Element, accountJID, localID),
 				],

@@ -188,13 +188,19 @@ function AppContent() {
 				if(typeof account !== "undefined") {
 					const counterpart = account.counterparts.get(contact.toString());
 
+					let bestContent = evt.message.content[0];
+					for(let i = 1; i < evt.message.content.length; i++) {
+						const current = evt.message.content[i];
+						if(current.type === "plain") bestContent = current;
+					}
+
 					new Notification(
 						$t(
 							{defaultMessage: "New message from {name}"},
 							{name: maybeGetNickForCounterpart(contact, counterpart)},
 						),
 						{
-							body: evt.message.content,
+							body: bestContent.content,
 						},
 					);
 				}

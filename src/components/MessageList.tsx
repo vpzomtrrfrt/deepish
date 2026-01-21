@@ -1,12 +1,14 @@
 import { css, cx } from "@emotion/css";
 import { ComponentChildren, JSX, VNode } from "preact";
-import { useCallback, useEffect, useLayoutEffect, useRef } from "preact/hooks";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "preact/hooks";
 import { useIntl } from "react-intl";
 import { List, ListImperativeAPI, RowComponentProps, useDynamicRowHeight } from "react-window";
 
-import { Message, useAccount } from "../util/connection";
+import { Message, MessageContent, useAccount } from "../util/connection";
 import { maybeGetNickForCounterpart } from "../util/profileUtil";
+import { parse0393, StylingBlock0393, StylingSpan0393 } from "../util/xmpp/styling";
 import Avatar from "./Avatar";
+import { ErrorAlert } from "./DataView";
 
 const DEFAULT_ROW_HEIGHT = 70;
 
@@ -195,7 +197,7 @@ function RealMessageRow(props: RowComponentProps<{message: Message; renderMenu(m
 			<div>
 				{
 					message.removal === null ?
-						message.content :
+						<MessageContentView content={message.content} /> :
 						<em>{$t({defaultMessage: "This message has been deleted"})}</em>
 				}
 			</div>
@@ -222,4 +224,59 @@ export function LoadMoreTriggerer(props: {loadMore: () => void}) {
 	}, [props.loadMore]);
 
 	return <div ref={elemRef} />;
+}
+
+function MessageContentView(props: {content: MessageContent[] | MessageContent}) {
+	const content = useMemo(() => {
+		if(Array.isArray(props.content)) {
+			let best = props.content[0];
+			for(let i = 1; i < props.content.length; i++) {
+				const current = props.content[i];
+
+				if(current.type === "plain") best = current;
+			}
+
+			return best;
+		}
+		else {
+			return props.content;
+		}
+	}, [props.content]);
+
+	if(content.type === "plain") return <span>{content.content}</span>;
+	else if(content.type === "0393") return <MessageContent0393 content={content.content} />;
+	else {
+		const _: never = content;
+		return <ErrorAlert error="Unknown content type" />;
+	}
+}
+
+function MessageContent0393(props: {content: string}) {
+	const children = useMemo(() => parse0393(props.content).map(convert0393BlockToNode), [props.content]);
+
+	return children;
+}
+
+function convert0393BlockToNode(block: StylingBlock0393) {
+	if(block.type === "plain") return <div>{block.children.map(convert0393SpanToNode)}</div>;
+	else if(block.type === "pre") return <pre><code>{block.text}</code></pre>;
+	else if(block.type === "quote") return <blockquote>{block.children.map(convert0393BlockToNode)}</blockquote>;
+	else {
+		const _: never = block;
+		console.warn("Unknown block type");
+		return <div />;
+	}
+}
+
+function convert0393SpanToNode(span: StylingSpan0393) {
+	if(span.type === "plain") return span.text;
+	else if(span.type === "pre") return <code>`{span.text}`</code>;
+	else if(span.type === "strikethrough") return <del>~{span.children.map(convert0393SpanToNode)}~</del>;
+	else if(span.type === "strong") return <strong>*{span.children.map(convert0393SpanToNode)}*</strong>;
+	else if(span.type === "em") return <em>_{span.children.map(convert0393SpanToNode)}_</em>;
+	else {
+		const _: never = span.type;
+		console.warn("Unknown span type");
+		return <span />;
+	}
 }
