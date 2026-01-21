@@ -2905,6 +2905,7 @@ function convertMarkdownForSend(src: string): {content: MessageContent[]; elemen
 			content: [
 				{type: "0393", content: body},
 				{type: "xhtml", content: xhtml},
+				{type: "markdown", content: src},
 			],
 			elements: [
 				xml(
@@ -2916,6 +2917,11 @@ function convertMarkdownForSend(src: string): {content: MessageContent[]; elemen
 					"html",
 					"http://jabber.org/protocol/xhtml-im",
 					renderMarkdownToXHTML(tokens),
+				),
+				xml(
+					"content",
+					{xmlns: "urn:xmpp:content", type: "text/markdown"},
+					src,
 				),
 			],
 		};
