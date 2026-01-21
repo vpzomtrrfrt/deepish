@@ -99,6 +99,11 @@ function renderMarkdownToXHTMLInner(src: Token[]): Element {
 }
 
 export function renderMarkdownTo0393(src: Token[]) {
+	const result = renderMarkdownTo0393Inner(src);
+	return result.trimEnd();
+}
+
+function renderMarkdownTo0393Inner(src: Token[]) {
 	let result = "";
 
 	const listStack: Array<{type: "ordered" | "unordered"}> = [];
@@ -117,7 +122,7 @@ export function renderMarkdownTo0393(src: Token[]) {
 			}
 
 			if(i < src.length) {
-				const content = renderMarkdownTo0393(src.slice(startIndex + 1, i - 1)).trimEnd();
+				const content = renderMarkdownTo0393Inner(src.slice(startIndex + 1, i - 1)).trimEnd();
 				result += "> " + content.replaceAll("\n", "\n> ") + "\n";
 			}
 			else {
@@ -137,7 +142,7 @@ export function renderMarkdownTo0393(src: Token[]) {
 			result += "```\n" + token.content + "```\n";
 		}
 		else if(token.type === "inline") {
-			if(token.children !== null) result += renderMarkdownTo0393(token.children);
+			if(token.children !== null) result += renderMarkdownTo0393Inner(token.children);
 		}
 		else if(token.type === "list_item_open") {
 			if(listStack.length < 1) {
