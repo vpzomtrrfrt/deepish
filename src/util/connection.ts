@@ -14,6 +14,7 @@ import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "p
 import useLatestCallback from "use-latest-callback";
 
 import { compareRanks, DEFAULT_RANK, genRankBetween } from "./lexrank";
+import { parseMarkdown, renderMarkdownTo0393 } from "./markdown";
 import { Counterpart, Presence, PresenceShowType, RosterEntry } from "./types";
 import { LoadState } from "./useData";
 import useEffectOnce from "./useEffectOnce";
@@ -1809,7 +1810,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 				xml(
 					"body",
 					{},
-					message.body,
+					renderMarkdownTo0393(parseMarkdown(message.body)),
 				),
 			),
 		);
@@ -1855,7 +1856,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 				xml(
 					"body",
 					{},
-					message.body,
+					renderMarkdownTo0393(parseMarkdown(message.body)),
 				),
 			),
 		);

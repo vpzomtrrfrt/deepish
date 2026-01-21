@@ -21,6 +21,7 @@
     "es-arraybuffer-base64": "^1.1.2",
     "hsluv": "^1.0.1",
     "linkstate": "^2.0.1",
+    "markdown-it": "^14.1.0",
     "preact": "^10.28.0",
     "react-intl": "^8.0.11",
     "react-window": "^2.2.3",
@@ -34,6 +35,7 @@
   "devDependencies": {
     "@eslint/js": "^9.39.1",
     "@preact/preset-vite": "^2.10.2",
+    "@types/markdown-it": "^14.1.2",
     "@types/sha.js": "^2.4.4",
     "@types/xmpp__client": "^0.13.4",
     "@types/xmpp__id": "^0.13.2",
