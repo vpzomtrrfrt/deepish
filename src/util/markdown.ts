@@ -1,3 +1,4 @@
+import xml, { Element } from "@xmpp/xml";
 import MarkdownIt, { Token } from "markdown-it";
 
 const parser = new MarkdownIt("zero", {
@@ -10,8 +11,59 @@ export function parseMarkdown(src: string) {
 	return parser.parse(src, {});
 }
 
-export function renderMarkdownToXHTML(src: Token[]) {
-	return parser.renderer.render(src, parser.options, {});
+export function renderMarkdownToXHTML(src: Token[]): Element {
+	const stack = [xml("body", "http://www.w3.org/1999/xhtml")];
+
+	for(let i = 0; i < src.length; i++) {
+		const token = src[i];
+
+		if(token.nesting > 0) {
+			const elem = xml(token.tag);
+
+			if(token.attrs !== null) {
+				token.attrs.forEach(([key, value]) => {
+					elem.attr(key, value);
+				});
+			}
+
+			stack.push(elem);
+		}
+		else if(token.nesting < 0) {
+			if(stack.length < 2) throw new Error("Tried to close body");
+
+			const child = stack.pop()!;
+			stack[stack.length - 1].children.push(child);
+		}
+		else {
+			if(token.type === "inline") {
+				if(token.children !== null) {
+					stack[stack.length - 1].children.push(...renderMarkdownToXHTML(token.children).children);
+				}
+			}
+			else if(token.type === "text") {
+				stack[stack.length - 1].children.push(token.content);
+			}
+			else {
+				if(token.tag === "") {
+					console.warn("Unknown token type", token);
+				}
+				else {
+					const elem = xml(token.tag);
+
+					if(token.attrs !== null) {
+						token.attrs.forEach(([key, value]) => {
+							elem.attr(key, value);
+						});
+					}
+
+					stack[stack.length - 1].children.push(elem);
+				}
+			}
+		}
+	}
+
+	if(stack.length > 1) throw new Error("Unclosed tag?");
+	return stack[0];
 }
 
 export function renderMarkdownTo0393(src: Token[]) {

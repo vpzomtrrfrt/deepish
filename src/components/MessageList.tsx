@@ -1,7 +1,7 @@
 import { css, cx } from "@emotion/css";
 import * as xml from "@xmpp/xml";
 import inlineStyleParser from "inline-style-parser";
-import { ComponentChildren, JSX, VNode } from "preact";
+import { ComponentChildren, h, JSX, VNode } from "preact";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "preact/hooks";
 import { useIntl } from "react-intl";
 import { List, ListImperativeAPI, RowComponentProps, useDynamicRowHeight } from "react-window";
@@ -297,7 +297,7 @@ function MessageContentXHTMLIM(props: {content: xml.Element}) {
 	return children;
 }
 
-function convertXHTMLIMNodeToNode(src: xml.Node) {
+function convertXHTMLIMNodeToNode(src: xml.Node): ComponentChildren {
 	// We implement a rather conservative subset of XHTML.
 
 	if(typeof src === "string") {
@@ -346,7 +346,12 @@ function convertXHTMLIMNodeToNode(src: xml.Node) {
 			console.log("Failed to parse incoming style:", err);
 		}
 
-		return <span style={style}>{src.children.map(convertXHTMLIMNodeToNode)}</span>;
+		if(src.is("br")) return <br />;
+
+		let elem = "span";
+		if(["p", "em", "strong", "ul", "ol", "li", "blockquote"].includes(src.getName())) elem = src.getName();
+
+		return h(elem, {style}, src.children.map(convertXHTMLIMNodeToNode));
 	}
 	else {
 		console.warn("Unexpected node type:", src);

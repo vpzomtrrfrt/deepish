@@ -14,7 +14,7 @@ import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "p
 import useLatestCallback from "use-latest-callback";
 
 import { compareRanks, DEFAULT_RANK, genRankBetween } from "./lexrank";
-import { parseMarkdown, renderMarkdownTo0393 } from "./markdown";
+import { parseMarkdown, renderMarkdownTo0393, renderMarkdownToXHTML } from "./markdown";
 import { Counterpart, Presence, PresenceShowType, RosterEntry } from "./types";
 import { LoadState } from "./useData";
 import useEffectOnce from "./useEffectOnce";
@@ -1828,6 +1828,8 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 		const account = accounts.find(x => x.jid.equals(accountJID));
 		if(typeof account === "undefined") throw new Error("No such account");
 
+		const tokens = parseMarkdown(message.body);
+
 		await account.client.send(
 			xml(
 				"message",
@@ -1835,7 +1837,12 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 				xml(
 					"body",
 					{},
-					renderMarkdownTo0393(parseMarkdown(message.body)),
+					renderMarkdownTo0393(tokens),
+				),
+				xml(
+					"html",
+					"http://jabber.org/protocol/xhtml-im",
+					renderMarkdownToXHTML(tokens),
 				),
 			),
 		);
@@ -1874,6 +1881,8 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 
 		outgoingMessagesRef.current.set(id, reflectDefer);
 
+		const tokens = parseMarkdown(message.body);
+
 		await account.client.send(
 			xml(
 				"message",
@@ -1881,7 +1890,12 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 				xml(
 					"body",
 					{},
-					renderMarkdownTo0393(parseMarkdown(message.body)),
+					renderMarkdownTo0393(tokens),
+				),
+				xml(
+					"html",
+					"http://jabber.org/protocol/xhtml-im",
+					renderMarkdownToXHTML(tokens),
 				),
 			),
 		);
