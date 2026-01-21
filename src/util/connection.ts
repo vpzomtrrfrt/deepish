@@ -31,6 +31,7 @@ const FEATURES: string[] = [
 	"http://jabber.org/protocol/chatstates",
 	"urn:xmpp:message-retract:1",
 	"urn:xmpp:styling:0",
+	"urn:xmpp:content",
 ];
 const IDENTITY = {category: "client", type: "web", lang: "", name: "Deepish"};
 const NODE_URL = "https://deepish.vpzom.click";
@@ -112,6 +113,9 @@ export type MessageContent = {
 } | {
 	type: "xhtml";
 	content: Element;
+} | {
+	type: "markdown";
+	content: string;
 };
 
 export interface Message {
@@ -894,28 +898,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 					}
 				}
 
-				const content: MessageContent[] = [];
-
-				const htmlElem = elem.getChild("html", "http://jabber.org/protocol/xhtml-im");
-				if(typeof htmlElem !== "undefined") {
-					const htmlBodyElem = htmlElem.getChild("body", "http://www.w3.org/1999/xhtml");
-					if(typeof htmlBodyElem !== "undefined") {
-						content.push({
-							type: "xhtml",
-							content: htmlBodyElem,
-						});
-					}
-				}
-
-				const body = elem.getChildText("body");
-				if(body !== null) {
-					const unstyledElem = elem.getChild("unstyled", "urn:xmpp:styling:0");
-
-					content.push({
-						type: typeof unstyledElem === "undefined" ? "0393" : "plain",
-						content: body,
-					});
-				}
+				const content = getContentFromMessageElement(elem);
 
 				if(content.length > 0 && !ignore) {
 					let timestamp: Date | null = timestampFromWrapper ?? null;
@@ -1057,26 +1040,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 				}
 			}
 
-			const content: MessageContent[] = [];
-
-			const htmlElem = elem.getChild("html", "http://jabber.org/protocol/xhtml-im");
-			if(typeof htmlElem !== "undefined") {
-				const htmlBodyElem = htmlElem.getChild("body", "http://www.w3.org/1999/xhtml");
-				if(typeof htmlBodyElem !== "undefined") {
-					content.push({
-						type: "xhtml",
-						content: htmlBodyElem,
-					});
-				}
-			}
-
-			const body = elem.getChildText("body");
-			if(body !== null) {
-				content.push({
-					type: "plain",
-					content: body,
-				});
-			}
+			const content = getContentFromMessageElement(elem);
 
 			if(content.length > 0 && typeof from !== "undefined" && typeof to !== "undefined" && !ignore) {
 				let timestamp: Date | null = timestampFromWrapper ?? null;
@@ -2967,4 +2931,49 @@ function convertMarkdownForSend(src: string): {content: MessageContent[]; elemen
 			],
 		};
 	}
+}
+
+function getContentFromMessageElement(elem: Element): MessageContent[] {
+	const content: MessageContent[] = [];
+
+	const htmlElem = elem.getChild("html", "http://jabber.org/protocol/xhtml-im");
+	if(typeof htmlElem !== "undefined") {
+		const htmlBodyElem = htmlElem.getChild("body", "http://www.w3.org/1999/xhtml");
+		if(typeof htmlBodyElem !== "undefined") {
+			content.push({
+				type: "xhtml",
+				content: htmlBodyElem,
+			});
+		}
+	}
+
+	const contentElems = elem.getChildren("content", "urn:xmpp:content");
+
+	const body = elem.getChildText("body");
+	if(body !== null) {
+		const unstyledElem = elem.getChild("unstyled", "urn:xmpp:styling:0");
+
+		const typeHint = contentElems.find(x => x.children.length === 0);
+
+		content.push({
+			type: typeHint?.getAttr("type") === "text/markdown" ?
+				"markdown" :
+				(typeof unstyledElem === "undefined" ? "0393" : "plain"),
+			content: body,
+		});
+	}
+
+	contentElems.forEach(contentElem => {
+		if(contentElem.children.length < 1) return;
+
+		const value = contentElem.getText();
+		if(contentElem.getAttr("type") === "text/markdown") {
+			content.push({
+				type: "markdown",
+				content: value,
+			});
+		}
+	});
+
+	return content;
 }
