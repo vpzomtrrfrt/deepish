@@ -4,6 +4,7 @@ import { attachInstruction, extractInstruction, Instruction } from "@atlaskit/pr
 import { DropIndicator } from "@atlaskit/pragmatic-drag-and-drop-react-drop-indicator/list-item";
 import { css, cx } from "@emotion/css";
 import { mdiAccountMultiple, mdiCheck, mdiClose, mdiHome, mdiPlus } from "@mdi/js";
+import { useComputed } from "@preact/signals";
 import { JID, parse as parseJID } from "@xmpp/jid";
 import useLinkState from "linkstate/hook";
 import { JSX } from "preact";
@@ -29,7 +30,7 @@ import SettingsDialog from "../../components/SettingsDialog";
 import { ManualTabsContainer, TabLink, TabsList } from "../../components/Tabs";
 import WithTooltip from "../../components/WithTooltip";
 import * as commonStyles from "../../util/commonStyles";
-import { Room, useAccount, useConnectionContext } from "../../util/connection";
+import { Room, useAccount, useAccountSig, useConnectionContext } from "../../util/connection";
 import { msgActionAdd, presenceShowTypeNames } from "../../util/langCommon";
 import { compareRanks } from "../../util/lexrank";
 import { getNickForCounterpart } from "../../util/profileUtil";
@@ -247,9 +248,11 @@ const styles = {
 };
 
 export default function ChatPage() {
-	const account = useAccount();
+	const accountSig = useAccountSig();
 
-	if(!account.connected) {
+	const connectedSig = useComputed(() => accountSig.value!.connected);
+
+	if(!connectedSig.value) {
 		return <ConnectingView />;
 	}
 

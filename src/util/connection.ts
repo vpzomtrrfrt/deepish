@@ -1,5 +1,5 @@
 import { IDBCache } from "@instructure/idb-cache";
-import { Signal, useSignal } from "@preact/signals";
+import { Signal, useComputed, useSignal } from "@preact/signals";
 import Connection from "@xmpp/connection";
 import xid from "@xmpp/id";
 import { JID, parse as parseJID } from "@xmpp/jid";
@@ -177,10 +177,11 @@ interface ImageInfo {
 }
 
 export interface ConnectionContext {
-	accounts: Account[];
 	accountsSig: Signal<Account[]>;
 	inited: boolean;
 	idle: IdleState;
+
+	getAccount(identifier: JID): Account;
 
 	saveToken(jid: JID, token: unknown, userAgent: string, resource: string): void;
 	logout(jid: JID): void;
@@ -234,7 +235,6 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 	// eventually we might support multiple accounts
 	// just one for now though
 	const accountsSig = useSignal<Account[]>([]);
-	const accounts = accountsSig.value;
 
 	const [inited, setInited] = useState(false);
 
@@ -252,6 +252,18 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 			else return account;
 		});
 	}, [accountsSig]);
+
+	const tryGetAccount = useCallback((identifier: xmppClient.Client | JID) => {
+		return accountsSig.value.find(account => {
+			return identifier instanceof JID ? account.jid.equals(identifier) : account.client === identifier;
+		});
+	}, [accountsSig]);
+
+	const getAccount = useCallback((identifier: xmppClient.Client | JID) => {
+		const result = tryGetAccount(identifier);
+		if(typeof result === "undefined") throw new Error("No such account");
+		else return result;
+	}, [tryGetAccount]);
 
 	const upsertCounterpart = useCallback(
 		(accountIdentifier: xmppClient.Client | JID, counterpartJID: JID, fn: (current: Counterpart) => Counterpart) => {
@@ -737,7 +749,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 	});
 
 	const sendMyPresences = useLatestCallback(() => {
-		accounts.forEach(account => {
+		accountsSig.value.forEach(account => {
 			if(account.client.status === "online" || account.client.status === "open") {
 				sendMyPresence(account.client);
 			}
@@ -1182,11 +1194,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 
 	const startRequestingAvatar = useLatestCallback((client: xmppClient.Client, target: JID, expectedHashes: string[]) => {
 		{
-			const account = accounts.find(x => x.client === client);
-			if(typeof account === "undefined") {
-				console.warn("No such account");
-				return;
-			}
+			const account = getAccount(client);
 
 			for(const hash of expectedHashes) {
 				const state = account.avatarStates.get(hash);
@@ -1731,8 +1739,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 
 	const requestArchive = useLatestCallback(
 		async (accountJID: JID, entity: JID, params: {with?: JID}, before?: string, options: {max?: number} = {}) => {
-			const account = accounts.find(x => x.jid.equals(accountJID));
-			if(typeof account === "undefined") throw new Error("No such account");
+			const account = getAccount(accountJID);
 
 			return account.client.iqCaller.request(
 				xml(
@@ -1793,8 +1800,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 	const sendMessageToCounterpart = useLatestCallback(async (accountJID: JID, targetJID: JID, message: {body: string}) => {
 		const localID = xid();
 
-		const account = accounts.find(x => x.jid.equals(accountJID));
-		if(typeof account === "undefined") throw new Error("No such account");
+		const account = getAccount(accountJID);
 
 		const contentResult = convertMarkdownForSend(message.body);
 
@@ -1833,8 +1839,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 	const sendMessageToRoom = useLatestCallback(async (accountJID: JID, roomJID: JID, message: {body: string}) => {
 		const id = xid();
 
-		const account = accounts.find(x => x.jid.equals(accountJID));
-		if(typeof account === "undefined") throw new Error("No such account");
+		const account = getAccount(accountJID);
 
 		const reflectDefer = Promise.withResolvers<void>();
 
@@ -1854,8 +1859,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 	});
 
 	const retractMessageToCounterpart = useLatestCallback(async (accountJID: JID, targetJID: JID, messageID: string) => {
-		const account = accounts.find(x => x.jid.equals(accountJID));
-		if(typeof account === "undefined") throw new Error("No such account");
+		const account = getAccount(accountJID);
 
 		await account.client.send(
 			xml(
@@ -1896,8 +1900,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 	const retractMessageToRoom = useLatestCallback(async (accountJID: JID, roomJID: JID, messageID: string) => {
 		const id = xid();
 
-		const account = accounts.find(x => x.jid.equals(accountJID));
-		if(typeof account === "undefined") throw new Error("No such account");
+		const account = getAccount(accountJID);
 
 		const reflectDefer = Promise.withResolvers<void>();
 
@@ -1941,8 +1944,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 	});
 
 	const acceptFriendRequest = useLatestCallback((accountJID: JID, target: JID) => {
-		const account = accounts.find(x => x.jid.equals(accountJID));
-		if(typeof account === "undefined") throw new Error("No such account");
+		const account = getAccount(accountJID);
 
 		const info = account.counterparts.get(target.toString());
 		if(typeof info === "undefined") throw new Error("Unknown counterpart");
@@ -1971,8 +1973,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 
 	const rejectFriendRequest = useLatestCallback((accountJID: JID, target: JID) => {
 		{
-			const account = accounts.find(x => x.jid.equals(accountJID));
-			if(typeof account === "undefined") throw new Error("No such account");
+			const account = getAccount(accountJID);
 
 			const info = account.counterparts.get(target.toString());
 			if(typeof info === "undefined") throw new Error("Unknown counterpart");
@@ -1992,8 +1993,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 
 	const removeFriend = useLatestCallback(async (accountJID: JID, target: JID) => {
 		{
-			const account = accounts.find(x => x.jid.equals(accountJID));
-			if(typeof account === "undefined") throw new Error("No such account");
+			const account = getAccount(accountJID);
 
 			await account.client.iqCaller.set(
 				xml(
@@ -2025,8 +2025,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 
 	const sendFriendRequest = useLatestCallback((accountJID: JID, target: JID) => {
 		{
-			const account = accounts.find(x => x.jid.equals(accountJID));
-			if(typeof account === "undefined") throw new Error("No such account");
+			const account = getAccount(accountJID);
 
 			const entry = account.counterparts.get(target.toString());
 
@@ -2061,16 +2060,14 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 	});
 
 	const fetchRoomInfo = useLatestCallback(async (accountJID: JID, roomJID: JID) => {
-		const account = accounts.find(x => x.jid.equals(accountJID));
-		if(typeof account === "undefined") throw new Error("No such account");
+		const account = getAccount(accountJID);
 
 		return fetchRoomDisco(account.client, roomJID);
 	});
 
 	const setComposingToCounterpart = useLatestCallback((accountJID: JID, target: JID, composing: boolean) => {
 		{
-			const account = accounts.find(x => x.jid.equals(accountJID));
-			if(typeof account === "undefined") throw new Error("No such account");
+			const account = getAccount(accountJID);
 
 			const counterpart = account.counterparts.get(target.toString());
 			if(counterpart?.lastReportedComposing === composing) return;
@@ -2094,8 +2091,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 
 	const setComposingToRoom = useLatestCallback((accountJID: JID, roomJID: JID, composing: boolean) => {
 		{
-			const account = accounts.find(x => x.jid.equals(accountJID));
-			if(typeof account === "undefined") throw new Error("No such account");
+			const account = getAccount(accountJID);
 
 			const room = account.rooms.get(roomJID.toString());
 			if(room?.lastReportedComposing === composing) return;
@@ -2134,8 +2130,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 	});
 
 	const joinRoom = useLatestCallback(async (accountJID: JID, room: JID, nick?: string) => {
-		const account = accounts.find(x => x.jid.equals(accountJID));
-		if(typeof account === "undefined") throw new Error("No such account");
+		const account = getAccount(accountJID);
 
 		if(account.rooms.has(room.toString())) {
 			// already joined
@@ -2240,8 +2235,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 
 	const leaveRoom = useLatestCallback(async (accountJID: JID, roomJID: JID) => {
 		{
-			const account = accounts.find(x => x.jid.equals(accountJID));
-			if(typeof account === "undefined") throw new Error("No such account");
+			const account = getAccount(accountJID);
 
 			const room = account.rooms.get(roomJID.toString());
 			if(typeof room === "undefined") return;
@@ -2269,8 +2263,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 			"muc#roomconfig_roomname": params.name,
 		};
 
-		const account = accounts.find(x => x.jid.equals(accountJID));
-		if(typeof account === "undefined") throw new Error("No such account");
+		const account = getAccount(accountJID);
 
 		if(account.rooms.has(room.toString())) throw new Error("A room by that JID already exists");
 
@@ -2370,8 +2363,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 
 	const submitDisplayedUpdateInner = useLatestCallback(
 		async (accountJID: JID, targetJID: JID, lastReadMessageID: string, isRoom: boolean) => {
-			const account = accounts.find(x => x.jid.equals(accountJID));
-			if(typeof account === "undefined") throw new Error("No such account");
+			const account = getAccount(accountJID);
 
 			publishPubsubItem(
 				account.client,
@@ -2442,8 +2434,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 	);
 
 	const setNick = useLatestCallback(async (accountJID: JID, value: string) => {
-		const account = accounts.find(x => x.jid.equals(accountJID));
-		if(typeof account === "undefined") throw new Error("No such account");
+		const account = getAccount(accountJID);
 
 		await publishPubsubItem(
 			account.client,
@@ -2461,8 +2452,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 	});
 
 	const setAvatar = useLatestCallback(async (accountJID: JID, value: ImageInfo) => {
-		const account = accounts.find(x => x.jid.equals(accountJID));
-		if(typeof account === "undefined") throw new Error("No such account");
+		const account = getAccount(accountJID);
 
 		const content = await value.content.bytes();
 		const hash = await crypto.subtle.digest("SHA-1", content);
@@ -2623,14 +2613,14 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 				return {...current, rooms};
 			}
 		});
-	}, [accountsSig.value, updateAccount]);
+	}, [accountsSig, updateAccount]);
 
 	useEffectOnce(() => {
 		loadAccounts();
 	});
 
 	const onUnmount = useLatestCallback(() => {
-		accounts.forEach(account => {
+		accountsSig.value.forEach(account => {
 			account.client.stop();
 		});
 	});
@@ -2640,16 +2630,18 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 
 	return useMemo(
 		() => ({
-			accounts,
 			accountsSig,
 			inited,
 			idle,
+
+			getAccount,
 
 			saveToken(jid, token, userAgent, resource) {
 				localStorage.setItem("deepishAccount", JSON.stringify({jid: jid.toString(), token, userAgent, resource}));
 				loadAccounts();
 			},
 			logout(jid) {
+				const accounts = accountsSig.value;
 				if(accounts.length > 0 && accounts[0].jid.equals(jid)) {
 					localStorage.removeItem("deepishAccount");
 					loadAccounts();
@@ -2682,10 +2674,10 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 			setRoomNotificationLevel,
 		} satisfies ConnectionContext),
 		[
-			accounts,
 			accountsSig,
 			inited,
 			idle,
+			getAccount,
 			addEventListener,
 			removeEventListener,
 			requestArchive,
@@ -2829,9 +2821,14 @@ async function genVerString(
 	return toBase64(new Uint8Array(hash));
 }
 
+export function useAccountSig(): Signal<Account | undefined> {
+	const connectionCtx = useConnectionContext();
+	return useComputed(() => connectionCtx.accountsSig.value[0]);
+}
+
 export function useAccount() {
 	const connectionCtx = useConnectionContext();
-	const account = connectionCtx.accounts[0];
+	const account = connectionCtx.accountsSig.value[0];
 	if(typeof account === "undefined") throw new Error("Attempted to read account while not logged in");
 
 	return account;
