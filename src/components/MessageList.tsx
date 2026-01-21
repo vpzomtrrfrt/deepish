@@ -349,7 +349,8 @@ function convertXHTMLIMNodeToNode(src: xml.Node): ComponentChildren {
 		if(src.is("br")) return <br />;
 
 		let elem = "span";
-		if(["p", "em", "strong", "ul", "ol", "li", "blockquote"].includes(src.getName())) elem = src.getName();
+		if(["p", "em", "strong", "ul", "ol", "li", "blockquote", "div"].includes(src.getName())) elem = src.getName();
+		if(src.getName() === "body") elem = "div";
 
 		return h(elem, {style}, src.children.map(convertXHTMLIMNodeToNode));
 	}
