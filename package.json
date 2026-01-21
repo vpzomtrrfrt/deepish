@@ -20,6 +20,7 @@
     "emoji-picker-element-data": "^1.8.0",
     "es-arraybuffer-base64": "^1.1.2",
     "hsluv": "^1.0.1",
+    "inline-style-parser": "^0.2.7",
     "linkstate": "^2.0.1",
     "preact": "^10.28.0",
     "react-intl": "^8.0.11",

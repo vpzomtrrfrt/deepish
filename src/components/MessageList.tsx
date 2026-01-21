@@ -1,4 +1,6 @@
 import { css, cx } from "@emotion/css";
+import * as xml from "@xmpp/xml";
+import inlineStyleParser from "inline-style-parser";
 import { ComponentChildren, JSX, VNode } from "preact";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "preact/hooks";
 import { useIntl } from "react-intl";
@@ -226,6 +228,8 @@ export function LoadMoreTriggerer(props: {loadMore: () => void}) {
 	return <div ref={elemRef} />;
 }
 
+const MESSAGE_CONTENT_TYPE_PRIORITY: Array<MessageContent["type"]> = ["plain", "0393", "xhtml"];
+
 function MessageContentView(props: {content: MessageContent[] | MessageContent}) {
 	const content = useMemo(() => {
 		if(Array.isArray(props.content)) {
@@ -233,7 +237,12 @@ function MessageContentView(props: {content: MessageContent[] | MessageContent})
 			for(let i = 1; i < props.content.length; i++) {
 				const current = props.content[i];
 
-				if(current.type === "plain") best = current;
+				if(
+					MESSAGE_CONTENT_TYPE_PRIORITY.indexOf(current.type) >
+						MESSAGE_CONTENT_TYPE_PRIORITY.indexOf(best.type)
+				) {
+					best = current;
+				}
 			}
 
 			return best;
@@ -245,6 +254,7 @@ function MessageContentView(props: {content: MessageContent[] | MessageContent})
 
 	if(content.type === "plain") return <span>{content.content}</span>;
 	else if(content.type === "0393") return <MessageContent0393 content={content.content} />;
+	else if(content.type === "xhtml") return <MessageContentXHTMLIM content={content.content} />;
 	else {
 		const _: never = content;
 		return <ErrorAlert error="Unknown content type" />;
@@ -278,5 +288,68 @@ function convert0393SpanToNode(span: StylingSpan0393) {
 		const _: never = span.type;
 		console.warn("Unknown span type");
 		return <span />;
+	}
+}
+
+function MessageContentXHTMLIM(props: {content: xml.Element}) {
+	const children = useMemo(() => convertXHTMLIMNodeToNode(props.content), [props.content]);
+
+	return children;
+}
+
+function convertXHTMLIMNodeToNode(src: xml.Node) {
+	// We implement a rather conservative subset of XHTML.
+
+	if(typeof src === "string") {
+		return src;
+	}
+	else if(src instanceof xml.Element) {
+		const style: JSX.CSSProperties = {};
+		try {
+			const srcStyleStr = src.getAttr("style");
+			const srcStyle = typeof srcStyleStr === "string" ?
+				inlineStyleParser(srcStyleStr) :
+				[];
+
+			srcStyle.forEach(entry => {
+				if(entry.type === "declaration") {
+					if(entry.property === "font-style") {
+						if(["normal", "italic", "oblique"].includes(entry.value)) {
+							style.fontStyle = entry.value;
+						}
+					}
+					else if(entry.property === "font-weight") {
+						// We only care about normal and bold, map other values to those
+
+						if(entry.value === "normal" || entry.value === "lighter") {
+							style.fontWeight = "normal";
+						}
+						else if(entry.value === "bold" || entry.value === "bolder") {
+							style.fontWeight = "bold";
+						}
+						else {
+							const valueNum = Number(entry.value);
+							if(!isNaN(valueNum)) {
+								style.fontWeight = valueNum < 500 ? "normal" : "bold";
+							}
+						}
+					}
+					else if(entry.property === "text-decoration") {
+						if(entry.value === "line-through") {
+							style.textDecoration = entry.value;
+						}
+					}
+				}
+			});
+		}
+		catch(err) {
+			console.log("Failed to parse incoming style:", err);
+		}
+
+		return <span style={style}>{src.children.map(convertXHTMLIMNodeToNode)}</span>;
+	}
+	else {
+		console.warn("Unexpected node type:", src);
+		return null;
 	}
 }
