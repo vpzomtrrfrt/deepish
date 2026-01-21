@@ -33,7 +33,7 @@ const styles = {
 	messageContentArea: css({
 		flexGrow: 1,
 
-		p: {
+		"p, ul, ol": {
 			marginBlockStart: 0,
 			marginBlockEnd: ".5rem",
 		},
