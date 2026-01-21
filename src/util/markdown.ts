@@ -5,7 +5,19 @@ const parser = new MarkdownIt("zero", {
 	breaks: true,
 	xhtmlOut: true,
 });
-parser.enable(["blockquote", "code", "fence", "list", "backticks", "emphasis", "entity", "escape", "newline", "text"]);
+parser.enable([
+	"blockquote",
+	"code",
+	"fence",
+	"list",
+	"backticks",
+	"emphasis",
+	"entity",
+	"escape",
+	"newline",
+	"text",
+	"strikethrough",
+]);
 
 export function parseMarkdown(src: string) {
 	return parser.parse(src, {});
@@ -18,7 +30,15 @@ export function renderMarkdownToXHTML(src: Token[]): Element {
 		const token = src[i];
 
 		if(token.nesting > 0) {
-			const elem = xml(token.tag);
+			let tag = token.tag;
+
+			if(token.type === "s_open") tag = "span";
+
+			const elem = xml(tag);
+
+			if(token.type === "s_open") {
+				elem.attr("style", "text-decoration: line-through");
+			}
 
 			if(token.attrs !== null) {
 				token.attrs.forEach(([key, value]) => {
@@ -131,6 +151,7 @@ export function renderMarkdownTo0393(src: Token[]) {
 		else if(token.type === "paragraph_close") {
 			result += "\n";
 		}
+		else if(token.type === "s_close" || token.type === "s_open") result += "~";
 		else if(token.type === "strong_close" || token.type === "strong_open") result += "*";
 		else if(token.type === "text") {
 			result += token.content;
