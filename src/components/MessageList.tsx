@@ -31,6 +31,11 @@ const styles = {
 	}),
 	messageContentArea: css({
 		flexGrow: 1,
+
+		p: {
+			marginBlockStart: 0,
+			marginBlockEnd: ".5rem",
+		},
 	}),
 	messageTimestamp: css({
 		marginInlineStart: ".5em",
