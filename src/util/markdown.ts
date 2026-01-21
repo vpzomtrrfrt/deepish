@@ -24,6 +24,18 @@ export function parseMarkdown(src: string) {
 }
 
 export function renderMarkdownToXHTML(src: Token[]): Element {
+	const result = renderMarkdownToXHTMLInner(src);
+
+	if(result.children.length === 1 && result.children[0] instanceof Element && result.children[0].is("p")) {
+		const p = result.children[0];
+		result.children.splice(0, 1);
+		result.children.push(...p.children);
+	}
+
+	return result;
+}
+
+function renderMarkdownToXHTMLInner(src: Token[]): Element {
 	const stack = [xml("body", "http://www.w3.org/1999/xhtml")];
 
 	for(let i = 0; i < src.length; i++) {
@@ -57,7 +69,7 @@ export function renderMarkdownToXHTML(src: Token[]): Element {
 		else {
 			if(token.type === "inline") {
 				if(token.children !== null) {
-					stack[stack.length - 1].children.push(...renderMarkdownToXHTML(token.children).children);
+					stack[stack.length - 1].children.push(...renderMarkdownToXHTMLInner(token.children).children);
 				}
 			}
 			else if(token.type === "text") {
