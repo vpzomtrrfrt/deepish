@@ -8,6 +8,8 @@ import unsignal from "../util/unsignal";
 import Icon from "./Icon";
 import IconButton from "./IconButton";
 
+export type DialogSize = "sm";
+
 export interface DialogContext {
 	close(): void;
 }
@@ -16,7 +18,6 @@ export const DialogContext = createContext<DialogContext | undefined>(undefined)
 
 const styles = {
 	dialog: css({
-		minWidth: "10rem",
 		backgroundColor: themeVars.bg1,
 		borderWidth: "1px",
 		borderStyle: "solid",
@@ -39,10 +40,14 @@ const styles = {
 	}),
 };
 
-export default function Dialog(props: {children: ComponentChildren}) {
+const sizeStyles: Record<DialogSize, string> = {
+	sm: css({width: "24rem"}),
+};
+
+export default function Dialog(props: {children: ComponentChildren; size?: DialogSize}) {
 	const dialogCtx = useContext(DialogContext)!;
 
-	return <DialogLike>
+	return <DialogLike class={sizeStyles[props.size ?? "sm"]}>
 		<div class={styles.dialogHeader}>
 			<IconButton onClick={dialogCtx.close}><Icon path={mdiClose} /></IconButton>
 		</div>
