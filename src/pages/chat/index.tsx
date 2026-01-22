@@ -772,9 +772,26 @@ function SelfBox() {
 	const [, navigate] = useLocation();
 
 	const appCtx = useAppContext();
-	const account = useAccount();
+	const accountSig = useAccountSig();
 
-	const counterpart = account.counterparts.get(account.jid.toString());
+	const jid = useComputed(() => {
+		const account = accountSig.value;
+		if(typeof account === "undefined") throw new Error("Not logged in");
+		return account.jid;
+	}).value;
+
+	const counterpartSig = useComputed(() => {
+		const account = accountSig.value;
+		if(typeof account === "undefined") throw new Error("Not logged in");
+
+		return account.counterparts.get(account.jid.toString());
+	});
+
+	const nickSig = useComputed(() => {
+		const counterpart = counterpartSig.value;
+
+		return typeof counterpart === "undefined" ? jid.local : getNickForCounterpart(counterpart);
+	});
 
 	const openSettings = useCallback(() => {
 		appCtx.showDialog.call(undefined, <SettingsDialog />);
@@ -785,14 +802,14 @@ function SelfBox() {
 	});
 
 	const logout = useLatestCallback(() => {
-		navigate("~/logout/" + encodeURIComponent(account.jid.toString()));
+		navigate("~/logout/" + encodeURIComponent(jid.toString()));
 	});
 
 	return <div class={styles.selfBox}>
-		<Avatar jid={account.jid} size="md" />
+		<Avatar jid={jid} size="md" />
 		<div class={styles.selfBoxNameSegment}>
-			{typeof counterpart === "undefined" ? account.jid.local : getNickForCounterpart(counterpart)}
-			<div class={styles.friendEntryJID}>{account.jid.toString()}</div>
+			{nickSig}
+			<div class={styles.friendEntryJID}>{jid.toString()}</div>
 		</div>
 		<Menu>
 			<MenuItem onClick={openSettings}>{$t({defaultMessage: "Settings"})}</MenuItem>
