@@ -49,3 +49,8 @@ export interface Counterpart {
 
 	lastReadMessageID: string | null;
 }
+
+export enum NotificationCategory {
+	Direct = "direct",
+	Room = "room",
+}

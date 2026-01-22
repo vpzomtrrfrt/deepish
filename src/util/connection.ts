@@ -1,5 +1,5 @@
 import { IDBCache } from "@instructure/idb-cache";
-import { Signal, signal, useComputed } from "@preact/signals";
+import { ReadonlySignal, Signal, signal, useComputed } from "@preact/signals";
 import { useLiveSignal } from "@preact/signals/utils";
 import Connection from "@xmpp/connection";
 import xid from "@xmpp/id";
@@ -14,10 +14,11 @@ import { createContext } from "preact";
 import { useCallback, useContext, useEffect, useMemo, useState } from "preact/hooks";
 import useLatestCallback from "use-latest-callback";
 
+import { DEFAULT_NOTIFICATIONS_SETTINGS, NotificationsSettings } from "..";
 import { compareRanks, DEFAULT_RANK, genRankBetween } from "./lexrank";
 import { markdownHasAnyFormatting, parseMarkdown, renderMarkdownTo0393, renderMarkdownToXHTML } from "./markdown";
 import SignalMap from "./SignalMap";
-import { AvatarMetadata, Counterpart, Presence, PresenceShowType, RosterEntry } from "./types";
+import { AvatarMetadata, Counterpart, NotificationCategory, Presence, PresenceShowType, RosterEntry } from "./types";
 import { LoadState } from "./useData";
 import useEffectOnce from "./useEffectOnce";
 import useIdle, { IdleState } from "./useIdle";
@@ -63,9 +64,9 @@ export interface RoomDiscoInfo {
 }
 
 export enum NotificationLevel {
-	Never,
-	OnMention,
-	Always,
+	Never = "never",
+	OnMention = "on-mention",
+	Always = "always",
 }
 
 export interface Room {
@@ -239,12 +240,17 @@ const NOTIFICATION_LEVEL_ELEMENT_MAP: Record<NotificationLevel, string> = {
 	[NotificationLevel.Never]: "never",
 };
 
-export function useCreateConnection(cache: IDBCache): ConnectionContext {
+export function useCreateConnection(
+	cache: IDBCache,
+	notificationsSettingsSig: ReadonlySignal<NotificationsSettings>,
+): ConnectionContext {
 	const idle = useIdle();
 
 	const cacheSig = useLiveSignal(cache);
 	const idleSig = useLiveSignal(idle);
-	const conn = useMemo(() => createBaseConnection(cacheSig, idleSig), [cacheSig, idleSig]);
+	const conn = useMemo(() => {
+		return createBaseConnection(cacheSig, idleSig, notificationsSettingsSig);
+	}, [cacheSig, idleSig, notificationsSettingsSig]);
 
 	const [inited, setInited] = useState(false);
 
@@ -298,7 +304,11 @@ export function useConnectionContext() {
 	return value;
 }
 
-function createBaseConnection(cacheSig: Signal<IDBCache>, idleSig: Signal<IdleState>): BaseConnectionContext {
+function createBaseConnection(
+	cacheSig: Signal<IDBCache>,
+	idleSig: Signal<IdleState>,
+	notificationsSettingsSig: ReadonlySignal<NotificationsSettings>,
+): BaseConnectionContext {
 	// eventually we might support multiple accounts
 	// just one for now though
 	const accountsSig = signal<Account[]>([]);
@@ -384,7 +394,7 @@ function createBaseConnection(cacheSig: Signal<IDBCache>, idleSig: Signal<IdleSt
 							const notifyNode = extensionsNode.getChild("notify", "urn:xmpp:notification-settings:1");
 							if(typeof notifyNode !== "undefined") {
 								for(const key_ in NOTIFICATION_LEVEL_ELEMENT_MAP) {
-									const key = parseInt(key_, 10) as NotificationLevel;
+									const key = key_ as NotificationLevel;
 
 									notifyNode.getChildren(NOTIFICATION_LEVEL_ELEMENT_MAP[key]).forEach(levelElem => {
 										// Currently we always use the fallback setting
@@ -1747,6 +1757,12 @@ function createBaseConnection(cacheSig: Signal<IDBCache>, idleSig: Signal<IdleSt
 	}
 
 	function shouldNotifyForMessage(evt: Omit<MessageEvent, "shouldNotify">) {
+		const category = evt.message.room === null ?
+			NotificationCategory.Direct :
+			NotificationCategory.Room;
+
+		const baseLevel = notificationsSettingsSig.value[category] ?? DEFAULT_NOTIFICATIONS_SETTINGS[category];
+
 		const account = accountsSig.value.find(x => x.jid.equals(evt.account));
 		if(typeof account === "undefined") return false;
 
@@ -1755,13 +1771,13 @@ function createBaseConnection(cacheSig: Signal<IDBCache>, idleSig: Signal<IdleSt
 		if(evt.message.room === null) {
 			if(evt.message.from.equals(evt.account)) return false;
 
-			return true;
+			return baseLevel !== NotificationLevel.Never;
 		}
 		else {
 			const room = account.rooms.get(evt.message.room.toString());
 			if(typeof room === "undefined") return false;
 
-			const level = room.notificationLevel ?? NotificationLevel.Never;
+			const level = room.notificationLevel ?? baseLevel;
 
 			if(level === NotificationLevel.Always) {
 				return true;

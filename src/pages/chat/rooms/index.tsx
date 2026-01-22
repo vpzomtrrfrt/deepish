@@ -4,11 +4,11 @@ import { JID, parse as parseJID } from "@xmpp/jid";
 import { pushAtSortPosition } from "array-push-at-sort-position";
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import { Fragment } from "preact/jsx-runtime";
-import { defineMessage, MessageDescriptor, useIntl } from "react-intl";
+import { useIntl } from "react-intl";
 import useLatestCallback from "use-latest-callback";
 import { useLocation } from "wouter-preact";
 
-import { useAppContext } from "../../..";
+import { NOTIFICATION_LEVEL_NAMES, useAppContext } from "../../..";
 import AvatarWithStatus from "../../../components/AvatarWithStatus";
 import ConfirmDialog from "../../../components/ConfirmDialog";
 import ConfirmTaskDialog from "../../../components/ConfirmTaskDialog";
@@ -474,12 +474,3 @@ function MembersList(props: {roomJID: string}) {
 		}
 	</SidebarSegment>;
 }
-
-const NOTIFICATION_LEVEL_NAMES: Record<NotificationLevel.Never | NotificationLevel.Always, MessageDescriptor> = {
-	[NotificationLevel.Never]: defineMessage({
-		defaultMessage: "Never",
-	}),
-	[NotificationLevel.Always]: defineMessage({
-		defaultMessage: "All Messages",
-	}),
-};

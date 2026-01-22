@@ -3,12 +3,12 @@ import "./global.css";
 import { Tooltip } from "@base-ui/react/tooltip";
 import { css } from "@emotion/css";
 import { IDBCache } from "@instructure/idb-cache";
-import { useComputed } from "@preact/signals";
+import { Signal, signal, useComputed } from "@preact/signals";
 import { useMediaQuery } from "@react-hook/media-query";
 import { parse as parseJID } from "@xmpp/jid";
 import { createContext, RefObject, render, VNode } from "preact";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "preact/hooks";
-import { IntlProvider, MissingTranslationError, useIntl } from "react-intl";
+import { defineMessage, IntlProvider, MessageDescriptor, MissingTranslationError, useIntl } from "react-intl";
 import useLatestCallback from "use-latest-callback";
 import { Redirect, Route, useLocation, useRoute } from "wouter-preact";
 
@@ -16,10 +16,11 @@ import DataView from "./components/DataView";
 import DialogContainer, { DialogContainerRef } from "./components/DialogContainer";
 import ChatPage from "./pages/chat";
 import LoginPage from "./pages/login";
-import { ConnectionContext, MessageContent, MessageEvent, useConnectionContext, useCreateConnection } from "./util/connection";
+import { ConnectionContext, MessageContent, MessageEvent, NotificationLevel, useConnectionContext, useCreateConnection } from "./util/connection";
 import matchLocale from "./util/matchLocale";
 import { maybeGetNickForCounterpart } from "./util/profileUtil";
 import { themeCSS, themeVars } from "./util/theme";
+import { NotificationCategory } from "./util/types";
 import useData, { LoadState } from "./util/useData";
 import useEffectOnce from "./util/useEffectOnce";
 import useEventHandler from "./util/useEventHandler";
@@ -29,9 +30,29 @@ const DEFAULT_LANGUAGE = "en";
 
 const NOTIFICATIONS_CONTENT_TYPE_PRIORITY: Array<MessageContent["type"]> = ["xhtml", "0393", "plain"];
 
+export type NotificationsSettings = Partial<Record<NotificationCategory, NotificationLevel>>;
+
+export const DEFAULT_NOTIFICATIONS_SETTINGS: Record<NotificationCategory, NotificationLevel> = {
+	[NotificationCategory.Direct]: NotificationLevel.Always,
+	[NotificationCategory.Room]: NotificationLevel.Never,
+};
+
+export const NOTIFICATION_LEVEL_NAMES: Record<NotificationLevel.Never | NotificationLevel.Always, MessageDescriptor> = {
+	[NotificationLevel.Never]: defineMessage({
+		defaultMessage: "Never",
+	}),
+	[NotificationLevel.Always]: defineMessage({
+		defaultMessage: "All Messages",
+	}),
+};
+
 export interface AppContext {
 	cache: IDBCache;
 	notificationsPermissionState: LoadState<PermissionState>;
+	notificationsSettings: NotificationsSettings;
+	setNotificationsSettings(
+		value: NotificationsSettings | ((current: NotificationsSettings) => NotificationsSettings),
+	): void;
 
 	portalContainerRef: RefObject<HTMLDivElement>;
 
@@ -93,23 +114,56 @@ function App() {
 		dialogContainerRef.current!.showDialog(content);
 	}, []);
 
+	const notificationsSettingsSig = useMemo<Signal<NotificationsSettings>>(() => {
+		let value: NotificationsSettings = {};
+
+		const str = localStorage.getItem("deepishNotifications");
+		if(str !== null) {
+			try {
+				value = JSON.parse(str);
+			}
+			catch(err) {
+				console.error(err);
+			}
+		}
+
+		return signal(value);
+	}, []);
+
+	const setNotificationsSettings = useCallback((
+		value: NotificationsSettings | ((current: NotificationsSettings) => NotificationsSettings),
+	) => {
+		const newValue = typeof value === "function" ? value(notificationsSettingsSig.value) : value;
+		localStorage.setItem("deepishNotifications", JSON.stringify(newValue));
+		notificationsSettingsSig.value = newValue;
+	}, [notificationsSettingsSig]);
+
 	const appCtx = useMemo(
 		() => ({
 			notificationsPermissionState,
+			notificationsSettings: notificationsSettingsSig.value,
+			setNotificationsSettings,
 			portalContainerRef,
 			cache,
 
 			requestNotificationsPermission,
 			showDialog,
 		} satisfies AppContext),
-		[cache, notificationsPermissionState, requestNotificationsPermission, showDialog],
+		[
+			cache,
+			notificationsPermissionState,
+			notificationsSettingsSig.value,
+			requestNotificationsPermission,
+			setNotificationsSettings,
+			showDialog,
+		],
 	);
 
 	useEffect(() => {
 		if(dialogContainerRef.current !== null) dialogContainerRef.current.closeAll();
 	}, [location]);
 
-	const connection = useCreateConnection(cache);
+	const connection = useCreateConnection(cache, notificationsSettingsSig);
 
 	const lang = useMemo(() => {
 		// TODO check again on language change event
