@@ -1,7 +1,10 @@
 import { css, cx } from "@emotion/css";
+import { useComputed } from "@preact/signals";
+import { useLiveSignal } from "@preact/signals/utils";
 import { JID, parse as parseJID } from "@xmpp/jid";
+import { useMemo } from "preact/hooks";
 
-import { useAccount } from "../util/connection";
+import { useAccountSig } from "../util/connection";
 import { getShowTypeForCounterpart } from "../util/statusUtil";
 import Avatar, { AvatarSize } from "./Avatar";
 import StatusIndicator from "./StatusIndicator";
@@ -25,11 +28,12 @@ export default function AvatarWithStatus(props: {
 	jid: string | JID;
 	inRoom?: boolean;
 }) {
-	const jid = typeof props.jid === "object" ? props.jid : parseJID(props.jid);
+	const jid = useMemo(() => typeof props.jid === "object" ? props.jid : parseJID(props.jid), [props.jid]);
+	const jidSig = useLiveSignal(jid);
 
-	const account = useAccount();
+	const accountSig = useAccountSig();
 
-	const counterpart = account.counterparts.get(jid.toString());
+	const counterpart = useComputed(() => accountSig.value.counterparts.getSignal(jidSig.value.toString())).value.value;
 	const showType = typeof counterpart === "undefined" ? null : getShowTypeForCounterpart(counterpart, props.inRoom);
 
 	return <div class={cx("avatar", styles.avatarWithStatus)}>

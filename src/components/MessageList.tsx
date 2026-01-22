@@ -1,4 +1,5 @@
 import { css, cx } from "@emotion/css";
+import { useComputed } from "@preact/signals";
 import * as xml from "@xmpp/xml";
 import inlineStyleParser from "inline-style-parser";
 import { ComponentChildren, h, JSX, VNode } from "preact";
@@ -6,7 +7,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "preact
 import { useIntl } from "react-intl";
 import { List, ListImperativeAPI, RowComponentProps, useDynamicRowHeight } from "react-window";
 
-import { Message, MessageContent, useAccount } from "../util/connection";
+import { Message, MessageContent, useAccountSig } from "../util/connection";
 import { parseMarkdown, renderMarkdownToXHTML } from "../util/markdown";
 import { maybeGetNickForCounterpart } from "../util/profileUtil";
 import { parse0393, StylingBlock0393, StylingSpan0393 } from "../util/xmpp/styling";
@@ -188,10 +189,11 @@ function RealMessageRow(props: RowComponentProps<{message: Message; renderMenu(m
 
 	const { $t } = useIntl();
 
-	const account = useAccount();
+	const accountSig = useAccountSig();
 
 	const from = message.room === null ? message.from.bare() : message.from;
-	const counterpart = account.counterparts.get(from.toString());
+	const counterpartSig = useComputed(() => accountSig.value.counterparts.getSignal(from.toString())).value;
+	const nickSig = useComputed(() => maybeGetNickForCounterpart(from, counterpartSig.value));
 
 	return <div style={props.style} class={styles.message}>
 		<div>
@@ -199,7 +201,7 @@ function RealMessageRow(props: RowComponentProps<{message: Message; renderMenu(m
 		</div>
 		<div class={styles.messageContentArea}>
 			<div>
-				<span>{maybeGetNickForCounterpart(from, counterpart)}</span>
+				<span>{nickSig}</span>
 				<span class={styles.messageTimestamp}>{message.timestamp.toLocaleString()}</span>
 			</div>
 			<div>

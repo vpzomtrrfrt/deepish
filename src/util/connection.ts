@@ -2749,14 +2749,6 @@ export function useAccountSig(): Signal<Account> {
 	});
 }
 
-export function useAccount() {
-	const connectionCtx = useConnectionContext();
-	const account = connectionCtx.accountsSig.value[0];
-	if(typeof account === "undefined") throw new Error("Attempted to read account while not logged in");
-
-	return account;
-}
-
 export function messageRemovalIsAllowed(message: Message, evt: Pick<MessageRemovalEvent, "from" | "removal" | "room">) {
 	if(evt.removal.type === "retract") {
 		// Allow retractions for one's own messages
