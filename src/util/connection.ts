@@ -95,7 +95,7 @@ export interface Account {
 	lastError: unknown;
 	stopped: boolean;
 
-	counterparts: Map<string, Counterpart>;
+	counterparts: SignalMap<string, Counterpart>;
 	rooms: SignalMap<string, Room>;
 
 	avatarStates: Map<string, LoadState<string>>;
@@ -328,16 +328,12 @@ function createBaseConnection(cacheSig: Signal<IDBCache>, idleSig: Signal<IdleSt
 	}
 
 	function upsertCounterpart(accountIdentifier: xmppClient.Client | JID, counterpartJID: JID, fn: (current: Counterpart) => Counterpart) {
-		updateAccount(accountIdentifier, account => {
-			const counterparts = new Map(account.counterparts);
+		const account = getAccount(accountIdentifier);
 
-			counterparts.set(counterpartJID.toString(), fn(
-				counterparts.get(counterpartJID.toString()) ??
-					{...DEFAULT_COUNTERPART_INFO, jid: counterpartJID}
-			));
-
-			return {...account, counterparts};
-		});
+		account.counterparts.set(counterpartJID.toString(), fn(
+			account.counterparts.get(counterpartJID.toString()) ??
+				{...DEFAULT_COUNTERPART_INFO, jid: counterpartJID}
+		));
 	}
 
 	function handleBookmarksUpdate(
@@ -499,43 +495,36 @@ function createBaseConnection(cacheSig: Signal<IDBCache>, idleSig: Signal<IdleSt
 		});
 
 		if(newContacts.size > 0 || isAll) {
-			updateAccount(accountJID, account => {
-				const counterparts = new Map(account.counterparts);
+			const account = getAccount(accountJID);
 
-				newContacts.forEach((info, contact) => {
-					const entry = counterparts.get(contact);
-					if(typeof entry === "undefined") {
-						counterparts.set(contact, {
-							...DEFAULT_COUNTERPART_INFO,
-							jid: parseJID(contact),
-							rosterEntry: info,
-						});
-					}
-					else {
-						counterparts.set(contact, {
-							...entry,
-							rosterEntry: info,
-							requestingMySubscription: entry.requestingMySubscription && !info.subscriptionFrom,
-						});
-					}
-				});
-
-				if(isAll) {
-					counterparts.forEach((value, key) => {
-						if(value.rosterEntry !== null && !newContacts.has(key)) {
-							counterparts.set(key, {
-								...value,
-								rosterEntry: null,
-							});
-						}
+			newContacts.forEach((info, contact) => {
+				const entry = account.counterparts.get(contact);
+				if(typeof entry === "undefined") {
+					account.counterparts.set(contact, {
+						...DEFAULT_COUNTERPART_INFO,
+						jid: parseJID(contact),
+						rosterEntry: info,
 					});
 				}
-
-				return {
-					...account,
-					counterparts,
-				};
+				else {
+					account.counterparts.set(contact, {
+						...entry,
+						rosterEntry: info,
+						requestingMySubscription: entry.requestingMySubscription && !info.subscriptionFrom,
+					});
+				}
 			});
+
+			if(isAll) {
+				for(const [key, value] of account.counterparts.entries()) {
+					if(value.rosterEntry !== null && !newContacts.has(key)) {
+						account.counterparts.set(key, {
+							...value,
+							rosterEntry: null,
+						});
+					}
+				}
+			}
 		}
 	}
 
@@ -567,18 +556,15 @@ function createBaseConnection(cacheSig: Signal<IDBCache>, idleSig: Signal<IdleSt
 		});
 
 		if(newLastMessageTimestamps.size > 0) {
-			updateAccount(client, account => {
-				const counterparts = new Map(account.counterparts);
-
+			{
+				const account = getAccount(client);
 				newLastMessageTimestamps.forEach((timestamp, itemJID) => {
-					counterparts.set(itemJID, {
-						...(counterparts.get(itemJID) ?? {...DEFAULT_COUNTERPART_INFO, jid: parseJID(itemJID)}),
+					account.counterparts.set(itemJID, {
+						...(account.counterparts.get(itemJID) ?? {...DEFAULT_COUNTERPART_INFO, jid: parseJID(itemJID)}),
 						lastMessageTimestampFromInbox: timestamp,
 					});
 				});
-
-				return {...account, counterparts};
-			});
+			}
 
 			// Fetch recent messages from MAM to populate lastMessageID
 			const remaining = new Map<string, string | null>();
@@ -1676,7 +1662,7 @@ function createBaseConnection(cacheSig: Signal<IDBCache>, idleSig: Signal<IdleSt
 							client,
 							lastError: null,
 							connected: false,
-							counterparts: new Map(),
+							counterparts: new SignalMap(),
 							rooms: new SignalMap(),
 							avatarStates: new Map(),
 							servicesState: LoadState.loading,
@@ -2039,20 +2025,20 @@ function createBaseConnection(cacheSig: Signal<IDBCache>, idleSig: Signal<IdleSt
 			);
 		}
 
-		updateAccount(accountJID, account => {
-			if(!account.counterparts.has(target.toString())) return account;
+		{
+			const account = getAccount(accountJID);
+			const entry = account.counterparts.get(target.toString());
 
-			const counterparts = new Map(account.counterparts);
-			counterparts.set(
-				target.toString(),
-				{
-					...counterparts.get(target.toString())!,
-					rosterEntry: null,
-				},
-			);
-
-			return {...account, counterparts};
-		});
+			if(typeof entry !== "undefined") {
+				account.counterparts.set(
+					target.toString(),
+					{
+						...entry,
+						rosterEntry: null,
+					},
+				);
+			}
+		}
 	}
 
 	function sendFriendRequest(accountJID: JID, target: JID) {
