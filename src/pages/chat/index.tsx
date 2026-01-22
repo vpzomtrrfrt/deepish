@@ -294,11 +294,6 @@ function ChatView() {
 
 	const addMatch = useRoute("/rooms:add");
 
-	const incomingRequestCounterparts = useComputed(() => {
-		return Array.from(accountSig.value.counterparts.values())
-			.filter(counterpartIsIncomingRequest);
-	}).value;
-
 	const [pendingReorders, setPendingReorders] =
 		useState<Set<PendingReorder>>(new Set());
 
@@ -340,17 +335,7 @@ function ChatView() {
 	else rooms = roomsSig.value;
 
 	return <div class={cx(styles.sidebarSegment, styles.roomList)}>
-		<div>
-			<Link to="~/">
-				<div class={cx(styles.roomLink, currentRoom === null && !addMatch[0] && styles.currentRoomLink, styles.homeAvatar)}>
-					<Icon path={mdiHome} class={styles.roomLinkIcon} />
-					{
-						incomingRequestCounterparts.length > 0 &&
-							<PriorityUnreadIndicator count={incomingRequestCounterparts.length} />
-					}
-				</div>
-			</Link>
-		</div>
+		<HomeLink active={currentRoom === null && !addMatch[0]} />
 		{
 			rooms.map(info => {
 				return <RoomLink
@@ -369,6 +354,27 @@ function ChatView() {
 				</div>
 			</Link>
 		</div>
+	</div>;
+}
+
+function HomeLink(props: {active: boolean}) {
+	const accountSig = useAccountSig();
+
+	const incomingRequestCounterparts = useComputed(() => {
+		return Array.from(accountSig.value.counterparts.values())
+			.filter(counterpartIsIncomingRequest);
+	}).value;
+
+	return <div>
+		<Link to="~/">
+			<div class={cx(styles.roomLink, props.active && styles.currentRoomLink, styles.homeAvatar)}>
+				<Icon path={mdiHome} class={styles.roomLinkIcon} />
+				{
+					incomingRequestCounterparts.length > 0 &&
+						<PriorityUnreadIndicator count={incomingRequestCounterparts.length} />
+				}
+			</div>
+		</Link>
 	</div>;
 }
 
