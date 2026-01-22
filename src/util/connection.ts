@@ -1,5 +1,6 @@
 import { IDBCache } from "@instructure/idb-cache";
-import { Signal, useSignal } from "@preact/signals";
+import { Signal, signal, useComputed } from "@preact/signals";
+import { useLiveSignal } from "@preact/signals/utils";
 import Connection from "@xmpp/connection";
 import xid from "@xmpp/id";
 import { JID, parse as parseJID } from "@xmpp/jid";
@@ -10,7 +11,7 @@ import fromBase64 from "es-arraybuffer-base64/Uint8Array.fromBase64";
 import toBase64 from "es-arraybuffer-base64/Uint8Array.prototype.toBase64";
 import toHex from "es-arraybuffer-base64/Uint8Array.prototype.toHex";
 import { createContext } from "preact";
-import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { useCallback, useContext, useEffect, useMemo, useState } from "preact/hooks";
 import useLatestCallback from "use-latest-callback";
 
 import { compareRanks, DEFAULT_RANK, genRankBetween } from "./lexrank";
@@ -176,14 +177,11 @@ interface ImageInfo {
 	height: number;
 }
 
-export interface ConnectionContext {
-	accounts: Account[];
+export interface BaseConnectionContext {
 	accountsSig: Signal<Account[]>;
-	inited: boolean;
-	idle: IdleState;
 
-	saveToken(jid: JID, token: unknown, userAgent: string, resource: string): void;
-	logout(jid: JID): void;
+	getAccount(identifier: JID): Account;
+
 	addEventListener<K extends keyof AppEventMap>(
 		event: K,
 		listener: (evt: AppEventMap[K]) => void,
@@ -213,6 +211,16 @@ export interface ConnectionContext {
 	setAvatar(account: JID, info: ImageInfo): Promise<void>;
 	reorderRoom(account: JID, room: JID, to: {before: JID | null; after: JID | null}): Promise<void>;
 	setRoomNotificationLevel(account: JID, room: JID, level: NotificationLevel): Promise<void>;
+
+	loadAccounts(): void;
+}
+
+export interface ConnectionContext extends BaseConnectionContext {
+	inited: boolean;
+	idle: IdleState;
+
+	saveToken(jid: JID, token: unknown, userAgent: string, resource: string): void;
+	logout(jid: JID): void;
 }
 
 export const ConnectionContext = createContext<ConnectionContext | undefined>(undefined);
@@ -231,50 +239,112 @@ const NOTIFICATION_LEVEL_ELEMENT_MAP: Record<NotificationLevel, string> = {
 };
 
 export function useCreateConnection(cache: IDBCache): ConnectionContext {
-	// eventually we might support multiple accounts
-	// just one for now though
-	const accountsSig = useSignal<Account[]>([]);
-	const accounts = accountsSig.value;
+	const idle = useIdle();
+
+	const cacheSig = useLiveSignal(cache);
+	const idleSig = useLiveSignal(idle);
+	const conn = useMemo(() => createBaseConnection(cacheSig, idleSig), [cacheSig, idleSig]);
 
 	const [inited, setInited] = useState(false);
 
-	const idle = useIdle();
+	const loadAccounts = useCallback(() => {
+		conn.loadAccounts();
+		setInited(true);
+	}, [conn]);
 
-	const outgoingMessagesRef = useRef<Map<string, {resolve: () => void; reject: (err: unknown) => void}>>(new Map());
+	useEffectOnce(() => {
+		loadAccounts();
+	});
 
-	const newRoomsRef = useRef<Map<string, {resolve: (value: RoomJoinCallbackInfo) => void; reject: (err: unknown) => void}>>(new Map());
+	const onUnmount = useLatestCallback(() => {
+		conn.accountsSig.value.forEach(account => {
+			account.client.stop();
+		});
+	});
+	useEffect(() => {
+		return onUnmount;
+	}, [onUnmount]);
 
-	const updateAccount = useCallback((identifier: xmppClient.Client | JID, fn: (current: Account) => Account) => {
+	return useMemo(
+		() => ({
+			...conn,
+
+			inited,
+			idle,
+
+			saveToken(jid, token, userAgent, resource) {
+				localStorage.setItem("deepishAccount", JSON.stringify({jid: jid.toString(), token, userAgent, resource}));
+				loadAccounts();
+			},
+			logout(jid) {
+				const accounts = conn.accountsSig.value;
+				if(accounts.length > 0 && accounts[0].jid.equals(jid)) {
+					localStorage.removeItem("deepishAccount");
+					loadAccounts();
+				}
+			},
+
+		} satisfies ConnectionContext),
+		[conn, idle, inited, loadAccounts],
+	);
+}
+
+export function useConnectionContext() {
+	const value = useContext(ConnectionContext);
+
+	if(typeof value === "undefined") throw new Error("Attempted to read connection outside of context");
+
+	return value;
+}
+
+function createBaseConnection(cacheSig: Signal<IDBCache>, idleSig: Signal<IdleState>): BaseConnectionContext {
+	// eventually we might support multiple accounts
+	// just one for now though
+	const accountsSig = signal<Account[]>([]);
+
+	const outgoingMessages = new Map<string, {resolve: () => void; reject: (err: unknown) => void}>();
+	const newRooms = new Map<string, {resolve: (value: RoomJoinCallbackInfo) => void; reject: (err: unknown) => void}>();
+
+	function updateAccount(identifier: xmppClient.Client | JID, fn: (current: Account) => Account) {
 		accountsSig.value = accountsSig.value.map(account => {
 			if(identifier instanceof JID ? account.jid.equals(identifier) : account.client === identifier) {
 				return fn(account);
 			}
 			else return account;
 		});
-	}, [accountsSig]);
+	}
 
-	const upsertCounterpart = useCallback(
-		(accountIdentifier: xmppClient.Client | JID, counterpartJID: JID, fn: (current: Counterpart) => Counterpart) => {
-			updateAccount(accountIdentifier, account => {
-				const counterparts = new Map(account.counterparts);
+	function tryGetAccount(identifier: xmppClient.Client | JID) {
+		return accountsSig.value.find(account => {
+			return identifier instanceof JID ? account.jid.equals(identifier) : account.client === identifier;
+		});
+	}
 
-				counterparts.set(counterpartJID.toString(), fn(
-					counterparts.get(counterpartJID.toString()) ??
-						{...DEFAULT_COUNTERPART_INFO, jid: counterpartJID}
-				));
+	function getAccount(identifier: xmppClient.Client | JID) {
+		const result = tryGetAccount(identifier);
+		if(typeof result === "undefined") throw new Error("No such account");
+		else return result;
+	}
 
-				return {...account, counterparts};
-			});
-		},
-		[updateAccount],
-	);
+	function upsertCounterpart(accountIdentifier: xmppClient.Client | JID, counterpartJID: JID, fn: (current: Counterpart) => Counterpart) {
+		updateAccount(accountIdentifier, account => {
+			const counterparts = new Map(account.counterparts);
 
-	const handleBookmarksUpdate = useLatestCallback((
+			counterparts.set(counterpartJID.toString(), fn(
+				counterparts.get(counterpartJID.toString()) ??
+					{...DEFAULT_COUNTERPART_INFO, jid: counterpartJID}
+			));
+
+			return {...account, counterparts};
+		});
+	}
+
+	function handleBookmarksUpdate(
 		client: xmppClient.Client,
 		mode: "add" | "remove" | "all",
 		newItems?: PubsubItemInfo[],
 		removedItems?: string[],
-	) => {
+	) {
 		const wantedRooms: Array<{
 			jid: string;
 			nick?: string;
@@ -393,7 +463,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 				rooms,
 			};
 		});
-	});
+	}
 
 	async function fetchBookmarks(client: xmppClient.Client) {
 		const initBookmarks = await fetchPubsubItems(client, "urn:xmpp:bookmarks:1");
@@ -401,7 +471,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 		handleBookmarksUpdate(client, "all", initBookmarks.items);
 	}
 
-	const handleRosterUpdate = useCallback((accountJID: JID, items: Element[], isAll: boolean) => {
+	function handleRosterUpdate(accountJID: JID, items: Element[], isAll: boolean) {
 		const newContacts = new Map<string, RosterEntry>();
 		items.forEach(item => {
 			const jid = item.getAttr("jid");
@@ -474,7 +544,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 				};
 			});
 		}
-	}, [updateAccount]);
+	}
 
 	async function fetchRoster(client: xmppClient.Client) {
 		const result = await client.iqCaller.get(xml("query", {xmlns: "jabber:iq:roster"}));
@@ -630,63 +700,61 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 		}
 	}
 
-	const handlePubsubItem = useLatestCallback(
-		(client: xmppClient.Client, from: JID | undefined, node: string, item: PubsubItemInfo) => {
-			console.log("handling pubsub item", from, node, item);
+	function handlePubsubItem(client: xmppClient.Client, from: JID | undefined, node: string, item: PubsubItemInfo) {
+		console.log("handling pubsub item", from, node, item);
 
-			const isMe = typeof from === "undefined" || from.bare().equals(client.jid!.bare());
+		const isMe = typeof from === "undefined" || from.bare().equals(client.jid!.bare());
 
-			if(node === "http://jabber.org/protocol/nick") {
-				if(typeof from !== "undefined") {
-					const nickElem = item.element.getChild("nick", "http://jabber.org/protocol/nick");
-					if(typeof nickElem !== "undefined") {
-						const nick = nickElem.getText();
+		if(node === "http://jabber.org/protocol/nick") {
+			if(typeof from !== "undefined") {
+				const nickElem = item.element.getChild("nick", "http://jabber.org/protocol/nick");
+				if(typeof nickElem !== "undefined") {
+					const nick = nickElem.getText();
 
-						upsertCounterpart(client, from, current => ({
-							...current,
-							nick,
-						}));
-					}
-				}
-			}
-			else if(node === "urn:xmpp:avatar:metadata") {
-				const avatarHashes: string[] = [item.id]; // TODO Fetch other hashes from metadata
-
-				if(typeof from !== "undefined") {
-					const contact = from;
-
-					upsertCounterpart(client, contact, current => ({
+					upsertCounterpart(client, from, current => ({
 						...current,
-						avatarHashes,
+						nick,
 					}));
-
-					startRequestingAvatar(client, contact, avatarHashes);
 				}
 			}
-			else if(node === "urn:xmpp:bookmarks:1") {
-				if(isMe) handleBookmarksUpdate(client, "add", [item]);
-			}
-			else if(node === "urn:xmpp:mds:displayed:0") {
-				if(isMe) {
-					const jid = parseJID(item.id);
+		}
+		else if(node === "urn:xmpp:avatar:metadata") {
+			const avatarHashes: string[] = [item.id]; // TODO Fetch other hashes from metadata
 
-					const displayedElem = item.element.getChild("displayed", "urn:xmpp:mds:displayed:0");
-					if(typeof displayedElem !== "undefined") {
-						const stanzaIDElem = displayedElem.getChild("stanza-id", "urn:xmpp:sid:0");
-						if(typeof stanzaIDElem !== "undefined") {
-							const messageID = stanzaIDElem.getAttr("id");
-							if(typeof messageID === "string") {
-								upsertCounterpart(client, jid, current => ({
-									...current,
-									lastReadMessageID: messageID,
-								}));
-							}
+			if(typeof from !== "undefined") {
+				const contact = from;
+
+				upsertCounterpart(client, contact, current => ({
+					...current,
+					avatarHashes,
+				}));
+
+				startRequestingAvatar(client, contact, avatarHashes);
+			}
+		}
+		else if(node === "urn:xmpp:bookmarks:1") {
+			if(isMe) handleBookmarksUpdate(client, "add", [item]);
+		}
+		else if(node === "urn:xmpp:mds:displayed:0") {
+			if(isMe) {
+				const jid = parseJID(item.id);
+
+				const displayedElem = item.element.getChild("displayed", "urn:xmpp:mds:displayed:0");
+				if(typeof displayedElem !== "undefined") {
+					const stanzaIDElem = displayedElem.getChild("stanza-id", "urn:xmpp:sid:0");
+					if(typeof stanzaIDElem !== "undefined") {
+						const messageID = stanzaIDElem.getAttr("id");
+						if(typeof messageID === "string") {
+							upsertCounterpart(client, jid, current => ({
+								...current,
+								lastReadMessageID: messageID,
+							}));
 						}
 					}
 				}
 			}
-		},
-	);
+		}
+	}
 
 	async function catchupPubsub(client: xmppClient.Client, node: string) {
 		try {
@@ -706,8 +774,8 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 		}
 	}
 
-	const sendMyPresence = useLatestCallback(async (client: xmppClient.Client) => {
-		console.log("sending my presence", idle);
+	async function sendMyPresence(client: xmppClient.Client) {
+		const idle = idleSig.value;
 
 		const ver = await genVerString(
 			[IDENTITY],
@@ -734,21 +802,24 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 				),
 			),
 		);
-	});
+	}
 
-	const sendMyPresences = useLatestCallback(() => {
-		accounts.forEach(account => {
-			if(account.client.status === "online" || account.client.status === "open") {
+	idleSig.subscribe(() => {
+		accountsSig.value.forEach(account => {
+			if(
+				account.client.status === "online" ||
+					(
+						account.client.status === "open" &&
+							account.client.jid !== null &&
+							account.client.jid.resource !== ""
+					)
+			) {
 				sendMyPresence(account.client);
 			}
 		});
 	});
 
-	useEffect(() => {
-		sendMyPresences();
-	}, [sendMyPresences, idle]);
-
-	const onClientOnline = useLatestCallback((client: xmppClient.Client) => {
+	function onClientOnline(client: xmppClient.Client) {
 		sendMyPresence(client)
 			.then(() => {
 				return Promise.all([
@@ -761,13 +832,13 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 				]);
 			})
 			.then(() => undefined);
-	});
+	}
 
-	const onClientStatusChanged = useLatestCallback((
+	function onClientStatusChanged(
 		client: xmppClient.Client,
 		status: keyof Connection.StatusEvents,
 		..._args: unknown[]
-	) => {
+	) {
 		// seems to only sometimes go to "online"?
 		if(status === "online" || (status === "open" && client.jid !== null && client.jid.resource !== "")) {
 			updateAccount(client, account => ({...account, connected: true}));
@@ -775,9 +846,9 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 		else {
 			updateAccount(client, account => ({...account, connected: false}));
 		}
-	});
+	}
 
-	const onClientError = useLatestCallback((client: xmppClient.Client, err: unknown) => {
+	function onClientError(client: xmppClient.Client, err: unknown) {
 		console.error(err);
 
 		const stop = err instanceof SASLError;
@@ -785,7 +856,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 		if(stop) client.stop();
 
 		updateAccount(client, account => ({...account, lastError: err, stopped: stop}));
-	});
+	}
 
 	function handlePubsubRetract(client: xmppClient.Client, from: JID | undefined, node: string, itemID: string) {
 		if(node === "urn:xmpp:bookmarks:1") {
@@ -848,8 +919,8 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 
 				let outgoingListener;
 				if(typeof elementID === "string") {
-					outgoingListener = outgoingMessagesRef.current.get(elementID);
-					outgoingMessagesRef.current.delete(elementID);
+					outgoingListener = outgoingMessages.get(elementID);
+					outgoingMessages.delete(elementID);
 				}
 				else {
 					outgoingListener = undefined;
@@ -999,8 +1070,8 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 
 			let outgoingListener;
 			if(typeof elementID === "string") {
-				outgoingListener = outgoingMessagesRef.current.get(elementID);
-				outgoingMessagesRef.current.delete(elementID);
+				outgoingListener = outgoingMessages.get(elementID);
+				outgoingMessages.delete(elementID);
 			}
 			else {
 				outgoingListener = undefined;
@@ -1180,13 +1251,9 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 		}
 	}
 
-	const startRequestingAvatar = useLatestCallback((client: xmppClient.Client, target: JID, expectedHashes: string[]) => {
+	function startRequestingAvatar(client: xmppClient.Client, target: JID, expectedHashes: string[]) {
 		{
-			const account = accounts.find(x => x.client === client);
-			if(typeof account === "undefined") {
-				console.warn("No such account");
-				return;
-			}
+			const account = getAccount(client);
 
 			for(const hash of expectedHashes) {
 				const state = account.avatarStates.get(hash);
@@ -1209,7 +1276,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 
 		Promise.all(
 			expectedHashes.map(hash => {
-				return cache.getItem("avatarImages/" + encodeURIComponent(hash))
+				return cacheSig.value.getItem("avatarImages/" + encodeURIComponent(hash))
 					.then(x => x === null ? null : (JSON.parse(x) as AvatarImageCacheEntry));
 			}),
 		)
@@ -1276,7 +1343,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 									return {...account, avatarStates: newAvatarStates};
 								});
 
-								cache.setItem(
+								cacheSig.value.setItem(
 									"avatarImages/" + encodeURIComponent(hashStr),
 									JSON.stringify({contentB64, type} satisfies AvatarImageCacheEntry),
 								);
@@ -1304,7 +1371,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 					return {...account, avatarStates: newAvatarStates};
 				});
 			});
-	});
+	}
 
 	async function fetchRoomDisco(client: xmppClient.Client, roomJID: JID): Promise<RoomDiscoInfo> {
 		return client.iqCaller.get(
@@ -1351,7 +1418,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 			});
 	}
 
-	const fetchAndStoreRoomDisco = useLatestCallback((client: xmppClient.Client, roomJID: JID) => {
+	function fetchAndStoreRoomDisco(client: xmppClient.Client, roomJID: JID) {
 		updateAccount(client, account => {
 			const info = account.rooms.get(roomJID.toString());
 			if(typeof info === "undefined") {
@@ -1388,9 +1455,9 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 					return {...account, rooms: newRooms};
 				});
 			});
-	});
+	}
 
-	const onClientElement = useLatestCallback((client: xmppClient.Client, elem: Element) => {
+	function onClientElement(client: xmppClient.Client, elem: Element) {
 		console.log("onClientElement", elem);
 
 		if(elem.getName() === "presence" && elem.getNS() === "jabber:client") {
@@ -1411,8 +1478,8 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 
 					const success = statuses.includes("110");
 
-					const callback = newRoomsRef.current.get(srcJID.bare().toString());
-					newRoomsRef.current.delete(srcJID.bare().toString());
+					const callback = newRooms.get(srcJID.bare().toString());
+					newRooms.delete(srcJID.bare().toString());
 
 					if(success) {
 						callback?.resolve({statuses});
@@ -1429,6 +1496,10 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 								}
 
 								if(!oldInfo.connected) shouldFetchDisco = true;
+
+								if(oldInfo.connected && oldInfo.nick === srcJID.resource) {
+									return item;
+								}
 
 								rooms.set(srcJID.bare().toString(), {
 									...oldInfo,
@@ -1516,7 +1587,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 								return {...account, rooms};
 							});
 
-							const callback = newRoomsRef.current.get(roomJID.toString());
+							const callback = newRooms.get(roomJID.toString());
 
 							if(typeof callback !== "undefined") {
 								callback.reject(error);
@@ -1589,9 +1660,9 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 		else if(elem.getName() === "message") {
 			handleMessageStanza(client, elem);
 		}
-	});
+	}
 
-	const loadAccounts = useCallback(() => {
+	function loadAccounts() {
 		const infoStr = localStorage.getItem("deepishAccount");
 		if(infoStr === null) {
 			accountsSig.value = [];
@@ -1659,46 +1730,35 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 				});
 			}
 		}
+	}
 
-		setInited(true);
-	}, [accountsSig, onClientOnline, onClientStatusChanged, onClientError, onClientElement, handleRosterUpdate]);
-
-	const listenersRef = useRef<{
+	const listeners: {
 		[K in keyof AppEventMap]: Set<(evt: AppEventMap[K]) => void>;
-	}>({
+	} = {
 		message: new Set(),
 		messageRemove: new Set(),
-	});
+	};
 
-	const addEventListener = useCallback(
-		<K extends keyof AppEventMap>(event: K, listener: (evt: AppEventMap[K]) => void) => {
-			listenersRef.current[event].add(listener);
-		},
-		[],
-	);
+	function addEventListener<K extends keyof AppEventMap>(event: K, listener: (evt: AppEventMap[K]) => void) {
+		listeners[event].add(listener);
+	}
 
-	const removeEventListener = useCallback(
-		<K extends keyof AppEventMap>(event: K, listener: (evt: AppEventMap[K]) => void) => {
-			listenersRef.current[event].delete(listener);
-		},
-		[],
-	);
+	function removeEventListener<K extends keyof AppEventMap>(event: K, listener: (evt: AppEventMap[K]) => void) {
+		listeners[event].delete(listener);
+	}
 
-	const emit = useCallback(
-		<K extends keyof AppEventMap>(eventType: K, event: AppEventMap[K]) => {
-			listenersRef.current[eventType].forEach(listener => {
-				try {
-					listener(event);
-				}
-				catch(ex) {
-					console.error(ex);
-				}
-			});
-		},
-		[],
-	);
+	function emit<K extends keyof AppEventMap>(eventType: K, event: AppEventMap[K]) {
+		listeners[eventType].forEach(listener => {
+			try {
+				listener(event);
+			}
+			catch(ex) {
+				console.error(ex);
+			}
+		});
+	}
 
-	const shouldNotifyForMessage = useCallback((evt: Omit<MessageEvent, "shouldNotify">) => {
+	function shouldNotifyForMessage(evt: Omit<MessageEvent, "shouldNotify">) {
 		const account = accountsSig.value.find(x => x.jid.equals(evt.account));
 		if(typeof account === "undefined") return false;
 
@@ -1723,78 +1783,80 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 				return false;
 			}
 		}
-	}, [accountsSig]);
+	}
 
-	const handleMessage = useCallback((evt: Omit<MessageEvent, "shouldNotify">) => {
+	function handleMessage(evt: Omit<MessageEvent, "shouldNotify">) {
 		emit("message", {...evt, shouldNotify: shouldNotifyForMessage(evt)});
-	}, [emit, shouldNotifyForMessage]);
+	}
 
-	const requestArchive = useLatestCallback(
-		async (accountJID: JID, entity: JID, params: {with?: JID}, before?: string, options: {max?: number} = {}) => {
-			const account = accounts.find(x => x.jid.equals(accountJID));
-			if(typeof account === "undefined") throw new Error("No such account");
+	async function requestArchive(
+		accountJID: JID,
+		entity: JID,
+		params: {with?: JID},
+		before?: string,
+		options: {max?: number} = {},
+	) {
+		const account = getAccount(accountJID);
 
-			return account.client.iqCaller.request(
+		return account.client.iqCaller.request(
+			xml(
+				"iq",
+				{type: "set", to: entity.toString()},
 				xml(
-					"iq",
-					{type: "set", to: entity.toString()},
+					"query",
+					{xmlns: "urn:xmpp:mam:2"},
+					...(
+						typeof params.with === "undefined" ?
+							[] :
+							[xml(
+								"x",
+								{xmlns: "jabber:x:data", type: "submit"},
+								xml("field", {var: "FORM_TYPE", type: "hidden"}, xml("value", {}, "urn:xmpp:mam:2")),
+								xml("field", {var: "with"}, xml("value", {}, params.with.toString())),
+							)]
+					),
 					xml(
-						"query",
-						{xmlns: "urn:xmpp:mam:2"},
-						...(
-							typeof params.with === "undefined" ?
-								[] :
-								[xml(
-									"x",
-									{xmlns: "jabber:x:data", type: "submit"},
-									xml("field", {var: "FORM_TYPE", type: "hidden"}, xml("value", {}, "urn:xmpp:mam:2")),
-									xml("field", {var: "with"}, xml("value", {}, params.with.toString())),
-								)]
-						),
-						xml(
-							"set",
-							{xmlns: "http://jabber.org/protocol/rsm"},
-							xml("max", {}, (options.max ?? 10).toString()),
-							typeof before === "undefined" ?
-								xml("before") :
-								xml("before", {}, before),
-						),
+						"set",
+						{xmlns: "http://jabber.org/protocol/rsm"},
+						xml("max", {}, (options.max ?? 10).toString()),
+						typeof before === "undefined" ?
+							xml("before") :
+							xml("before", {}, before),
 					),
 				),
-			)
-				.then(result => {
-					console.log("result is", result);
+			),
+		)
+			.then(result => {
+				console.log("result is", result);
 
-					const finElem = result.getChild("fin", "urn:xmpp:mam:2");
+				const finElem = result.getChild("fin", "urn:xmpp:mam:2");
 
-					if(typeof finElem === "undefined") {
-						throw new Error("Unexpected result of MAM query");
-					}
+				if(typeof finElem === "undefined") {
+					throw new Error("Unexpected result of MAM query");
+				}
 
-					const setElem = finElem.getChild("set", "http://jabber.org/protocol/rsm");
-					if(typeof setElem === "undefined") throw new Error("Unexpected result of MAM query");
+				const setElem = finElem.getChild("set", "http://jabber.org/protocol/rsm");
+				if(typeof setElem === "undefined") throw new Error("Unexpected result of MAM query");
 
-					const firstItem = setElem.getChildText("first");
-					const lastItem = setElem.getChildText("last");
+				const firstItem = setElem.getChildText("first");
+				const lastItem = setElem.getChildText("last");
 
-					if(firstItem === null && lastItem === null) {
-						// There is nothing in the list
-						return null;
-					}
+				if(firstItem === null && lastItem === null) {
+					// There is nothing in the list
+					return null;
+				}
 
-					return {
-						firstItem: expectValue(firstItem),
-						lastItem: expectValue(lastItem),
-					} satisfies ResultSetInfo;
-				});
-		},
-	);
+				return {
+					firstItem: expectValue(firstItem),
+					lastItem: expectValue(lastItem),
+				} satisfies ResultSetInfo;
+			});
+	}
 
-	const sendMessageToCounterpart = useLatestCallback(async (accountJID: JID, targetJID: JID, message: {body: string}) => {
+	async function sendMessageToCounterpart(accountJID: JID, targetJID: JID, message: {body: string}) {
 		const localID = xid();
 
-		const account = accounts.find(x => x.jid.equals(accountJID));
-		if(typeof account === "undefined") throw new Error("No such account");
+		const account = getAccount(accountJID);
 
 		const contentResult = convertMarkdownForSend(message.body);
 
@@ -1828,17 +1890,16 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 		// Make an archive request to get the latest message
 		// (which may or may not be this one, but fine for the purpose of displayed sync)
 		requestArchive(account.jid, account.jid, {with: targetJID}, undefined, {max: 1});
-	});
+	}
 
-	const sendMessageToRoom = useLatestCallback(async (accountJID: JID, roomJID: JID, message: {body: string}) => {
+	async function sendMessageToRoom(accountJID: JID, roomJID: JID, message: {body: string}) {
 		const id = xid();
 
-		const account = accounts.find(x => x.jid.equals(accountJID));
-		if(typeof account === "undefined") throw new Error("No such account");
+		const account = getAccount(accountJID);
 
 		const reflectDefer = Promise.withResolvers<void>();
 
-		outgoingMessagesRef.current.set(id, reflectDefer);
+		outgoingMessages.set(id, reflectDefer);
 
 		const contentResult = convertMarkdownForSend(message.body);
 
@@ -1851,11 +1912,10 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 		);
 
 		await reflectDefer.promise;
-	});
+	}
 
-	const retractMessageToCounterpart = useLatestCallback(async (accountJID: JID, targetJID: JID, messageID: string) => {
-		const account = accounts.find(x => x.jid.equals(accountJID));
-		if(typeof account === "undefined") throw new Error("No such account");
+	async function retractMessageToCounterpart(accountJID: JID, targetJID: JID, messageID: string) {
+		const account = getAccount(accountJID);
 
 		await account.client.send(
 			xml(
@@ -1891,17 +1951,16 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 			room: null,
 			from: {jid: accountJID},
 		});
-	});
+	}
 
-	const retractMessageToRoom = useLatestCallback(async (accountJID: JID, roomJID: JID, messageID: string) => {
+	async function retractMessageToRoom(accountJID: JID, roomJID: JID, messageID: string) {
 		const id = xid();
 
-		const account = accounts.find(x => x.jid.equals(accountJID));
-		if(typeof account === "undefined") throw new Error("No such account");
+		const account = getAccount(accountJID);
 
 		const reflectDefer = Promise.withResolvers<void>();
 
-		outgoingMessagesRef.current.set(id, reflectDefer);
+		outgoingMessages.set(id, reflectDefer);
 
 		await account.client.send(
 			xml(
@@ -1928,9 +1987,9 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 		);
 
 		await reflectDefer.promise;
-	});
+	}
 
-	const markCounterpartAsVisible = useLatestCallback((accountJID: JID, target: JID) => {
+	function markCounterpartAsVisible(accountJID: JID, target: JID) {
 		upsertCounterpart(accountJID, target, entry => {
 			if(entry.overrideVisibleTimestamp !== null || entry.lastMessageTimestamp !== null) {
 				return entry;
@@ -1938,11 +1997,10 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 
 			return {...entry, overrideVisibleTimestamp: new Date()};
 		});
-	});
+	}
 
-	const acceptFriendRequest = useLatestCallback((accountJID: JID, target: JID) => {
-		const account = accounts.find(x => x.jid.equals(accountJID));
-		if(typeof account === "undefined") throw new Error("No such account");
+	function acceptFriendRequest(accountJID: JID, target: JID) {
+		const account = getAccount(accountJID);
 
 		const info = account.counterparts.get(target.toString());
 		if(typeof info === "undefined") throw new Error("Unknown counterpart");
@@ -1967,12 +2025,11 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 				),
 			);
 		}
-	});
+	}
 
-	const rejectFriendRequest = useLatestCallback((accountJID: JID, target: JID) => {
+	function rejectFriendRequest(accountJID: JID, target: JID) {
 		{
-			const account = accounts.find(x => x.jid.equals(accountJID));
-			if(typeof account === "undefined") throw new Error("No such account");
+			const account = getAccount(accountJID);
 
 			const info = account.counterparts.get(target.toString());
 			if(typeof info === "undefined") throw new Error("Unknown counterpart");
@@ -1988,12 +2045,11 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 		}
 
 		upsertCounterpart(accountJID, target, current => ({...current, requestingMySubscription: false}));
-	});
+	}
 
-	const removeFriend = useLatestCallback(async (accountJID: JID, target: JID) => {
+	async function removeFriend(accountJID: JID, target: JID) {
 		{
-			const account = accounts.find(x => x.jid.equals(accountJID));
-			if(typeof account === "undefined") throw new Error("No such account");
+			const account = getAccount(accountJID);
 
 			await account.client.iqCaller.set(
 				xml(
@@ -2021,12 +2077,11 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 
 			return {...account, counterparts};
 		});
-	});
+	}
 
-	const sendFriendRequest = useLatestCallback((accountJID: JID, target: JID) => {
+	function sendFriendRequest(accountJID: JID, target: JID) {
 		{
-			const account = accounts.find(x => x.jid.equals(accountJID));
-			if(typeof account === "undefined") throw new Error("No such account");
+			const account = getAccount(accountJID);
 
 			const entry = account.counterparts.get(target.toString());
 
@@ -2058,19 +2113,17 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 				requestingSubscriptionTo: true,
 			},
 		}));
-	});
+	}
 
-	const fetchRoomInfo = useLatestCallback(async (accountJID: JID, roomJID: JID) => {
-		const account = accounts.find(x => x.jid.equals(accountJID));
-		if(typeof account === "undefined") throw new Error("No such account");
+	async function fetchRoomInfo(accountJID: JID, roomJID: JID) {
+		const account = getAccount(accountJID);
 
 		return fetchRoomDisco(account.client, roomJID);
-	});
+	}
 
-	const setComposingToCounterpart = useLatestCallback((accountJID: JID, target: JID, composing: boolean) => {
+	function setComposingToCounterpart(accountJID: JID, target: JID, composing: boolean) {
 		{
-			const account = accounts.find(x => x.jid.equals(accountJID));
-			if(typeof account === "undefined") throw new Error("No such account");
+			const account = getAccount(accountJID);
 
 			const counterpart = account.counterparts.get(target.toString());
 			if(counterpart?.lastReportedComposing === composing) return;
@@ -2090,12 +2143,11 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 			...current,
 			lastReportedComposing: composing,
 		}));
-	});
+	}
 
-	const setComposingToRoom = useLatestCallback((accountJID: JID, roomJID: JID, composing: boolean) => {
+	function setComposingToRoom(accountJID: JID, roomJID: JID, composing: boolean) {
 		{
-			const account = accounts.find(x => x.jid.equals(accountJID));
-			if(typeof account === "undefined") throw new Error("No such account");
+			const account = getAccount(accountJID);
 
 			const room = account.rooms.get(roomJID.toString());
 			if(room?.lastReportedComposing === composing) return;
@@ -2131,11 +2183,10 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 
 			return {...account, rooms};
 		});
-	});
+	}
 
-	const joinRoom = useLatestCallback(async (accountJID: JID, room: JID, nick?: string) => {
-		const account = accounts.find(x => x.jid.equals(accountJID));
-		if(typeof account === "undefined") throw new Error("No such account");
+	async function joinRoom(accountJID: JID, room: JID, nick?: string) {
+		const account = getAccount(accountJID);
 
 		if(account.rooms.has(room.toString())) {
 			// already joined
@@ -2188,7 +2239,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 			try {
 				const defer = Promise.withResolvers<RoomJoinCallbackInfo>();
 
-				newRoomsRef.current.set(room.toString(), defer);
+				newRooms.set(room.toString(), defer);
 
 				connectMUC(account.client, room, connectNick);
 
@@ -2223,7 +2274,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 				BOOKMARKS_PUBLISH_OPTIONS,
 			);
 		}
-	});
+	}
 
 	function disconnectRoom(account: Account, room: Room) {
 		return account.client.send(
@@ -2238,10 +2289,9 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 		);
 	}
 
-	const leaveRoom = useLatestCallback(async (accountJID: JID, roomJID: JID) => {
+	async function leaveRoom(accountJID: JID, roomJID: JID) {
 		{
-			const account = accounts.find(x => x.jid.equals(accountJID));
-			if(typeof account === "undefined") throw new Error("No such account");
+			const account = getAccount(accountJID);
 
 			const room = account.rooms.get(roomJID.toString());
 			if(typeof room === "undefined") return;
@@ -2257,9 +2307,9 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 
 			return {...account, rooms};
 		});
-	});
+	}
 
-	const createRoom = useLatestCallback(async (accountJID: JID, room: JID, params: RoomCreateParams) => {
+	async function createRoom(accountJID: JID, room: JID, params: RoomCreateParams) {
 		if(room.local === "") throw new Error("Room ID cannot be empty");
 
 		const realParams = {
@@ -2269,8 +2319,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 			"muc#roomconfig_roomname": params.name,
 		};
 
-		const account = accounts.find(x => x.jid.equals(accountJID));
-		if(typeof account === "undefined") throw new Error("No such account");
+		const account = getAccount(accountJID);
 
 		if(account.rooms.has(room.toString())) throw new Error("A room by that JID already exists");
 
@@ -2281,7 +2330,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 		// Join room
 		{
 			const defer = Promise.withResolvers<RoomJoinCallbackInfo>();
-			newRoomsRef.current.set(room.toString(), defer);
+			newRooms.set(room.toString(), defer);
 
 			connectMUC(account.client, room, nick);
 			joinInfo = await defer.promise;
@@ -2364,86 +2413,77 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 				),
 			);
 		}
-	});
+	}
 
-	const currentDisplayedUpdatesRef = useRef(new Map<string, string>());
+	async function submitDisplayedUpdateInner(accountJID: JID, targetJID: JID, lastReadMessageID: string, isRoom: boolean) {
+		const account = getAccount(accountJID);
 
-	const submitDisplayedUpdateInner = useLatestCallback(
-		async (accountJID: JID, targetJID: JID, lastReadMessageID: string, isRoom: boolean) => {
-			const account = accounts.find(x => x.jid.equals(accountJID));
-			if(typeof account === "undefined") throw new Error("No such account");
-
-			publishPubsubItem(
-				account.client,
-				"urn:xmpp:mds:displayed:0",
+		publishPubsubItem(
+			account.client,
+			"urn:xmpp:mds:displayed:0",
+			xml(
+				"item",
+				{id: targetJID.toString()},
 				xml(
-					"item",
-					{id: targetJID.toString()},
+					"displayed",
+					{xmlns: "urn:xmpp:mds:displayed:0"},
 					xml(
-						"displayed",
-						{xmlns: "urn:xmpp:mds:displayed:0"},
-						xml(
-							"stanza-id",
-							{
-								xmlns: "urn:xmpp:sid:0",
-								by: (isRoom ? targetJID : accountJID).toString(), id: lastReadMessageID,
-							},
-						),
+						"stanza-id",
+						{
+							xmlns: "urn:xmpp:sid:0",
+							by: (isRoom ? targetJID : accountJID).toString(), id: lastReadMessageID,
+						},
 					),
 				),
-				{
-					persistItems: true,
-					maxItems: "max",
-					sendLastPublishedItem: "never",
-					accessModel: "whitelist",
-				},
-			);
-		},
-	);
+			),
+			{
+				persistItems: true,
+				maxItems: "max",
+				sendLastPublishedItem: "never",
+				accessModel: "whitelist",
+			},
+		);
+	}
 
-	const submitDisplayedUpdate = useCallback(
-		(accountJID: JID, targetJID: JID, lastReadMessageID: string, isRoom: boolean) => {
-			const key = encodeURIComponent(accountJID.toString()) + "/" + encodeURIComponent(targetJID.toString());
-			const running = currentDisplayedUpdatesRef.current.has(key);
-			currentDisplayedUpdatesRef.current.set(key, lastReadMessageID);
+	const currentDisplayedUpdates = new Map<string, string>();
 
-			if(running) {
-				// Will submit after current run finishes
-				return;
-			}
+	function submitDisplayedUpdate(accountJID: JID, targetJID: JID, lastReadMessageID: string, isRoom: boolean) {
+		const key = encodeURIComponent(accountJID.toString()) + "/" + encodeURIComponent(targetJID.toString());
+		const running = currentDisplayedUpdates.has(key);
+		currentDisplayedUpdates.set(key, lastReadMessageID);
 
-			function task(value: string) {
-				submitDisplayedUpdateInner(accountJID, targetJID, value, isRoom)
-					.catch(console.error)
-					.then(() => {
-						if(currentDisplayedUpdatesRef.current.get(key) !== value) {
-							task(currentDisplayedUpdatesRef.current.get(key)!);
-						}
-						else {
-							currentDisplayedUpdatesRef.current.delete(key);
-						}
-					});
-			}
+		if(running) {
+			// Will submit after current run finishes
+			return;
+		}
 
-			task(lastReadMessageID);
-		},
-		[submitDisplayedUpdateInner],
-	);
+		function task(value: string) {
+			submitDisplayedUpdateInner(accountJID, targetJID, value, isRoom)
+				.catch(console.error)
+				.then(() => {
+					if(currentDisplayedUpdates.get(key) !== value) {
+						task(currentDisplayedUpdates.get(key)!);
+					}
+					else {
+						currentDisplayedUpdates.delete(key);
+					}
+				});
+		}
 
-	const markCounterpartAsRead = useLatestCallback(
-		(accountJID: JID, targetJID: JID, lastReadMessageID: string, isRoom: boolean) => {
-			upsertCounterpart(accountJID, targetJID, current => ({
-				...current,
-				lastReadMessageID,
-			}));
+		task(lastReadMessageID);
+	}
 
-			submitDisplayedUpdate(accountJID, targetJID, lastReadMessageID, isRoom);
-		},
-	);
+	function markCounterpartAsRead(accountJID: JID, targetJID: JID, lastReadMessageID: string, isRoom: boolean) {
+		upsertCounterpart(accountJID, targetJID, current => ({
+			...current,
+			lastReadMessageID,
+		}));
 
-	const setNick = useLatestCallback(async (accountJID: JID, value: string) => {
-		const account = accounts.find(x => x.jid.equals(accountJID));
-		if(typeof account === "undefined") throw new Error("No such account");
+		submitDisplayedUpdate(accountJID, targetJID, lastReadMessageID, isRoom);
+	}
+
+	async function setNick(accountJID: JID, value: string) {
+		const account = getAccount(accountJID);
 
 		await publishPubsubItem(
 			account.client,
@@ -2458,11 +2498,10 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 				),
 			),
 		);
-	});
+	}
 
-	const setAvatar = useLatestCallback(async (accountJID: JID, value: ImageInfo) => {
-		const account = accounts.find(x => x.jid.equals(accountJID));
-		if(typeof account === "undefined") throw new Error("No such account");
+	async function setAvatar(accountJID: JID, value: ImageInfo) {
+		const account = getAccount(accountJID);
 
 		const content = await value.content.bytes();
 		const hash = await crypto.subtle.digest("SHA-1", content);
@@ -2471,7 +2510,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 		const contentB64 = toBase64(content);
 
 		// Prefill local cache
-		await cache.setItem(
+		await cacheSig.value.setItem(
 			"avatarImages/" + encodeURIComponent(hashStr),
 			JSON.stringify({contentB64, type: "image/png"} satisfies AvatarImageCacheEntry),
 		);
@@ -2512,9 +2551,9 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 				),
 			),
 		);
-	});
+	}
 
-	const setRoomRank = useCallback(async (accountJID: JID, roomJID: JID, newRank: string) => {
+	async function setRoomRank(accountJID: JID, roomJID: JID, newRank: string) {
 		const account = accountsSig.value.find(x => x.jid.equals(accountJID));
 		if(typeof account === "undefined") throw new Error("No such account");
 
@@ -2544,9 +2583,9 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 				return {...current, rooms};
 			}
 		});
-	}, [accountsSig.value, updateAccount]);
+	}
 
-	async function reorderRoomInner(accountJID: JID, roomJID: JID, to: {before: JID | null; after: JID | null}) {
+	async function reorderRoom(accountJID: JID, roomJID: JID, to: {before: JID | null; after: JID | null}) {
 		async function task() {
 			const account = accountsSig.value.find(x => x.jid.equals(accountJID));
 			if(typeof account === "undefined") throw new Error("No such account");
@@ -2577,7 +2616,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 
 				const idx = roomsList.indexOf(after);
 
-				await reorderRoomInner(
+				await reorderRoom(
 					accountJID,
 					after.jid,
 					{after: idx > 0 ? roomsList[idx - 1].jid : null, before: before.jid},
@@ -2589,9 +2628,7 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 		await task();
 	}
 
-	const reorderRoom = useLatestCallback(reorderRoomInner);
-
-	const setRoomNotificationLevel = useCallback(async (accountJID: JID, roomJID: JID, level: NotificationLevel) => {
+	async function setRoomNotificationLevel(accountJID: JID, roomJID: JID, level: NotificationLevel) {
 		const account = accountsSig.value.find(x => x.jid.equals(accountJID));
 		if(typeof account === "undefined") throw new Error("No such account");
 
@@ -2623,103 +2660,39 @@ export function useCreateConnection(cache: IDBCache): ConnectionContext {
 				return {...current, rooms};
 			}
 		});
-	}, [accountsSig.value, updateAccount]);
+	}
 
-	useEffectOnce(() => {
-		loadAccounts();
-	});
+	return {
+		accountsSig,
+		getAccount,
 
-	const onUnmount = useLatestCallback(() => {
-		accounts.forEach(account => {
-			account.client.stop();
-		});
-	});
-	useEffect(() => {
-		return onUnmount;
-	}, [onUnmount]);
+		addEventListener,
+		removeEventListener,
 
-	return useMemo(
-		() => ({
-			accounts,
-			accountsSig,
-			inited,
-			idle,
+		requestArchive,
+		sendMessageToCounterpart,
+		sendMessageToRoom,
+		retractMessageToCounterpart,
+		retractMessageToRoom,
+		markCounterpartAsVisible,
+		markCounterpartAsRead,
+		acceptFriendRequest,
+		rejectFriendRequest,
+		removeFriend,
+		setComposingToCounterpart,
+		setComposingToRoom,
+		joinRoom,
+		leaveRoom,
+		createRoom,
+		sendFriendRequest,
+		fetchRoomInfo,
+		setNick,
+		setAvatar,
+		reorderRoom,
+		setRoomNotificationLevel,
 
-			saveToken(jid, token, userAgent, resource) {
-				localStorage.setItem("deepishAccount", JSON.stringify({jid: jid.toString(), token, userAgent, resource}));
-				loadAccounts();
-			},
-			logout(jid) {
-				if(accounts.length > 0 && accounts[0].jid.equals(jid)) {
-					localStorage.removeItem("deepishAccount");
-					loadAccounts();
-				}
-			},
-
-			addEventListener,
-			removeEventListener,
-
-			requestArchive,
-			sendMessageToCounterpart,
-			sendMessageToRoom,
-			retractMessageToCounterpart,
-			retractMessageToRoom,
-			markCounterpartAsVisible,
-			markCounterpartAsRead,
-			acceptFriendRequest,
-			rejectFriendRequest,
-			removeFriend,
-			setComposingToCounterpart,
-			setComposingToRoom,
-			joinRoom,
-			leaveRoom,
-			createRoom,
-			sendFriendRequest,
-			fetchRoomInfo,
-			setNick,
-			setAvatar,
-			reorderRoom,
-			setRoomNotificationLevel,
-		} satisfies ConnectionContext),
-		[
-			accounts,
-			accountsSig,
-			inited,
-			idle,
-			addEventListener,
-			removeEventListener,
-			requestArchive,
-			sendMessageToCounterpart,
-			sendMessageToRoom,
-			retractMessageToCounterpart,
-			retractMessageToRoom,
-			loadAccounts,
-			markCounterpartAsVisible,
-			markCounterpartAsRead,
-			acceptFriendRequest,
-			rejectFriendRequest,
-			setComposingToCounterpart,
-			setComposingToRoom,
-			joinRoom,
-			leaveRoom,
-			removeFriend,
-			createRoom,
-			sendFriendRequest,
-			fetchRoomInfo,
-			setNick,
-			setAvatar,
-			reorderRoom,
-			setRoomNotificationLevel,
-		],
-	);
-}
-
-export function useConnectionContext() {
-	const value = useContext(ConnectionContext);
-
-	if(typeof value === "undefined") throw new Error("Attempted to read connection outside of context");
-
-	return value;
+		loadAccounts,
+	};
 }
 
 function connectMUC(client: xmppClient.Client, roomJID: JID, nick: string) {
@@ -2829,9 +2802,18 @@ async function genVerString(
 	return toBase64(new Uint8Array(hash));
 }
 
+export function useAccountSig(): Signal<Account> {
+	const connectionCtx = useConnectionContext();
+	return useComputed(() => {
+		const result = connectionCtx.accountsSig.value[0];
+		if(typeof result === "undefined") throw new Error("Attempted to read account while not logged in");
+		return result;
+	});
+}
+
 export function useAccount() {
 	const connectionCtx = useConnectionContext();
-	const account = connectionCtx.accounts[0];
+	const account = connectionCtx.accountsSig.value[0];
 	if(typeof account === "undefined") throw new Error("Attempted to read account while not logged in");
 
 	return account;

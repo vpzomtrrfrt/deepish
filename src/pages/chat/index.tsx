@@ -4,6 +4,7 @@ import { attachInstruction, extractInstruction, Instruction } from "@atlaskit/pr
 import { DropIndicator } from "@atlaskit/pragmatic-drag-and-drop-react-drop-indicator/list-item";
 import { css, cx } from "@emotion/css";
 import { mdiAccountMultiple, mdiCheck, mdiClose, mdiHome, mdiPlus } from "@mdi/js";
+import { useComputed } from "@preact/signals";
 import { JID, parse as parseJID } from "@xmpp/jid";
 import useLinkState from "linkstate/hook";
 import { JSX } from "preact";
@@ -29,7 +30,7 @@ import SettingsDialog from "../../components/SettingsDialog";
 import { ManualTabsContainer, TabLink, TabsList } from "../../components/Tabs";
 import WithTooltip from "../../components/WithTooltip";
 import * as commonStyles from "../../util/commonStyles";
-import { Room, useAccount, useConnectionContext } from "../../util/connection";
+import { Room, useAccount, useAccountSig, useConnectionContext } from "../../util/connection";
 import { msgActionAdd, presenceShowTypeNames } from "../../util/langCommon";
 import { compareRanks } from "../../util/lexrank";
 import { getNickForCounterpart } from "../../util/profileUtil";
@@ -247,9 +248,11 @@ const styles = {
 };
 
 export default function ChatPage() {
-	const account = useAccount();
+	const accountSig = useAccountSig();
 
-	if(!account.connected) {
+	const connectedSig = useComputed(() => accountSig.value!.connected);
+
+	if(!connectedSig.value) {
 		return <ConnectingView />;
 	}
 
@@ -282,15 +285,12 @@ type PendingReorder = {movingRoom: JID; to: {after: JID | null; before: JID | nu
 
 function ChatView() {
 	const conn = useConnectionContext();
-	const account = useAccount();
+	const accountSig = useAccountSig();
 
 	const roomMatch = useRoute("/rooms/:roomJID");
 	const currentRoom = roomMatch[0] ? decodeURIComponent(roomMatch[1].roomJID) : null;
 
 	const addMatch = useRoute("/rooms:add");
-
-	const incomingRequestCounterparts = Array.from(account.counterparts.values())
-		.filter(counterpartIsIncomingRequest);
 
 	const [pendingReorders, setPendingReorders] =
 		useState<Set<PendingReorder>>(new Set());
@@ -304,7 +304,7 @@ function ChatView() {
 				return result;
 			});
 			try {
-				await conn.reorderRoom(account.jid, movingRoom, to);
+				await conn.reorderRoom(accountSig.value.jid, movingRoom, to);
 			}
 			catch(err) {
 				alert(err);
@@ -319,22 +319,14 @@ function ChatView() {
 		})();
 	});
 
-	const rooms = Array.from(account.rooms.values());
+	const roomsSig = useComputed(() => accountSig.value.rooms);
+
+	const rooms = Array.from(roomsSig.value.values());
 	rooms.sort((a, b) => compareRanks(a.rank, b.rank));
 	applyPendingReorders(rooms, pendingReorders);
 
 	return <div class={cx(styles.sidebarSegment, styles.roomList)}>
-		<div>
-			<Link to="~/">
-				<div class={cx(styles.roomLink, currentRoom === null && !addMatch[0] && styles.currentRoomLink, styles.homeAvatar)}>
-					<Icon path={mdiHome} class={styles.roomLinkIcon} />
-					{
-						incomingRequestCounterparts.length > 0 &&
-							<PriorityUnreadIndicator count={incomingRequestCounterparts.length} />
-					}
-				</div>
-			</Link>
-		</div>
+		<HomeLink active={currentRoom === null && !addMatch[0]} />
 		{
 			rooms.map(info => {
 				return <RoomLink
@@ -356,6 +348,27 @@ function ChatView() {
 	</div>;
 }
 
+function HomeLink(props: {active: boolean}) {
+	const accountSig = useAccountSig();
+
+	const incomingRequestCounterparts = useComputed(() => {
+		return Array.from(accountSig.value.counterparts.values())
+			.filter(counterpartIsIncomingRequest);
+	}).value;
+
+	return <div>
+		<Link to="~/">
+			<div class={cx(styles.roomLink, props.active && styles.currentRoomLink, styles.homeAvatar)}>
+				<Icon path={mdiHome} class={styles.roomLinkIcon} />
+				{
+					incomingRequestCounterparts.length > 0 &&
+						<PriorityUnreadIndicator count={incomingRequestCounterparts.length} />
+				}
+			</div>
+		</Link>
+	</div>;
+}
+
 function RoomLink(props: {
 	room: Room;
 	isCurrent: boolean;
@@ -363,11 +376,15 @@ function RoomLink(props: {
 	pendingReorders: Set<PendingReorder>;
 }) {
 	const conn = useConnectionContext();
-	const account = useAccount();
+	const accountSig = useAccountSig();
+
+	const accountJID = useComputed(() => accountSig.value.jid).value;
 
 	const name = LoadState.ifDone(props.room.infoState, disco => disco.name, () => null) ?? props.room.jid.toString();
 
-	const counterpart = account.counterparts.get(props.room.jid.toString());
+	const counterpart = useComputed(() => {
+		return accountSig.value.counterparts.get(props.room.jid.toString());
+	}).value;
 	const unread = typeof counterpart !== "undefined" &&
 		counterpart.lastMessageIDForUnread !== null &&
 		counterpart.lastReadMessageID !== counterpart.lastMessageIDForUnread &&
@@ -418,7 +435,7 @@ function RoomLink(props: {
 						const finalInstruction = extractInstruction(args.self.data);
 
 						if(finalInstruction !== null) {
-							const accountNow = conn.accountsSig.value.find(x => x.jid.equals(account.jid));
+							const accountNow = conn.accountsSig.value.find(x => x.jid.equals(accountJID));
 							if(typeof accountNow === "undefined") throw new Error("Missing account");
 
 							const rooms = Array.from(accountNow.rooms.values());
@@ -453,7 +470,7 @@ function RoomLink(props: {
 				},
 			}),
 		);
-	}, [account.jid, conn.accountsSig, props.reorderRoom, props.room.jid]);
+	}, [accountJID, conn.accountsSig, props.reorderRoom, props.room.jid]);
 
 	return <div
 		key={props.room.jid.toString()}
@@ -769,9 +786,26 @@ function SelfBox() {
 	const [, navigate] = useLocation();
 
 	const appCtx = useAppContext();
-	const account = useAccount();
+	const accountSig = useAccountSig();
 
-	const counterpart = account.counterparts.get(account.jid.toString());
+	const jid = useComputed(() => {
+		const account = accountSig.value;
+		if(typeof account === "undefined") throw new Error("Not logged in");
+		return account.jid;
+	}).value;
+
+	const counterpartSig = useComputed(() => {
+		const account = accountSig.value;
+		if(typeof account === "undefined") throw new Error("Not logged in");
+
+		return account.counterparts.get(account.jid.toString());
+	});
+
+	const nickSig = useComputed(() => {
+		const counterpart = counterpartSig.value;
+
+		return typeof counterpart === "undefined" ? jid.local : getNickForCounterpart(counterpart);
+	});
 
 	const openSettings = useCallback(() => {
 		appCtx.showDialog.call(undefined, <SettingsDialog />);
@@ -782,14 +816,14 @@ function SelfBox() {
 	});
 
 	const logout = useLatestCallback(() => {
-		navigate("~/logout/" + encodeURIComponent(account.jid.toString()));
+		navigate("~/logout/" + encodeURIComponent(jid.toString()));
 	});
 
 	return <div class={styles.selfBox}>
-		<Avatar jid={account.jid} size="md" />
+		<Avatar jid={jid} size="md" />
 		<div class={styles.selfBoxNameSegment}>
-			{typeof counterpart === "undefined" ? account.jid.local : getNickForCounterpart(counterpart)}
-			<div class={styles.friendEntryJID}>{account.jid.toString()}</div>
+			{nickSig}
+			<div class={styles.friendEntryJID}>{jid.toString()}</div>
 		</div>
 		<Menu>
 			<MenuItem onClick={openSettings}>{$t({defaultMessage: "Settings"})}</MenuItem>

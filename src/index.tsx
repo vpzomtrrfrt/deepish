@@ -3,6 +3,7 @@ import "./global.css";
 import { Tooltip } from "@base-ui/react/tooltip";
 import { css } from "@emotion/css";
 import { IDBCache } from "@instructure/idb-cache";
+import { useComputed } from "@preact/signals";
 import { useMediaQuery } from "@react-hook/media-query";
 import { parse as parseJID } from "@xmpp/jid";
 import { createContext, RefObject, render, VNode } from "preact";
@@ -186,32 +187,30 @@ function AppContent() {
 
 			if(!isActive) {
 				console.log("notifying", evt);
-				const account = connection.accounts.find(x => x.jid.equals(evt.account));
-				if(typeof account !== "undefined") {
-					const counterpart = account.counterparts.get(contact.toString());
+				const account = connection.getAccount(evt.account);
+				const counterpart = account.counterparts.get(contact.toString());
 
-					let bestContent = evt.message.content[0];
-					for(let i = 1; i < evt.message.content.length; i++) {
-						const current = evt.message.content[i];
+				let bestContent = evt.message.content[0];
+				for(let i = 1; i < evt.message.content.length; i++) {
+					const current = evt.message.content[i];
 
-						if(
-							NOTIFICATIONS_CONTENT_TYPE_PRIORITY.indexOf(current.type) >
-								NOTIFICATIONS_CONTENT_TYPE_PRIORITY.indexOf(bestContent.type)
-						) {
-							bestContent = current;
-						}
+					if(
+						NOTIFICATIONS_CONTENT_TYPE_PRIORITY.indexOf(current.type) >
+							NOTIFICATIONS_CONTENT_TYPE_PRIORITY.indexOf(bestContent.type)
+					) {
+						bestContent = current;
 					}
-
-					new Notification(
-						$t(
-							{defaultMessage: "New message from {name}"},
-							{name: maybeGetNickForCounterpart(contact, counterpart)},
-						),
-						{
-							body: bestContent.content.toString(),
-						},
-					);
 				}
+
+				new Notification(
+					$t(
+						{defaultMessage: "New message from {name}"},
+						{name: maybeGetNickForCounterpart(contact, counterpart)},
+					),
+					{
+						body: bestContent.content.toString(),
+					},
+				);
 			}
 		}
 	});
@@ -229,7 +228,9 @@ function AppContent() {
 function RootPage() {
 	const conn = useConnectionContext();
 
-	if(conn.accounts.length > 0) {
+	const hasAccount = useComputed(() => conn.accountsSig.value.length > 0);
+
+	if(hasAccount.value) {
 		return <ChatPage />;
 	}
 	else {
