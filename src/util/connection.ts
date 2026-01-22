@@ -98,7 +98,7 @@ export interface Account {
 	counterparts: SignalMap<string, Counterpart>;
 	rooms: SignalMap<string, Room>;
 
-	avatarStates: Map<string, LoadState<string>>;
+	avatarStates: SignalMap<string, LoadState<string>>;
 	servicesState: LoadState<ServiceInfo[]>;
 }
 
@@ -1241,17 +1241,11 @@ function createBaseConnection(cacheSig: Signal<IDBCache>, idleSig: Signal<IdleSt
 					return;
 				}
 			}
-		}
-
-		updateAccount(client, account => {
-			const newAvatarStates = new Map(account.avatarStates);
 
 			for(const hash of expectedHashes) {
-				newAvatarStates.set(hash, LoadState.loading);
+				account.avatarStates.set(hash, LoadState.loading);
 			}
-
-			return {...account, avatarStates: newAvatarStates};
-		});
+		}
 
 		Promise.all(
 			expectedHashes.map(hash => {
@@ -1265,21 +1259,16 @@ function createBaseConnection(cacheSig: Signal<IDBCache>, idleSig: Signal<IdleSt
 
 					console.log("got avatar from cache for", target);
 
-					updateAccount(client, account => {
-						const avatarStates = new Map(account.avatarStates);
+					const account = getAccount(client);
+					for(let i = 0; i < expectedHashes.length; i++) {
+						const entry = cacheResults[i]!;
+						const content = fromBase64(entry.contentB64);
 
-						for(let i = 0; i < expectedHashes.length; i++) {
-							const entry = cacheResults[i]!;
-							const content = fromBase64(entry.contentB64);
+						const blob = new Blob([content], {type: entry.type});
+						const url = URL.createObjectURL(blob);
 
-							const blob = new Blob([content], {type: entry.type});
-							const url = URL.createObjectURL(blob);
-
-							avatarStates.set(expectedHashes[i], LoadState.wrapValue(url));
-						}
-
-						return {...account, avatarStates};
-					});
+						account.avatarStates.set(expectedHashes[i], LoadState.wrapValue(url));
+					}
 
 					return;
 				}
@@ -1314,13 +1303,8 @@ function createBaseConnection(cacheSig: Signal<IDBCache>, idleSig: Signal<IdleSt
 								const blob = new Blob([content], {type});
 								const url = URL.createObjectURL(blob);
 
-								updateAccount(client, account => {
-									const newAvatarStates = new Map(account.avatarStates);
-
-									newAvatarStates.set(hashStr, LoadState.wrapValue(url));
-
-									return {...account, avatarStates: newAvatarStates};
-								});
+								const account = getAccount(client);
+								account.avatarStates.set(hashStr, LoadState.wrapValue(url));
 
 								cacheSig.value.setItem(
 									"avatarImages/" + encodeURIComponent(hashStr),
@@ -1334,21 +1318,16 @@ function createBaseConnection(cacheSig: Signal<IDBCache>, idleSig: Signal<IdleSt
 				console.error(err);
 			})
 			.then(() => {
-				updateAccount(client, account => {
-					const newAvatarStates = new Map(account.avatarStates);
-
-					for(const hash of expectedHashes) {
-						const value = newAvatarStates.get(hash);
-						if(typeof value === "undefined" || value.state !== "done") {
-							newAvatarStates.set(
-								hash,
-								LoadState.wrapError(new Error("Didn't receive avatar image from request")),
-							);
-						}
+				const account = getAccount(client);
+				for(const hash of expectedHashes) {
+					const value = account.avatarStates.get(hash);
+					if(typeof value === "undefined" || value.state !== "done") {
+						account.avatarStates.set(
+							hash,
+							LoadState.wrapError(new Error("Didn't receive avatar image from request")),
+						);
 					}
-
-					return {...account, avatarStates: newAvatarStates};
-				});
+				}
 			});
 	}
 
@@ -1664,7 +1643,7 @@ function createBaseConnection(cacheSig: Signal<IDBCache>, idleSig: Signal<IdleSt
 							connected: false,
 							counterparts: new SignalMap(),
 							rooms: new SignalMap(),
-							avatarStates: new Map(),
+							avatarStates: new SignalMap(),
 							servicesState: LoadState.loading,
 							stopped: false,
 						} satisfies Account,
