@@ -2798,9 +2798,13 @@ async function genVerString(
 	return toBase64(new Uint8Array(hash));
 }
 
-export function useAccountSig(): Signal<Account | undefined> {
+export function useAccountSig(): Signal<Account> {
 	const connectionCtx = useConnectionContext();
-	return useComputed(() => connectionCtx.accountsSig.value[0]);
+	return useComputed(() => {
+		const result = connectionCtx.accountsSig.value[0];
+		if(typeof result === "undefined") throw new Error("Attempted to read account while not logged in");
+		return result;
+	});
 }
 
 export function useAccount() {

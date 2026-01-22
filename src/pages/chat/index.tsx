@@ -285,15 +285,19 @@ type PendingReorder = {movingRoom: JID; to: {after: JID | null; before: JID | nu
 
 function ChatView() {
 	const conn = useConnectionContext();
-	const account = useAccount();
+	const accountSig = useAccountSig();
+
+	const accountJID = useComputed(() => accountSig.value.jid).value;
 
 	const roomMatch = useRoute("/rooms/:roomJID");
 	const currentRoom = roomMatch[0] ? decodeURIComponent(roomMatch[1].roomJID) : null;
 
 	const addMatch = useRoute("/rooms:add");
 
-	const incomingRequestCounterparts = Array.from(account.counterparts.values())
-		.filter(counterpartIsIncomingRequest);
+	const incomingRequestCounterparts = useComputed(() => {
+		return Array.from(accountSig.value.counterparts.values())
+			.filter(counterpartIsIncomingRequest);
+	}).value;
 
 	const [pendingReorders, setPendingReorders] =
 		useState<Set<PendingReorder>>(new Set());
@@ -307,7 +311,7 @@ function ChatView() {
 				return result;
 			});
 			try {
-				await conn.reorderRoom(account.jid, movingRoom, to);
+				await conn.reorderRoom(accountJID, movingRoom, to);
 			}
 			catch(err) {
 				alert(err);
@@ -322,9 +326,18 @@ function ChatView() {
 		})();
 	});
 
-	const rooms = Array.from(account.rooms.values());
-	rooms.sort((a, b) => compareRanks(a.rank, b.rank));
-	applyPendingReorders(rooms, pendingReorders);
+	const roomsSig = useComputed(() => {
+		const result = Array.from(accountSig.value.rooms.values());
+		result.sort((a, b) => compareRanks(a.rank, b.rank));
+		return result;
+	});
+
+	let rooms;
+	if(pendingReorders.size > 0) {
+		rooms = roomsSig.value.slice();
+		applyPendingReorders(rooms, pendingReorders);
+	}
+	else rooms = roomsSig.value;
 
 	return <div class={cx(styles.sidebarSegment, styles.roomList)}>
 		<div>
@@ -366,11 +379,15 @@ function RoomLink(props: {
 	pendingReorders: Set<PendingReorder>;
 }) {
 	const conn = useConnectionContext();
-	const account = useAccount();
+	const accountSig = useAccountSig();
+
+	const accountJID = useComputed(() => accountSig.value.jid).value;
 
 	const name = LoadState.ifDone(props.room.infoState, disco => disco.name, () => null) ?? props.room.jid.toString();
 
-	const counterpart = account.counterparts.get(props.room.jid.toString());
+	const counterpart = useComputed(() => {
+		return accountSig.value.counterparts.get(props.room.jid.toString());
+	}).value;
 	const unread = typeof counterpart !== "undefined" &&
 		counterpart.lastMessageIDForUnread !== null &&
 		counterpart.lastReadMessageID !== counterpart.lastMessageIDForUnread &&
@@ -421,7 +438,7 @@ function RoomLink(props: {
 						const finalInstruction = extractInstruction(args.self.data);
 
 						if(finalInstruction !== null) {
-							const accountNow = conn.accountsSig.value.find(x => x.jid.equals(account.jid));
+							const accountNow = conn.accountsSig.value.find(x => x.jid.equals(accountJID));
 							if(typeof accountNow === "undefined") throw new Error("Missing account");
 
 							const rooms = Array.from(accountNow.rooms.values());
@@ -456,7 +473,7 @@ function RoomLink(props: {
 				},
 			}),
 		);
-	}, [account.jid, conn.accountsSig, props.reorderRoom, props.room.jid]);
+	}, [accountJID, conn.accountsSig, props.reorderRoom, props.room.jid]);
 
 	return <div
 		key={props.room.jid.toString()}
