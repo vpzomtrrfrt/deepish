@@ -41,6 +41,35 @@ export async function fetchPubsubItems(client: Client, node: string): Promise<{i
 	};
 }
 
+export async function fetchPubsubItem(client: Client, node: string, id: string): Promise<PubsubItemInfo> {
+	const result = await client.iqCaller.get(
+		xml(
+			"pubsub",
+			{xmlns: "http://jabber.org/protocol/pubsub"},
+			xml(
+				"items",
+				{node},
+				xml("item", {id}),
+			),
+		),
+	);
+
+	if(typeof result === "undefined") throw new Error("Missing result from pubsub fetch");
+
+	const itemsElem = result.getChild("items");
+	if(typeof itemsElem === "undefined") throw new Error("Missing result from pubsub fetch");
+
+	const itemElems = itemsElem.getChildren("item");
+
+	const itemElem = itemElems.find(x => x.getAttr("id") === id);
+	if(typeof itemElem === "undefined") throw new Error("Didn't get requested item");
+
+	return {
+		id,
+		element: itemElem,
+	};
+}
+
 export interface PubsubPublishOptions {
 	persistItems?: boolean;
 	maxItems?: number | "max";

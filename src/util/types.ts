@@ -25,6 +25,11 @@ export interface RosterEntry {
 	subscriptionFrom: boolean;
 }
 
+export interface AvatarMetadata {
+	hash: string;
+	type: string;
+}
+
 export interface Counterpart {
 	jid: JID;
 	rosterEntry: null | RosterEntry;
@@ -35,7 +40,7 @@ export interface Counterpart {
 	lastMessageTimestampForUnread: Date | null;
 	lastMessageTimestampFromInbox: Date | null;
 	overrideVisibleTimestamp: Date | null;
-	avatarHashes: string[];
+	avatars: Array<AvatarMetadata | string>;
 	presences: Map<string, Presence> | null;
 	lastReportedComposing: boolean;
 	composingFrom: boolean | null;

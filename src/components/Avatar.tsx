@@ -83,7 +83,7 @@ export default function Avatar(props: {size: AvatarSize; jid: Signalish<string |
 		}
 
 		if(typeof counterpart !== "undefined") {
-			return counterpart.avatarHashes;
+			return counterpart.avatars.map(ref => typeof ref === "string" ? ref : ref.hash);
 		}
 
 		return [];

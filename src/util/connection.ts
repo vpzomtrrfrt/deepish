@@ -17,12 +17,12 @@ import useLatestCallback from "use-latest-callback";
 import { compareRanks, DEFAULT_RANK, genRankBetween } from "./lexrank";
 import { markdownHasAnyFormatting, parseMarkdown, renderMarkdownTo0393, renderMarkdownToXHTML } from "./markdown";
 import SignalMap from "./SignalMap";
-import { Counterpart, Presence, PresenceShowType, RosterEntry } from "./types";
+import { AvatarMetadata, Counterpart, Presence, PresenceShowType, RosterEntry } from "./types";
 import { LoadState } from "./useData";
 import useEffectOnce from "./useEffectOnce";
 import useIdle, { IdleState } from "./useIdle";
 import * as xmppClient from "./xmpp/client";
-import { fetchPubsubItems, publishPubsubItem, PubsubItemInfo, PubsubPublishOptions, retractPubsubItem } from "./xmpp/pubsub";
+import { fetchPubsubItem, fetchPubsubItems, publishPubsubItem, PubsubItemInfo, PubsubPublishOptions, retractPubsubItem } from "./xmpp/pubsub";
 import StanzaID, { StanzaIDType } from "./xmpp/StanzaID";
 
 const FEATURES: string[] = [
@@ -47,7 +47,7 @@ const DEFAULT_COUNTERPART_INFO: Omit<Counterpart, "jid"> = {
 	lastMessageTimestampForUnread: null,
 	lastMessageTimestampFromInbox: null,
 	overrideVisibleTimestamp: null,
-	avatarHashes: [],
+	avatars: [],
 	presences: null,
 	lastReportedComposing: false,
 	composingFrom: null,
@@ -698,17 +698,32 @@ function createBaseConnection(cacheSig: Signal<IDBCache>, idleSig: Signal<IdleSt
 			}
 		}
 		else if(node === "urn:xmpp:avatar:metadata") {
-			const avatarHashes: string[] = [item.id]; // TODO Fetch other hashes from metadata
-
 			if(typeof from !== "undefined") {
 				const contact = from;
 
+				const avatars: Array<AvatarMetadata | string> = [];
+
+				const metadataElem = item.element.getChild("metadata", "urn:xmpp:avatar:metadata");
+				if(typeof metadataElem !== "undefined") {
+					metadataElem.getChildren("info").forEach(infoElem => {
+						const type = infoElem.getAttr("type");
+						const hash = infoElem.getAttr("id");
+
+						if(typeof type === "string" && typeof hash === "string") {
+							avatars.push({
+								type,
+								hash,
+							});
+						}
+					});
+				}
+
 				upsertCounterpart(client, contact, current => ({
 					...current,
-					avatarHashes,
+					avatars,
 				}));
 
-				startRequestingAvatar(client, contact, avatarHashes);
+				startRequestingAvatar(client, contact, avatars);
 			}
 		}
 		else if(node === "urn:xmpp:bookmarks:1") {
@@ -1230,26 +1245,50 @@ function createBaseConnection(cacheSig: Signal<IDBCache>, idleSig: Signal<IdleSt
 		}
 	}
 
-	function startRequestingAvatar(client: xmppClient.Client, target: JID, expectedHashes: string[]) {
+	async function saveAvatarToCache(client: xmppClient.Client, contentB64: string, type: string) {
+		const content = fromBase64(contentB64);
+
+		const hash = await crypto.subtle.digest("SHA-1", content)
+		const hashStr = toHex(new Uint8Array(hash));
+
+		const blob = new Blob([content], {type});
+		const url = URL.createObjectURL(blob);
+
+		const account = getAccount(client);
+		account.avatarStates.set(hashStr, LoadState.wrapValue(url));
+
+		cacheSig.value.setItem(
+			"avatarImages/" + encodeURIComponent(hashStr),
+			JSON.stringify({contentB64, type} satisfies AvatarImageCacheEntry),
+		);
+	}
+
+	function startRequestingAvatar(
+		client: xmppClient.Client,
+		target: JID,
+		expected: Array<AvatarMetadata | string>,
+	) {
 		{
 			const account = getAccount(client);
 
-			for(const hash of expectedHashes) {
+			for(const ref of expected) {
+				const hash = typeof ref === "string" ? ref : ref.hash;
+
 				const state = account.avatarStates.get(hash);
 				if(typeof state !== "undefined") {
 					console.log("Already loading this avatar");
 					return;
 				}
-			}
 
-			for(const hash of expectedHashes) {
 				account.avatarStates.set(hash, LoadState.loading);
 			}
 		}
 
 		Promise.all(
-			expectedHashes.map(hash => {
-				return cacheSig.value.getItem("avatarImages/" + encodeURIComponent(hash))
+			expected.map(ref => {
+				return cacheSig.value.getItem(
+					"avatarImages/" + encodeURIComponent(typeof ref === "string" ? ref : ref.hash)
+				)
 					.then(x => x === null ? null : (JSON.parse(x) as AvatarImageCacheEntry));
 			}),
 		)
@@ -1260,14 +1299,16 @@ function createBaseConnection(cacheSig: Signal<IDBCache>, idleSig: Signal<IdleSt
 					console.log("got avatar from cache for", target);
 
 					const account = getAccount(client);
-					for(let i = 0; i < expectedHashes.length; i++) {
+					for(let i = 0; i < expected.length; i++) {
 						const entry = cacheResults[i]!;
 						const content = fromBase64(entry.contentB64);
 
 						const blob = new Blob([content], {type: entry.type});
 						const url = URL.createObjectURL(blob);
 
-						account.avatarStates.set(expectedHashes[i], LoadState.wrapValue(url));
+						const ref = expected[i];
+
+						account.avatarStates.set(typeof ref === "string" ? ref : ref.hash, LoadState.wrapValue(url));
 					}
 
 					return;
@@ -1275,42 +1316,46 @@ function createBaseConnection(cacheSig: Signal<IDBCache>, idleSig: Signal<IdleSt
 
 				console.log("missing avatar for", target, " - fetching now");
 
-				const result = await client.iqCaller.get(
-					xml(
-						"vCard",
-						{xmlns: "vcard-temp"},
-					),
-					target.toString(),
-				);
+				try {
+					const result = await client.iqCaller.get(
+						xml(
+							"vCard",
+							{xmlns: "vcard-temp"},
+						),
+						target.toString(),
+					);
 
-				if(typeof result === "undefined") throw new Error("Unexpected result");
+					if(typeof result === "undefined") throw new Error("Unexpected result");
 
-				const calls = [];
+					const calls = [];
 
-				for(const photoElem of result.getChildren("PHOTO")) {
-					const type = photoElem.getChildText("TYPE");
-					const contentB64 = photoElem.getChildText("BINVAL");
+					for(const photoElem of result.getChildren("PHOTO")) {
+						const type = photoElem.getChildText("TYPE");
+						const contentB64 = photoElem.getChildText("BINVAL");
 
-					if(type === null || contentB64 === null) continue;
+						if(type === null || contentB64 === null) continue;
 
-					const content = fromBase64(contentB64);
+						calls.push(saveAvatarToCache(client, contentB64, type));
+					}
 
-					calls.push(
-						crypto.subtle.digest("SHA-1", content)
-							.then(hash => {
-								const hashStr = toHex(new Uint8Array(hash));
+					await Promise.all(calls);
+				}
+				catch(err) {
+					console.log("fetching avatar via vCard failed, trying PEP", err);
 
-								const blob = new Blob([content], {type});
-								const url = URL.createObjectURL(blob);
+					await Promise.all(
+						expected.map(async (ref) => {
+							if(typeof ref === "string") {
+								console.log("Can't fetch avatar without type");
+								return;
+							}
 
-								const account = getAccount(client);
-								account.avatarStates.set(hashStr, LoadState.wrapValue(url));
-
-								cacheSig.value.setItem(
-									"avatarImages/" + encodeURIComponent(hashStr),
-									JSON.stringify({contentB64, type} satisfies AvatarImageCacheEntry),
-								);
-							}),
+							const result = await fetchPubsubItem(client, "urn:xmpp:avatar:data", ref.hash);
+							const contentB64 = result.element.getChildText("data", "urn:xmpp:avatar:data");
+							if(contentB64 !== null) {
+								return saveAvatarToCache(client, contentB64, ref.type);
+							}
+						}),
 					);
 				}
 			})
@@ -1319,7 +1364,9 @@ function createBaseConnection(cacheSig: Signal<IDBCache>, idleSig: Signal<IdleSt
 			})
 			.then(() => {
 				const account = getAccount(client);
-				for(const hash of expectedHashes) {
+				for(const ref of expected) {
+					const hash = typeof ref === "string" ? ref : ref.hash;
+
 					const value = account.avatarStates.get(hash);
 					if(typeof value === "undefined" || value.state !== "done") {
 						account.avatarStates.set(
@@ -1591,7 +1638,7 @@ function createBaseConnection(cacheSig: Signal<IDBCache>, idleSig: Signal<IdleSt
 			console.log("got presence from", srcJID.toString(), ", interpreting as from", contact.toString(), ", avatar hashes:", avatarHashes);
 
 			if(typeof avatarHashes !== "undefined") {
-				upsertCounterpart(client, contact, current => ({...current, avatarHashes}));
+				upsertCounterpart(client, contact, current => ({...current, avatars: avatarHashes}));
 			}
 
 			if(typeof avatarHashes !== "undefined" && avatarHashes.length > 0) {
