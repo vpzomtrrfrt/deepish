@@ -1497,6 +1497,10 @@ function createBaseConnection(cacheSig: Signal<IDBCache>, idleSig: Signal<IdleSt
 
 								if(!oldInfo.connected) shouldFetchDisco = true;
 
+								if(oldInfo.connected && oldInfo.nick === srcJID.resource) {
+									return item;
+								}
+
 								rooms.set(srcJID.bare().toString(), {
 									...oldInfo,
 									connected: true,
