@@ -287,8 +287,6 @@ function ChatView() {
 	const conn = useConnectionContext();
 	const accountSig = useAccountSig();
 
-	const accountJID = useComputed(() => accountSig.value.jid).value;
-
 	const roomMatch = useRoute("/rooms/:roomJID");
 	const currentRoom = roomMatch[0] ? decodeURIComponent(roomMatch[1].roomJID) : null;
 
@@ -306,7 +304,7 @@ function ChatView() {
 				return result;
 			});
 			try {
-				await conn.reorderRoom(accountJID, movingRoom, to);
+				await conn.reorderRoom(accountSig.value.jid, movingRoom, to);
 			}
 			catch(err) {
 				alert(err);
@@ -321,18 +319,11 @@ function ChatView() {
 		})();
 	});
 
-	const roomsSig = useComputed(() => {
-		const result = Array.from(accountSig.value.rooms.values());
-		result.sort((a, b) => compareRanks(a.rank, b.rank));
-		return result;
-	});
+	const roomsSig = useComputed(() => accountSig.value.rooms);
 
-	let rooms;
-	if(pendingReorders.size > 0) {
-		rooms = roomsSig.value.slice();
-		applyPendingReorders(rooms, pendingReorders);
-	}
-	else rooms = roomsSig.value;
+	const rooms = Array.from(roomsSig.value.values());
+	rooms.sort((a, b) => compareRanks(a.rank, b.rank));
+	applyPendingReorders(rooms, pendingReorders);
 
 	return <div class={cx(styles.sidebarSegment, styles.roomList)}>
 		<HomeLink active={currentRoom === null && !addMatch[0]} />
