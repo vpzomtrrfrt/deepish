@@ -2,9 +2,11 @@ import { css, cx } from "@emotion/css";
 import { useComputed } from "@preact/signals";
 import { useLiveSignal } from "@preact/signals/utils";
 import { JID, parse as parseJID } from "@xmpp/jid";
+import { Signalish } from "preact";
 import { useMemo } from "preact/hooks";
 
 import { useAccountSig } from "../util/connection";
+import unsignal from "../util/unsignal";
 import { generateColorForID } from "../util/xmpp/colorGeneration";
 
 const styles = {
@@ -41,10 +43,13 @@ const styles = {
 
 export type AvatarSize = "lg" | "md";
 
-export default function Avatar(props: {size: AvatarSize; jid: string | JID; class?: string}) {
+export default function Avatar(props: {size: AvatarSize; jid: Signalish<string | JID>; class?: string}) {
 	const accountSig = useAccountSig();
 
-	const parsedJID = useMemo(() => typeof props.jid === "string" ? parseJID(props.jid) : props.jid, [props.jid]);
+	const jid = unsignal(props.jid);
+	const parsedJID = useMemo(() => {
+		return typeof jid === "string" ? parseJID(jid) : jid;
+	}, [jid]);
 	const parsedJIDSig = useLiveSignal(parsedJID);
 
 	const hashesSig = useComputed(() => {

@@ -1,5 +1,6 @@
 import { css, cx } from "@emotion/css";
 import { useComputed } from "@preact/signals";
+import { useLiveSignal } from "@preact/signals/utils";
 import * as xml from "@xmpp/xml";
 import inlineStyleParser from "inline-style-parser";
 import { ComponentChildren, h, JSX, VNode } from "preact";
@@ -186,18 +187,19 @@ function MessageRow(props: RowComponentProps<{
 
 function RealMessageRow(props: RowComponentProps<{message: Message; renderMenu(message: Message): ComponentChildren}>) {
 	const message = props.message;
+	const messageSig = useLiveSignal(message);
 
 	const { $t } = useIntl();
 
 	const accountSig = useAccountSig();
 
-	const from = message.room === null ? message.from.bare() : message.from;
-	const counterpartSig = useComputed(() => accountSig.value.counterparts.getSignal(from.toString())).value;
-	const nickSig = useComputed(() => maybeGetNickForCounterpart(from, counterpartSig.value));
+	const fromSig = useComputed(() => messageSig.value.room === null ? messageSig.value.from.bare() : messageSig.value.from);
+	const counterpartSig = useComputed(() => accountSig.value.counterparts.getSignal(fromSig.value.toString())).value;
+	const nickSig = useComputed(() => maybeGetNickForCounterpart(fromSig.value, counterpartSig.value));
 
 	return <div style={props.style} class={styles.message}>
 		<div>
-			<Avatar size="md" jid={from} />
+			<Avatar size="md" jid={fromSig} />
 		</div>
 		<div class={styles.messageContentArea}>
 			<div>
