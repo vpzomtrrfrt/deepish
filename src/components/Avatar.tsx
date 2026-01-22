@@ -1,8 +1,10 @@
 import { css, cx } from "@emotion/css";
+import { useComputed } from "@preact/signals";
+import { useLiveSignal } from "@preact/signals/utils";
 import { JID, parse as parseJID } from "@xmpp/jid";
 import { useMemo } from "preact/hooks";
 
-import { useAccount } from "../util/connection";
+import { useAccountSig } from "../util/connection";
 import { generateColorForID } from "../util/xmpp/colorGeneration";
 
 const styles = {
@@ -40,20 +42,22 @@ const styles = {
 export type AvatarSize = "lg" | "md";
 
 export default function Avatar(props: {size: AvatarSize; jid: string | JID; class?: string}) {
-	const account = useAccount();
+	const accountSig = useAccountSig();
 
 	const parsedJID = useMemo(() => typeof props.jid === "string" ? parseJID(props.jid) : props.jid, [props.jid]);
+	const parsedJIDSig = useLiveSignal(parsedJID);
 
-	const image = useMemo((): string | null => {
-		if(typeof account === "undefined") return null;
+	const hashesSig = useComputed(() => {
+		const parsedJID = parsedJIDSig.value;
+
+		const account = accountSig.value;
+
+		if(typeof account === "undefined") return [];
 
 		const roomEntry = account.rooms.get(parsedJID.toString());
 		if(typeof roomEntry !== "undefined") {
 			if(roomEntry.infoState.state === "done") {
-				for(const hash of roomEntry.infoState.value.avatarHashes) {
-					const state = account.avatarStates.get(hash);
-					if(typeof state !== "undefined" && state.state === "done") return state.value;
-				}
+				return roomEntry.infoState.value.avatarHashes;
 			}
 		}
 
@@ -74,14 +78,20 @@ export default function Avatar(props: {size: AvatarSize; jid: string | JID; clas
 		}
 
 		if(typeof counterpart !== "undefined") {
-			for(const hash of counterpart.avatarHashes) {
-				const state = account.avatarStates.get(hash);
-				if(typeof state !== "undefined" && state.state === "done") return state.value;
-			}
+			return counterpart.avatarHashes;
+		}
+
+		return [];
+	});
+
+	const image = useComputed(() => {
+		for(const hash of hashesSig.value) {
+			const state = accountSig.value.avatarStates.get(hash);
+			if(typeof state !== "undefined" && state.state === "done") return state.value;
 		}
 
 		return null;
-	}, [account, parsedJID]);
+	}).value;
 
 	const color = useMemo(() => {
 		return generateColorForID(parsedJID.toString());

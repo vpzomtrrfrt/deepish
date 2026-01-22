@@ -1,4 +1,5 @@
 import { css } from "@emotion/css";
+import { useComputed } from "@preact/signals";
 import { parse as parseJID } from "@xmpp/jid";
 import { pushAtSortPosition } from "array-push-at-sort-position";
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
@@ -12,7 +13,7 @@ import Menu, { MenuItem } from "../../components/Menu";
 import MessageInput from "../../components/MessageInput";
 import MessageList, { LoadMoreTriggerer } from "../../components/MessageList";
 import TypingIndicator from "../../components/TypingIndicator";
-import { Message, MessageEvent, MessageRemovalEvent, messageRemovalIsAllowed, ResultSetInfo, useAccount, useConnectionContext } from "../../util/connection";
+import { Message, MessageEvent, MessageRemovalEvent, messageRemovalIsAllowed, ResultSetInfo, useAccountSig, useConnectionContext } from "../../util/connection";
 import { msgActionDelete } from "../../util/langCommon";
 import { getNickForCounterpart } from "../../util/profileUtil";
 import { LoadState } from "../../util/useData";
@@ -49,8 +50,8 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 
 	const appCtx = useAppContext();
 	const conn = useConnectionContext();
-	const account = useAccount();
-	const counterpart = account.counterparts.get(props.counterpartJID);
+	const accountSig = useAccountSig();
+	const counterpart = useComputed(() => accountSig.value.counterparts.getSignal(props.counterpartJID)).value.value;
 
 	const [messagesData, setMessagesData] = useState<{
 		messages: Message[];
@@ -184,7 +185,7 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 	const loadMore = useLatestCallback(() => {
 		setPageState(LoadState.loading);
 
-		conn.requestArchive(account.jid, account.jid, {with: counterpart!.jid}, nextPageRef.current ?? undefined)
+		conn.requestArchive(accountSig.value.jid, accountSig.value.jid, {with: counterpart!.jid}, nextPageRef.current ?? undefined)
 			.then(value => {
 				nextPageRef.current = value === null ? null : value.firstItem;
 				setPageState(LoadState.wrapValue(value));
@@ -198,13 +199,13 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 		if(typeof counterpart !== "undefined" && pageState === null) {
 			loadMore();
 		}
-	}, [pageState, loadMore, account.connected, counterpart]);
+	}, [pageState, loadMore, accountSig.value.connected, counterpart]);
 
 	useEffect(() => {
 		if(typeof counterpart !== "undefined") {
-			conn.markCounterpartAsVisible.call(undefined, account.jid, counterpart.jid);
+			conn.markCounterpartAsVisible.call(undefined, accountSig.value.jid, counterpart.jid);
 		}
-	}, [account.jid, conn.markCounterpartAsVisible, counterpart]);
+	}, [accountSig.value.jid, conn.markCounterpartAsVisible, counterpart]);
 
 	useEffect(() => {
 		// TODO skip marking when scrolled up
@@ -216,19 +217,19 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 		) {
 			const lastMessage = messagesData.messages[messagesData.messages.length - 1];
 			const lastMessageID =
-				lastMessage.ids.find(x => x.type === StanzaIDType.Stanza && x.by.equals(account.jid));
+				lastMessage.ids.find(x => x.type === StanzaIDType.Stanza && x.by.equals(accountSig.value.jid));
 			if(typeof lastMessageID !== "undefined" && counterpart.lastReadMessageID !== lastMessageID.id) {
-				conn.markCounterpartAsRead.call(undefined, account.jid, counterpart.jid, lastMessageID.id, false);
+				conn.markCounterpartAsRead.call(undefined, accountSig.value.jid, counterpart.jid, lastMessageID.id, false);
 			}
 		}
-	}, [account.jid, conn.markCounterpartAsRead, counterpart, messagesData.messages, pageState]);
+	}, [accountSig.value.jid, conn.markCounterpartAsRead, counterpart, messagesData.messages, pageState]);
 
 	const submitMessage = useLatestCallback(async (newMessage: string) => {
-		await conn.sendMessageToCounterpart(account.jid, counterpart!.jid, {body: newMessage});
+		await conn.sendMessageToCounterpart(accountSig.value.jid, counterpart!.jid, {body: newMessage});
 	});
 
 	const onChangeComposing = useLatestCallback((composing: boolean) => {
-		conn.setComposingToCounterpart(account.jid, parseJID(props.counterpartJID), composing);
+		conn.setComposingToCounterpart(accountSig.value.jid, parseJID(props.counterpartJID), composing);
 	});
 
 	const retractMessage = useCallback((messageID: string) => {
@@ -238,7 +239,7 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 				submit={async () => {
 					return conn.retractMessageToCounterpart.call(
 						undefined,
-						account.jid,
+						accountSig.value.jid,
 						parseJID(props.counterpartJID),
 						messageID,
 					);
@@ -248,13 +249,13 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 				{$t({defaultMessage: "Are you sure you want to delete this message?"})}
 			</ConfirmTaskDialog>
 		);
-	}, [$t, account.jid, appCtx.showDialog, conn.retractMessageToCounterpart, props.counterpartJID]);
+	}, [$t, accountSig.value.jid, appCtx.showDialog, conn.retractMessageToCounterpart, props.counterpartJID]);
 
 	const renderMenu = useCallback((message: Message) => {
 		const items = [];
 
-		if(message.from.bare().equals(account.jid)) {
-			const id = message.ids.find(x => x.type === StanzaIDType.Element && x.by.equals(account.jid));
+		if(message.from.bare().equals(accountSig.value.jid)) {
+			const id = message.ids.find(x => x.type === StanzaIDType.Element && x.by.equals(accountSig.value.jid));
 			if(typeof id !== "undefined") {
 				items.push(
 					<MenuItem onClick={retractMessage.bind(undefined, id.id)}>{$t({defaultMessage: "Delete Message"})}</MenuItem>
@@ -266,7 +267,7 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 		else {
 			return <Menu>{items}</Menu>;
 		}
-	}, [$t, account.jid, retractMessage]);
+	}, [$t, accountSig.value.jid, retractMessage]);
 
 	useEffect(() => {
 		return () => onChangeComposing(false);

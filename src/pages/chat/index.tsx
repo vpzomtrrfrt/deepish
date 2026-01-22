@@ -4,11 +4,11 @@ import { attachInstruction, extractInstruction, Instruction } from "@atlaskit/pr
 import { DropIndicator } from "@atlaskit/pragmatic-drag-and-drop-react-drop-indicator/list-item";
 import { css, cx } from "@emotion/css";
 import { mdiAccountMultiple, mdiCheck, mdiClose, mdiHome, mdiPlus } from "@mdi/js";
-import { useComputed } from "@preact/signals";
+import { useComputed, useSignalEffect } from "@preact/signals";
 import { JID, parse as parseJID } from "@xmpp/jid";
 import useLinkState from "linkstate/hook";
 import { JSX } from "preact";
-import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import { useIntl } from "react-intl";
 import useLatestCallback from "use-latest-callback";
 import { Link, Route, Switch, useLocation, useRoute } from "wouter-preact";
@@ -30,7 +30,7 @@ import SettingsDialog from "../../components/SettingsDialog";
 import { ManualTabsContainer, TabLink, TabsList } from "../../components/Tabs";
 import WithTooltip from "../../components/WithTooltip";
 import * as commonStyles from "../../util/commonStyles";
-import { Room, useAccount, useAccountSig, useConnectionContext } from "../../util/connection";
+import { Room, useAccountSig, useConnectionContext } from "../../util/connection";
 import { msgActionAdd, presenceShowTypeNames } from "../../util/langCommon";
 import { compareRanks } from "../../util/lexrank";
 import { getNickForCounterpart } from "../../util/profileUtil";
@@ -496,13 +496,13 @@ function RoomLink(props: {
 function ChatHomePage() {
 	const { $t } = useIntl();
 
-	const account = useAccount();
+	const accountSig = useAccountSig();
 
 	// TODO this seems like a performance problem
-	const conversations = useMemo(() => {
-		const list = Array.from(account.counterparts.entries())
+	const conversations = useComputed(() => {
+		const list = Array.from(accountSig.value.counterparts.entries())
 			.filter(x => {
-				return !account.rooms.has(x[0]) &&
+				return !accountSig.value.rooms.has(x[0]) &&
 					(x[1].lastMessageTimestamp !== null || x[1].overrideVisibleTimestamp !== null);
 			});
 		list.sort((a, b) => {
@@ -510,7 +510,7 @@ function ChatHomePage() {
 				(a[1].lastMessageTimestamp ?? a[1].overrideVisibleTimestamp)!.getTime();
 		});
 		return list.map(x => x[0]);
-	}, [account.counterparts, account.rooms]);
+	}).value;
 
 	return <div style={{display: "flex", flexGrow: 1}}>
 		<SpaceItemsList>
@@ -520,7 +520,7 @@ function ChatHomePage() {
 			</Link>
 			{
 				conversations.map(item => {
-					const counterpart = account.counterparts.get(item)!;
+					const counterpart = accountSig.value.counterparts.get(item)!;
 
 					return <Link to={"~/chat/direct/" + encodeURIComponent(item)} className={active => cx(styles.spaceItem, active && "active")}>
 						<AvatarWithStatus size="md" jid={item} />
@@ -553,20 +553,20 @@ function ContactsPage() {
 
 	const appCtx = useAppContext();
 	const conn = useConnectionContext();
-	const account = useAccount();
+	const accountSig = useAccountSig();
 
 	const [tab, setTab] = useState<FriendsTab>(FriendsTab.All);
 
 	function acceptFriendRequest(target: JID) {
-		conn.acceptFriendRequest(account.jid, target);
+		conn.acceptFriendRequest(accountSig.value.jid, target);
 	}
 
 	function rejectFriendRequest(target: JID) {
-		conn.rejectFriendRequest(account.jid, target);
+		conn.rejectFriendRequest(accountSig.value.jid, target);
 	}
 
 	function removeFriend(target: JID) {
-		conn.removeFriend(account.jid, target);
+		conn.removeFriend(accountSig.value.jid, target);
 	}
 
 	function removeFriendAfterConfirm(target: JID) {
@@ -589,10 +589,10 @@ function ContactsPage() {
 		evt.preventDefault();
 	}, []);
 
-	const incomingRequestCounterparts = Array.from(account.counterparts.values())
+	const incomingRequestCounterparts = Array.from(accountSig.value.counterparts.values())
 		.filter(counterpartIsIncomingRequest);
 
-	const outgoingRequestCounterparts = Array.from(account.counterparts.values())
+	const outgoingRequestCounterparts = Array.from(accountSig.value.counterparts.values())
 		.filter(info => {
 			return info.rosterEntry !== null &&
 				!info.rosterEntry.subscriptionTo &&
@@ -622,7 +622,7 @@ function ContactsPage() {
 			{
 				(tab === FriendsTab.All || tab === FriendsTab.Online) && <div>
 					{
-						Array.from(account.counterparts.values(), info => {
+						Array.from(accountSig.value.counterparts.values(), info => {
 							if(info.rosterEntry === null) return null;
 							if(!info.rosterEntry.subscriptionTo) return null;
 
@@ -729,28 +729,28 @@ function ContactsPage() {
 function ConnectingView() {
 	const [, navigate] = useLocation();
 
-	const account = useAccount();
+	const accountSig = useAccountSig();
 
 	const logout = useLatestCallback(() => {
-		navigate("~/logout/" + encodeURIComponent(account.jid.toString()));
+		navigate("~/logout/" + encodeURIComponent(accountSig.value.jid.toString()));
 	});
 
-	useEffect(() => {
-		if(account.stopped) {
+	useSignalEffect(() => {
+		if(accountSig.value.stopped) {
 			// Assume that means expired login
 
 			logout();
 		}
-	}, [account.stopped, logout]);
+	});
 
 	return <div class={styles.connectingView}>
-		{!account.stopped &&
+		{!accountSig.value.stopped &&
 			<div>
 				Connecting…
 			</div>
 		}
-		{account.lastError !== null &&
-			<ErrorAlert error={account.lastError} />
+		{accountSig.value.lastError !== null &&
+			<ErrorAlert error={accountSig.value.lastError} />
 		}
 		<Button tier="secondary" onClick={logout}>Log out</Button>
 	</div>;
@@ -760,14 +760,14 @@ function AddFriendForm() {
 	const { $t } = useIntl();
 
 	const conn = useConnectionContext();
-	const account = useAccount();
+	const accountSig = useAccountSig();
 
 	const [input, linkInput, setInput] = useLinkState("");
 
 	const [submitting, submit] = useSubmitting((evt: Event) => {
 		evt.preventDefault();
 
-		conn.sendFriendRequest(account.jid, parseJID(input));
+		conn.sendFriendRequest(accountSig.value.jid, parseJID(input));
 
 		setInput("");
 

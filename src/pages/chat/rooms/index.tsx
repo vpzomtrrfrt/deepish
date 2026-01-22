@@ -1,7 +1,8 @@
 import { css } from "@emotion/css";
+import { useComputed } from "@preact/signals";
 import { JID, parse as parseJID } from "@xmpp/jid";
 import { pushAtSortPosition } from "array-push-at-sort-position";
-import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import { Fragment } from "preact/jsx-runtime";
 import { defineMessage, MessageDescriptor, useIntl } from "react-intl";
 import useLatestCallback from "use-latest-callback";
@@ -17,7 +18,7 @@ import MessageInput from "../../../components/MessageInput";
 import MessageList, { LoadMoreTriggerer } from "../../../components/MessageList";
 import TaskDialog from "../../../components/TaskDialog";
 import TypingIndicator from "../../../components/TypingIndicator";
-import { Message, MessageEvent, MessageRemovalEvent, messageRemovalIsAllowed, NotificationLevel, ResultSetInfo, useAccount, useConnectionContext } from "../../../util/connection";
+import { Message, MessageEvent, MessageRemovalEvent, messageRemovalIsAllowed, NotificationLevel, ResultSetInfo, useAccountSig, useConnectionContext } from "../../../util/connection";
 import { msgActionDelete, presenceShowTypeNames } from "../../../util/langCommon";
 import { getShowTypeForCounterpart } from "../../../util/statusUtil";
 import { themeVars } from "../../../util/theme";
@@ -99,9 +100,15 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 
 	const appCtx = useAppContext();
 	const conn = useConnectionContext();
-	const account = useAccount();
-	const room = account.rooms.get(props.roomJID);
-	const counterpart = account.counterparts.get(props.roomJID);
+	const accountSig = useAccountSig();
+
+	const accountJIDSig = useComputed(() => accountSig.value.jid);
+	const roomSig = useComputed(() => accountSig.value.rooms.getSignal(props.roomJID)).value;
+
+	const accountJID = accountJIDSig.value;
+	const room = roomSig.value;
+
+	const counterpart = useComputed(() => accountSig.value.counterparts.getSignal(props.roomJID)).value.value;
 
 	const [messagesData, setMessagesData] = useState<{messages: Message[]; messageMap: Map<string, Message>}>({
 		messages: [],
@@ -209,7 +216,7 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 	const loadMore = useLatestCallback(() => {
 		setPageState(LoadState.loading);
 
-		conn.requestArchive(account.jid, room!.jid, {}, nextPageRef.current ?? undefined)
+		conn.requestArchive(accountJID, room!.jid, {}, nextPageRef.current ?? undefined)
 			.then(value => {
 				nextPageRef.current = value === null ? null : value.firstItem;
 				setPageState(LoadState.wrapValue(value));
@@ -237,17 +244,17 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 			const lastMessageID =
 				lastMessage.ids.find(x => x.type === StanzaIDType.Stanza && x.by.equals(counterpart.jid));
 			if(typeof lastMessageID !== "undefined" && counterpart.lastReadMessageID !== lastMessageID.id) {
-				conn.markCounterpartAsRead.call(undefined, account.jid, counterpart.jid, lastMessageID.id, false);
+				conn.markCounterpartAsRead.call(undefined, accountJID, counterpart.jid, lastMessageID.id, false);
 			}
 		}
-	}, [account.jid, conn.markCounterpartAsRead, counterpart, messagesData.messages, pageState]);
+	}, [accountJID, conn.markCounterpartAsRead, counterpart, messagesData.messages, pageState]);
 
 	const submitMessage = useLatestCallback(async (newMessage: string) => {
-		await conn.sendMessageToRoom(account.jid, room!.jid, {body: newMessage});
+		await conn.sendMessageToRoom(accountJID, room!.jid, {body: newMessage});
 	});
 
 	const onChangeComposing = useLatestCallback((composing: boolean) => {
-		conn.setComposingToRoom(account.jid, parseJID(props.roomJID), composing);
+		conn.setComposingToRoom(accountJID, parseJID(props.roomJID), composing);
 	});
 
 	useEffect(() => {
@@ -259,7 +266,7 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 			<ConfirmDialog
 				confirmText={$t({defaultMessage: "Leave"})}
 				onConfirm={() => {
-					const task = conn.leaveRoom.call(undefined, account.jid, room!.jid);
+					const task = conn.leaveRoom.call(undefined, accountJID, room!.jid);
 
 					appCtx.showDialog(<TaskDialog task={task}>{$t({defaultMessage: "Leaving…"})}</TaskDialog>);
 
@@ -275,22 +282,25 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 		);
 	});
 
-	const selfJIDInRoom = useMemo(() => {
+	const selfJIDInRoomSig = useComputed(() => {
+		const room = roomSig.value;
 		if(typeof room === "undefined") return undefined;
 
-		return new JID(room.jid.local, room.jid.domain, room.nick ?? account.jid.local);
-	}, [account.jid.local, room]);
+		return new JID(room.jid.local, room.jid.domain, room.nick ?? accountJIDSig.value.local);
+	});
 
-	const usersTyping = useMemo(() => {
+	const usersTypingSig = useComputed(() => {
+		const room = roomSig.value;
+
 		if(typeof room === "undefined") return [];
 
 		const result: JID[] = [];
-		for(const [, value] of account.counterparts.entries()) {
+		for(const [, value] of accountSig.value.counterparts.entries()) {
 			if(value.jid.bare().equals(room.jid)) {
 				if(
 					value.composingFrom === true &&
 						// Don't show myself
-						!value.jid.equals(selfJIDInRoom!)
+						!value.jid.equals(selfJIDInRoomSig.value!)
 				) {
 					result.push(value.jid);
 				}
@@ -298,25 +308,29 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 		}
 
 		return result;
-	}, [account.counterparts, room, selfJIDInRoom]);
+	});
 
-	const selfCounterpartInRoom = typeof selfJIDInRoom === "undefined" ?
-		undefined :
-		account.counterparts.get(selfJIDInRoom.toString());
+	const selfCounterpartInRoom = useComputed(() => {
+		const selfJIDInRoom = selfJIDInRoomSig.value;
+
+		return typeof selfJIDInRoom === "undefined" ?
+			undefined :
+			accountSig.value.counterparts.get(selfJIDInRoom.toString());
+	}).value;
 
 	const retractMessage = useCallback((messageID: string) => {
 		appCtx.showDialog.call(
 			undefined,
 			<ConfirmTaskDialog
 				submit={async () => {
-					return conn.retractMessageToRoom.call(undefined, account.jid, parseJID(props.roomJID), messageID);
+					return conn.retractMessageToRoom.call(undefined, accountJID, parseJID(props.roomJID), messageID);
 				}}
 				confirmText={$t(msgActionDelete)}
 			>
 				{$t({defaultMessage: "Are you sure you want to delete this message?"})}
 			</ConfirmTaskDialog>
 		);
-	}, [$t, account.jid, appCtx.showDialog, conn.retractMessageToRoom, props.roomJID]);
+	}, [$t, accountJID, appCtx.showDialog, conn.retractMessageToRoom, props.roomJID]);
 
 	const renderMenu = useCallback((message: Message) => {
 		const items = [];
@@ -355,8 +369,8 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 	const onChangeNotificationLevel = useCallback((newValue: NotificationLevel) => {
 		console.log("onChangeNotificationLevel");
 
-		conn.setRoomNotificationLevel.call(undefined, account.jid, parseJID(props.roomJID), newValue);
-	}, [account.jid, conn.setRoomNotificationLevel, props.roomJID]);
+		conn.setRoomNotificationLevel.call(undefined, accountJID, parseJID(props.roomJID), newValue);
+	}, [accountJID, conn.setRoomNotificationLevel, props.roomJID]);
 
 	const loaderContent = pageState === null ?
 		<p>{$t({defaultMessage: "Connecting…"})}</p> :
@@ -407,7 +421,7 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 							renderMenu={renderMenu}
 						/>
 						<div class={styles.messageInputArea}>
-							<TypingIndicator usersTyping={usersTyping} inRoom={true} />
+							<TypingIndicator usersTyping={usersTypingSig} inRoom={true} />
 							<MessageInput
 								submitMessage={submitMessage}
 								autofocus
@@ -424,14 +438,14 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 function MembersList(props: {roomJID: string}) {
 	const { $t } = useIntl();
 
-	const account = useAccount();
+	const accountSig = useAccountSig();
 
-	const room = account.rooms.get(props.roomJID);
+	const room = useComputed(() => accountSig.value.rooms.getSignal(props.roomJID)).value.value;
 
 	if(typeof room === "undefined" || !room.connected) return null;
 
 	const members = Array.from(
-		account.counterparts.values()
+		accountSig.value.counterparts.values()
 			.filter(x => {
 				return x.jid.bare().equals(room.jid) &&
 					x.jid.resource !== "" &&
