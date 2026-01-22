@@ -1764,6 +1764,7 @@ function createBaseConnection(cacheSig: Signal<IDBCache>, idleSig: Signal<IdleSt
 							xml("before") :
 							xml("before", {}, before),
 					),
+					xml("flip-page"),
 				),
 			),
 		)
