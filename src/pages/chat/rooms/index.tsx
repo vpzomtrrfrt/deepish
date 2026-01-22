@@ -432,7 +432,12 @@ function MembersList(props: {roomJID: string}) {
 
 	const members = Array.from(
 		account.counterparts.values()
-			.filter(x => x.jid.bare().equals(room.jid) && x.presences !== null && x.presences.size > 0),
+			.filter(x => {
+				return x.jid.bare().equals(room.jid) &&
+					x.jid.resource !== "" &&
+					x.presences !== null &&
+					x.presences.size > 0;
+			}),
 	);
 
 	return <SidebarSegment class={styles.membersList}>
