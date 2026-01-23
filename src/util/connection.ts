@@ -420,14 +420,21 @@ function createBaseConnection(
 		const extraRooms = new Set<string>(account.rooms.keys());
 
 		wantedRooms.forEach(entry => {
-			if(!extraRooms.delete(entry.jid)) {
+			const existing = account.rooms.get(entry.jid);
+			extraRooms.delete(entry.jid);
+
+			const nick = entry.nick ?? client.jid!.local;
+
+			if(
+				typeof existing === "undefined" || (existing.connectedNick !== null && existing.connectedNick !== nick)
+			) {
 				const jid = parseJID(entry.jid);
 
-				const nick = entry.nick ?? client.jid!.local;
+				if(typeof existing !== "undefined") disconnectRoom(account, existing);
 
 				account.rooms.set(entry.jid, {
 					jid,
-					nick: null,
+					nick: entry.nick ?? null,
 
 					extensionsContent: entry.extensionsContent,
 					rank: entry.rank,
