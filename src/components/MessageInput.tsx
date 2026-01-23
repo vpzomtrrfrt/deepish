@@ -13,9 +13,9 @@ import DataView from "./DataView";
 import EmojiPicker, { emojiDataSource } from "./EmojiPicker";
 import Icon from "./Icon";
 import IconButton from "./IconButton";
-import Input from "./Input";
 import { styles as menuStyles } from "./Menu";
 import Popover, { PopoverActions } from "./Popover";
+import Textarea from "./Textarea";
 
 const styles = {
 	messageInput: css({
@@ -55,7 +55,7 @@ export default function MessageInput(props: {
 		setNewMessage("");
 	});
 
-	const inputRef = useRef<HTMLInputElement>(null);
+	const inputRef = useRef<HTMLTextAreaElement>(null);
 	const emojiPopoverActionsRef = useRef<PopoverActions | null>(null);
 
 	const onEmojiClick = useCallback((evt: EmojiClickEvent) => {
@@ -84,7 +84,7 @@ export default function MessageInput(props: {
 
 	const [completionText, setCompletionText] = useState("");
 
-	const onInput = useCallback((evt: JSX.TargetedEvent<HTMLInputElement>) => {
+	const onInput = useCallback((evt: JSX.TargetedEvent<HTMLTextAreaElement>) => {
 		let result = "";
 
 		const elem = evt.currentTarget;
@@ -106,6 +106,13 @@ export default function MessageInput(props: {
 
 		console.log("completionText", result);
 		setCompletionText(result);
+
+		evt.currentTarget.style.height = "auto";
+		evt.currentTarget.style.height = "calc(" +
+			evt.currentTarget.scrollHeight +
+			"px + 2 * (" +
+			getComputedStyle(evt.currentTarget).borderWidth +
+			"))";
 	}, []);
 
 	const completionsState = useData(async () => {
@@ -171,7 +178,7 @@ export default function MessageInput(props: {
 		});
 	});
 
-	const onKeyDown = useLatestCallback((evt: KeyboardEvent) => {
+	const onKeyDown = useLatestCallback((evt: JSX.TargetedKeyboardEvent<HTMLTextAreaElement>) => {
 		if(evt.code === "ArrowDown") {
 			evt.preventDefault();
 
@@ -199,6 +206,11 @@ export default function MessageInput(props: {
 					triggerCompletionInsert();
 				}
 			});
+
+			if(evt.code === "Enter" && !evt.defaultPrevented && !evt.shiftKey && evt.currentTarget.form !== null) {
+				evt.preventDefault();
+				evt.currentTarget.form.requestSubmit();
+			}
 		}
 	});
 
@@ -220,15 +232,15 @@ export default function MessageInput(props: {
 	}, [composing, props.onChangeComposing]);
 
 	return <form onSubmit={submitMessage} class={styles.messageInput}>
-		<Input
-			type="text"
+		<Textarea
 			value={newMessage}
 			onChange={linkNewMessage}
 			onInput={onInput}
 			onKeyDown={onKeyDown}
-			style={{flexGrow: 1}}
+			style={{flexGrow: 1, resize: "none", boxSizing: "border-box"}}
 			autofocus={props.autofocus}
 			ref={inputRef}
+			rows={1}
 		/>
 		<Popover icon={<Icon path={mdiEmoticon} />} actionsRef={emojiPopoverActionsRef}>
 			<EmojiPicker onEmojiClick={onEmojiClick} />
