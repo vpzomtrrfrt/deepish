@@ -47,16 +47,26 @@ export default function MessageInput(props: {
 }) {
 	const [newMessage, linkNewMessage, setNewMessage] = useLinkState("");
 
+	const inputRef = useRef<HTMLTextAreaElement>(null);
+	const emojiPopoverActionsRef = useRef<PopoverActions | null>(null);
+
+	const updateInputSize = useCallback(() => {
+		inputRef.current!.style.height = "auto";
+		inputRef.current!.style.height = "calc(" +
+			inputRef.current!.scrollHeight +
+			"px + 2 * (" +
+			getComputedStyle(inputRef.current!).borderWidth +
+			"))";
+	}, []);
+
 	const [submittingMessage, submitMessage] = useSubmitting(async (evt: Event) => {
 		evt.preventDefault();
 
 		await props.submitMessage.call(undefined, newMessage);
 
 		setNewMessage("");
+		setTimeout(updateInputSize);
 	});
-
-	const inputRef = useRef<HTMLTextAreaElement>(null);
-	const emojiPopoverActionsRef = useRef<PopoverActions | null>(null);
 
 	const onEmojiClick = useCallback((evt: EmojiClickEvent) => {
 		const emojiText = evt.detail.unicode!;
@@ -107,13 +117,8 @@ export default function MessageInput(props: {
 		console.log("completionText", result);
 		setCompletionText(result);
 
-		evt.currentTarget.style.height = "auto";
-		evt.currentTarget.style.height = "calc(" +
-			evt.currentTarget.scrollHeight +
-			"px + 2 * (" +
-			getComputedStyle(evt.currentTarget).borderWidth +
-			"))";
-	}, []);
+		updateInputSize();
+	}, [updateInputSize]);
 
 	const completionsState = useData(async () => {
 		if(completionText.startsWith(":")) {
