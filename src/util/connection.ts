@@ -430,8 +430,6 @@ function createBaseConnection(
 			) {
 				const jid = parseJID(entry.jid);
 
-				if(typeof existing !== "undefined") disconnectRoom(account, existing);
-
 				account.rooms.set(entry.jid, {
 					jid,
 					nick: entry.nick ?? null,
