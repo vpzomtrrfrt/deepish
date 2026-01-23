@@ -130,6 +130,7 @@ function renderMarkdownTo0393Inner(src: Token[]) {
 				i = startIndex;
 			}
 		}
+		else if(token.type === "softbreak") result += "\n";
 		else if(token.type === "bullet_list_close") listStack.pop();
 		else if(token.type === "bullet_list_open") {
 			listStack.push({type: "unordered"});
