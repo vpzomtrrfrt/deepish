@@ -202,7 +202,7 @@ function MessageRow(props: RowComponentProps<{
 
 	const message = props.messages[index];
 
-	return <RealMessageRow {...props} message={message} />;
+	return <RealMessageRow {...props} message={message} key={message.ids[0].toString()} />;
 }
 
 function RealMessageRow(props: RowComponentProps<{
