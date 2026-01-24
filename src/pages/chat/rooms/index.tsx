@@ -18,7 +18,7 @@ import MessageInput from "../../../components/MessageInput";
 import MessageList, { LoadMoreTriggerer } from "../../../components/MessageList";
 import TaskDialog from "../../../components/TaskDialog";
 import TypingIndicator from "../../../components/TypingIndicator";
-import { Message, MessageEvent, MessageRemovalEvent, messageRemovalIsAllowed, NotificationLevel, ResultSetInfo, useAccountSig, useConnectionContext } from "../../../util/connection";
+import { Message, MessageEditEvent, messageEditIsAllowed, MessageEvent, MessageRemovalEvent, messageRemovalIsAllowed, NotificationLevel, ResultSetInfo, useAccountSig, useConnectionContext } from "../../../util/connection";
 import { msgActionDelete, presenceShowTypeNames } from "../../../util/langCommon";
 import { getShowTypeForCounterpart } from "../../../util/statusUtil";
 import { themeVars } from "../../../util/theme";
@@ -115,7 +115,9 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 		messageMap: new Map(),
 	});
 
-	const unresolvedRemovalsRef = useRef<Map<string, MessageRemovalEvent>>(new Map());
+	const unresolvedFastensRef = useRef<Map<string,
+		Array<{type: "messageRemove"; event: MessageRemovalEvent} | {type: "messageEdit"; event: MessageEditEvent}>
+	>>(new Map());
 
 	const onMessage = useLatestCallback((evt: MessageEvent) => {
 		console.log("room page got message", evt);
@@ -127,21 +129,34 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 					return current;
 				}
 
-				let removal = null;
+				let message = evt.message;
 				evt.message.ids.forEach(id => {
-					const entry = unresolvedRemovalsRef.current.get(id.toString());
-					if(typeof entry !== "undefined") {
-						console.log("resolving unresolved removal", id);
-						if(messageRemovalIsAllowed(evt.message, entry)) {
-							removal = entry.removal;
-							unresolvedRemovalsRef.current.delete(id.toString());
-						}
+					const list = unresolvedFastensRef.current.get(id.toString());
+					if(typeof list !== "undefined") {
+						list.sort((a, b) => {
+							if(a.type === "messageEdit" && b.type === "messageEdit") {
+								return a.event.edit.timestamp.getTime() - b.event.edit.timestamp.getTime();
+							}
+
+							return 0;
+						});
+
+						list.forEach(entry => {
+							console.log("resolving unresolved fasten", id, entry);
+							if(entry.type === "messageRemove") {
+								if(messageRemovalIsAllowed(evt.message, entry.event)) {
+									message = {...message, removal: entry.event.removal};
+								}
+							}
+							else if(entry.type === "messageEdit") {
+								if(messageEditIsAllowed(evt.message, entry.event)) {
+									message = {...message, content: entry.event.edit.content, edited: true};
+								}
+							}
+						});
+						unresolvedFastensRef.current.delete(id.toString());
 					}
 				});
-
-				const message: Message = removal === null ?
-					evt.message :
-					{...evt.message, removal};
 
 				const newMap = new Map(current.messageMap);
 				evt.message.ids.forEach(id => {
@@ -201,13 +216,67 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 			else {
 				console.log("got unresolved removal", evt);
 
-				unresolvedRemovalsRef.current.set(evt.target.toString(), evt);
+				let list = unresolvedFastensRef.current.get(evt.target.toString());
+				if(typeof list === "undefined") {
+					list = [];
+					unresolvedFastensRef.current.set(evt.target.toString(), list);
+				}
+				list.push({type: "messageRemove", event: evt});
 
 				return current;
 			}
 		});
 	});
 	useEventHandler(conn, "messageRemove", onMessageRemove);
+
+	const onMessageEdit = useLatestCallback((evt: MessageEditEvent) => {
+		if(evt.room === null || evt.room.toString() !== props.roomJID) return;
+
+		setMessagesData(current => {
+			const newMessageMap = new Map(current.messageMap);
+
+			let anyHit = false;
+
+			const newMessages = current.messages.map(message => {
+				if(message.ids.some(x => x.equals(evt.target))) {
+					if(messageEditIsAllowed(message, evt)) {
+						const newValue: Message = {
+							...message,
+							content: evt.edit.content,
+							edited: true,
+						};
+
+						message.ids.forEach(id => {
+							newMessageMap.set(id.toString(), newValue);
+						});
+
+						anyHit = true;
+
+						return newValue;
+					}
+				}
+
+				return message;
+			});
+
+			if(anyHit) {
+				return {messages: newMessages, messageMap: newMessageMap};
+			}
+			else {
+				console.log("got unresolved edit", evt);
+
+				let list = unresolvedFastensRef.current.get(evt.target.toString());
+				if(typeof list === "undefined") {
+					list = [];
+					unresolvedFastensRef.current.set(evt.target.toString(), list);
+				}
+				list.push({type: "messageEdit", event: evt});
+
+				return current;
+			}
+		});
+	});
+	useEventHandler(conn, "messageEdit", onMessageEdit);
 
 	const [pageState, setPageState] = useState<LoadState<ResultSetInfo | null> | null>(null);
 

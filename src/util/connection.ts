@@ -35,6 +35,7 @@ const FEATURES: string[] = [
 	"urn:xmpp:message-retract:1",
 	"urn:xmpp:styling:0",
 	"urn:xmpp:content",
+	"urn:xmpp:message-correct:0",
 ];
 const IDENTITY = {category: "client", type: "web", lang: "", name: "Deepish"};
 const NODE_URL = "https://deepish.vpzom.click";
@@ -130,7 +131,9 @@ export interface Message {
 	ids: StanzaID[];
 	localID: string;
 	timestamp: Date;
+
 	removal: null | MessageRemoval;
+	edited: boolean;
 }
 
 export interface MessageEvent {
@@ -147,8 +150,19 @@ export interface MessageRemovalEvent {
 	from: {jid: JID; occupantID?: string};
 }
 
+export interface MessageEditEvent {
+	edit: {
+		content: MessageContent[];
+		timestamp: Date;
+	};
+	room: JID | null;
+	target: StanzaID;
+	from: {jid: JID; occupantID?: string};
+}
+
 interface AppEventMap {
 	message: MessageEvent;
+	messageEdit: MessageEditEvent;
 	messageRemove: MessageRemovalEvent;
 }
 
@@ -1000,59 +1014,77 @@ function createBaseConnection(
 						ids.push(new StanzaID(StanzaIDType.Element, from, elementID));
 					}
 
-					handleMessage({
-						account: client.jid!.bare(),
-						message: {
-							room, // TODO is this correct for non-anonymous MUCs?
-							from: from,
-							occupantID,
-							to: null,
-							content,
-							ids,
-							localID: ids.length > 0 ? ids[0].toString() : xid(),
-							timestamp,
-							removal: null,
-						},
-						isNew,
-					});
-
-					const account = accountsSig.value.find(x => x.client === client);
-					const roomInfo = account?.rooms.get(room.toString());
-
-					if(typeof roomInfo !== "undefined") {
-						const isMe = from.resource === roomInfo.connectedNick;
-
-						upsertCounterpart(client, room, entry => {
-							if(
-								entry.lastMessageTimestamp === null ||
-									entry.lastMessageTimestamp.getTime() < timestamp.getTime() ||
-									entry.lastMessageTimestampForUnread === null ||
-									entry.lastMessageTimestampForUnread.getTime() < timestamp.getTime()
-							) {
-								return {
-									...entry,
-									lastMessageTimestamp: (
-										entry.lastMessageTimestamp === null ||
-											entry.lastMessageTimestamp.getTime() < timestamp.getTime()
-									) ?
-										timestamp :
-										entry.lastMessageTimestamp,
-									lastMessageID: (
-										entry.lastMessageTimestamp === null ||
-											entry.lastMessageTimestamp.getTime() < timestamp.getTime()
-									) ?
-										archiveID :
-										entry.lastMessageID,
-									lastMessageTimestampForUnread: (archiveID === null || isMe) ?
-										entry.lastMessageTimestampForUnread :
-										timestamp,
-									lastMessageIDForUnread: (archiveID === null || isMe) ?
-										entry.lastMessageIDForUnread :
-										archiveID,
-								};
-							}
-							else return entry;
+					const replaceElem = elem.getChild("replace", "urn:xmpp:message-correct:0");
+					if(typeof replaceElem !== "undefined") {
+						const targetID = replaceElem.getAttr("id");
+						if(typeof targetID === "string") {
+							emit("messageEdit", {
+								edit: {content, timestamp},
+								target: new StanzaID(StanzaIDType.Element, from, targetID),
+								room: from.bare(),
+								from: {jid: from, occupantID: occupantID ?? undefined},
+							});
+						}
+						else {
+							console.warn("missing ID of message to replace");
+						}
+					}
+					else {
+						handleMessage({
+							account: client.jid!.bare(),
+							message: {
+								room, // TODO is this correct for non-anonymous MUCs?
+								from: from,
+								occupantID,
+								to: null,
+								content,
+								ids,
+								localID: ids.length > 0 ? ids[0].toString() : xid(),
+								timestamp,
+								removal: null,
+								edited: false,
+							},
+							isNew,
 						});
+
+						const account = accountsSig.value.find(x => x.client === client);
+						const roomInfo = account?.rooms.get(room.toString());
+
+						if(typeof roomInfo !== "undefined") {
+							const isMe = from.resource === roomInfo.connectedNick;
+
+							upsertCounterpart(client, room, entry => {
+								if(
+									entry.lastMessageTimestamp === null ||
+										entry.lastMessageTimestamp.getTime() < timestamp.getTime() ||
+										entry.lastMessageTimestampForUnread === null ||
+										entry.lastMessageTimestampForUnread.getTime() < timestamp.getTime()
+								) {
+									return {
+										...entry,
+										lastMessageTimestamp: (
+											entry.lastMessageTimestamp === null ||
+												entry.lastMessageTimestamp.getTime() < timestamp.getTime()
+										) ?
+											timestamp :
+											entry.lastMessageTimestamp,
+										lastMessageID: (
+											entry.lastMessageTimestamp === null ||
+												entry.lastMessageTimestamp.getTime() < timestamp.getTime()
+										) ?
+											archiveID :
+											entry.lastMessageID,
+										lastMessageTimestampForUnread: (archiveID === null || isMe) ?
+											entry.lastMessageTimestampForUnread :
+											timestamp,
+										lastMessageIDForUnread: (archiveID === null || isMe) ?
+											entry.lastMessageIDForUnread :
+											archiveID,
+									};
+								}
+								else return entry;
+							});
+						}
 					}
 				}
 
@@ -1120,81 +1152,99 @@ function createBaseConnection(
 				}
 			}
 
+			let timestamp: Date | null = timestampFromWrapper ?? null;
+
+			const delayElem = elem.getChild("delay", "urn:xmpp:delay");
+			if(typeof delayElem !== "undefined") {
+				timestamp = new Date(delayElem.getAttr("stamp"));
+			}
+
+			const isNew = timestamp === null;
+
+			timestamp = timestamp ?? new Date();
+
 			const content = getContentFromMessageElement(elem);
 
 			if(content.length > 0 && typeof from !== "undefined" && typeof to !== "undefined" && !ignore) {
-				let timestamp: Date | null = timestampFromWrapper ?? null;
-
-				const delayElem = elem.getChild("delay", "urn:xmpp:delay");
-				if(typeof delayElem !== "undefined") {
-					timestamp = new Date(delayElem.getAttr("stamp"));
-				}
-
-				const isNew = timestamp === null;
-
-				timestamp = timestamp ?? new Date();
-
-				console.log("got a message", timestamp, archiveID);
-
-				// Messages might be from me, should count against the recipient in that case
-				const isMe = from.bare().equals(client.jid!.bare());
-				const conversation = isMe ? to : from.bare();
-
-				upsertCounterpart(client, conversation, entry => {
-					if(
-						entry.lastMessageTimestamp === null ||
-							entry.lastMessageTimestamp.getTime() < timestamp.getTime() ||
-							entry.lastMessageTimestampForUnread === null ||
-							entry.lastMessageTimestampForUnread.getTime() < timestamp.getTime()
-					) {
-						return {
-							...entry,
-							lastMessageTimestamp: (
-								entry.lastMessageTimestamp === null ||
-									entry.lastMessageTimestamp.getTime() < timestamp.getTime()
-							) ?
-								timestamp :
-								entry.lastMessageTimestamp,
-							lastMessageID: (
-								entry.lastMessageTimestamp === null ||
-									entry.lastMessageTimestamp.getTime() < timestamp.getTime()
-							) ?
-								archiveID :
-								entry.lastMessageID,
-							lastMessageTimestampForUnread: (archiveID === null || isMe) ?
-								entry.lastMessageTimestampForUnread :
-								timestamp,
-							lastMessageIDForUnread: (archiveID === null || isMe) ?
-								entry.lastMessageIDForUnread :
-								archiveID,
-						};
+				const replaceElem = elem.getChild("replace", "urn:xmpp:message-correct:0");
+				if(typeof replaceElem !== "undefined") {
+					const targetID = replaceElem.getAttr("id");
+					if(typeof targetID === "string") {
+						emit("messageEdit", {
+							edit: {content, timestamp},
+							target: new StanzaID(StanzaIDType.Element, from.bare(), targetID),
+							room: null,
+							from: {jid: from},
+						});
 					}
-					else return entry;
-				});
-
-				const ids = [];
-				if(archiveID !== null) {
-					ids.push(new StanzaID(StanzaIDType.Stanza, client.jid!.bare(), archiveID));
+					else {
+						console.warn("missing ID of message to replace");
+					}
 				}
-				if(typeof elementID === "string") {
-					ids.push(new StanzaID(StanzaIDType.Element, from.bare(), elementID));
-				}
+				else {
+					console.log("got a message", timestamp, archiveID);
 
-				handleMessage({
-					account: client.jid!.bare(),
-					message: {
-						room: null,
-						from,
-						occupantID: null,
-						to,
-						content,
-						ids,
-						localID: ids.length > 0 ? ids[0].toString() : xid(),
-						timestamp,
-						removal: null,
-					},
-					isNew,
-				});
+					// Messages might be from me, should count against the recipient in that case
+					const isMe = from.bare().equals(client.jid!.bare());
+					const conversation = isMe ? to : from.bare();
+
+					upsertCounterpart(client, conversation, entry => {
+						if(
+							entry.lastMessageTimestamp === null ||
+								entry.lastMessageTimestamp.getTime() < timestamp.getTime() ||
+								entry.lastMessageTimestampForUnread === null ||
+								entry.lastMessageTimestampForUnread.getTime() < timestamp.getTime()
+						) {
+							return {
+								...entry,
+								lastMessageTimestamp: (
+									entry.lastMessageTimestamp === null ||
+										entry.lastMessageTimestamp.getTime() < timestamp.getTime()
+								) ?
+									timestamp :
+									entry.lastMessageTimestamp,
+								lastMessageID: (
+									entry.lastMessageTimestamp === null ||
+										entry.lastMessageTimestamp.getTime() < timestamp.getTime()
+								) ?
+									archiveID :
+									entry.lastMessageID,
+								lastMessageTimestampForUnread: (archiveID === null || isMe) ?
+									entry.lastMessageTimestampForUnread :
+									timestamp,
+								lastMessageIDForUnread: (archiveID === null || isMe) ?
+									entry.lastMessageIDForUnread :
+									archiveID,
+							};
+						}
+						else return entry;
+					});
+
+					const ids = [];
+					if(archiveID !== null) {
+						ids.push(new StanzaID(StanzaIDType.Stanza, client.jid!.bare(), archiveID));
+					}
+					if(typeof elementID === "string") {
+						ids.push(new StanzaID(StanzaIDType.Element, from.bare(), elementID));
+					}
+
+					handleMessage({
+						account: client.jid!.bare(),
+						message: {
+							room: null,
+							from,
+							occupantID: null,
+							to,
+							content,
+							ids,
+							localID: ids.length > 0 ? ids[0].toString() : xid(),
+							timestamp,
+							removal: null,
+							edited: false,
+						},
+						isNew,
+					});
+				}
 			}
 		}
 		else {
@@ -1740,6 +1790,7 @@ function createBaseConnection(
 	} = {
 		message: new Set(),
 		messageRemove: new Set(),
+		messageEdit: new Set(),
 	};
 
 	function addEventListener<K extends keyof AppEventMap>(event: K, listener: (evt: AppEventMap[K]) => void) {
@@ -1892,6 +1943,7 @@ function createBaseConnection(
 				localID,
 				timestamp: new Date(),
 				removal: null,
+				edited: false,
 			},
 			isNew: true,
 		});
@@ -2823,6 +2875,27 @@ export function messageRemovalIsAllowed(message: Message, evt: Pick<MessageRemov
 		console.warn("Unknown removal type");
 		return false;
 	}
+}
+
+export function messageEditIsAllowed(message: Message, evt: Pick<MessageEditEvent, "from" | "edit" | "room">) {
+	// Users can only edit their own messages
+
+	if(evt.room === null) {
+		return evt.from.jid.bare().equals(message.from.bare());
+	}
+	else {
+		if(evt.from.jid.equals(message.from)) {
+			// JID matches, but this is a MUC, so it could be a reused nick
+			// Check occupant ID if available
+
+			if(message.occupantID === null) return true;
+			else return message.occupantID === evt.from.occupantID;
+		}
+		else return false;
+	}
+
+	return (evt.room === null ? evt.from.jid.bare() : evt.from.jid)
+		.equals(evt.room === null ? message.from.bare() : message.from)
 }
 
 async function publishRoomBookmarkExtension(client: xmppClient.Client, room: Room, extension: Element) {

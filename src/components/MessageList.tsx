@@ -204,7 +204,10 @@ function RealMessageRow(props: RowComponentProps<{message: Message; renderMenu(m
 		<div class={styles.messageContentArea}>
 			<div>
 				<span>{nickSig}</span>
-				<span class={styles.messageTimestamp}>{message.timestamp.toLocaleString()}</span>
+				<span class={styles.messageTimestamp}>
+					{message.timestamp.toLocaleString()}
+					{message.edited && <>{" "}{$t({defaultMessage: "(edited)"})}</>}
+				</span>
 			</div>
 			<div>
 				{

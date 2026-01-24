@@ -13,7 +13,7 @@ import Menu, { MenuItem } from "../../components/Menu";
 import MessageInput from "../../components/MessageInput";
 import MessageList, { LoadMoreTriggerer } from "../../components/MessageList";
 import TypingIndicator from "../../components/TypingIndicator";
-import { Message, MessageEvent, MessageRemovalEvent, messageRemovalIsAllowed, ResultSetInfo, useAccountSig, useConnectionContext } from "../../util/connection";
+import { Message, MessageEditEvent, messageEditIsAllowed, MessageEvent, MessageRemovalEvent, messageRemovalIsAllowed, ResultSetInfo, useAccountSig, useConnectionContext } from "../../util/connection";
 import { msgActionDelete } from "../../util/langCommon";
 import { getNickForCounterpart } from "../../util/profileUtil";
 import { LoadState } from "../../util/useData";
@@ -61,7 +61,9 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 		messageMap: new Map(),
 	});
 
-	const unresolvedRemovalsRef = useRef<Map<string, MessageRemovalEvent>>(new Map());
+	const unresolvedFastensRef = useRef<Map<string,
+		Array<{type: "messageRemove"; event: MessageRemovalEvent} | {type: "messageEdit"; event: MessageEditEvent}>
+	>>(new Map());
 
 	const onMessage = useLatestCallback((evt: MessageEvent) => {
 		if(
@@ -80,16 +82,27 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 					}
 
 					if(typeof existing !== "undefined") {
-						// Already present
+						// Already present, but we might need to add more IDs
 
-						if(existing.removal === null) {
-							// TODO do this faster
-							newMessages = current.messages.filter(message => {
-								return !message.ids.some(existing => evt.message.ids.some(x => x.equals(existing)));
+						const newIDs = evt.message.ids.filter(newID => existing.ids.some(x => x.equals(newID)));
+						if(newIDs.length > 0) {
+							const newValue = {...existing, ids: [...existing.ids, ...newIDs]};
+							newMessages = current.messages.map(x => {
+								if(x === existing) return newValue;
+								else return x;
 							});
+
+							const newMap = new Map(current.messageMap);
+							newIDs.forEach(id => {
+								newMap.set(id.toString(), newValue);
+							});
+
+							return {
+								messages: newMessages,
+								messageMap: newMap,
+							};
 						}
 						else {
-							// Message has been removed, don't bother with it further
 							return current;
 						}
 					}
@@ -98,21 +111,34 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 					}
 				}
 
-				let removal = null;
+				let message = evt.message;
 				evt.message.ids.forEach(id => {
-					const entry = unresolvedRemovalsRef.current.get(id.toString());
-					if(typeof entry !== "undefined") {
-						console.log("resolving unresolved removal", id);
-						if(messageRemovalIsAllowed(evt.message, entry)) {
-							removal = entry.removal;
-							unresolvedRemovalsRef.current.delete(id.toString());
-						}
+					const list = unresolvedFastensRef.current.get(id.toString());
+					if(typeof list !== "undefined") {
+						list.sort((a, b) => {
+							if(a.type === "messageEdit" && b.type === "messageEdit") {
+								return a.event.edit.timestamp.getTime() - b.event.edit.timestamp.getTime();
+							}
+
+							return 0;
+						});
+
+						list.forEach(entry => {
+							console.log("resolving unresolved fasten", id, entry.event.target, entry);
+							if(entry.type === "messageRemove") {
+								if(messageRemovalIsAllowed(evt.message, entry.event)) {
+									message = {...message, removal: entry.event.removal};
+								}
+							}
+							else if(entry.type === "messageEdit") {
+								if(messageEditIsAllowed(evt.message, entry.event)) {
+									message = {...message, content: entry.event.edit.content, edited: true};
+								}
+							}
+						});
+						unresolvedFastensRef.current.delete(id.toString());
 					}
 				});
-
-				const message: Message = removal === null ?
-					evt.message :
-					{...evt.message, removal};
 
 				const newMap = new Map(current.messageMap);
 				evt.message.ids.forEach(id => {
@@ -170,13 +196,67 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 			else {
 				console.log("got unresolved removal", evt);
 
-				unresolvedRemovalsRef.current.set(evt.target.toString(), evt);
+				let list = unresolvedFastensRef.current.get(evt.target.toString());
+				if(typeof list === "undefined") {
+					list = [];
+					unresolvedFastensRef.current.set(evt.target.toString(), list);
+				}
+				list.push({type: "messageRemove", event: evt});
 
 				return current;
 			}
 		});
 	});
 	useEventHandler(conn, "messageRemove", onMessageRemove);
+
+	const onMessageEdit = useLatestCallback((evt: MessageEditEvent) => {
+		if(evt.room !== null) return;
+
+		setMessagesData(current => {
+			const newMessageMap = new Map(current.messageMap);
+
+			let anyHit = false;
+
+			const newMessages = current.messages.map(message => {
+				if(message.ids.some(x => x.equals(evt.target))) {
+					if(messageEditIsAllowed(message, evt)) {
+						const newValue: Message = {
+							...message,
+							content: evt.edit.content,
+							edited: true,
+						};
+
+						message.ids.forEach(id => {
+							newMessageMap.set(id.toString(), newValue);
+						});
+
+						anyHit = true;
+
+						return newValue;
+					}
+				}
+
+				return message;
+			});
+
+			if(anyHit) {
+				return {messages: newMessages, messageMap: newMessageMap};
+			}
+			else {
+				console.log("got unresolved edit", evt.target, evt);
+
+				let list = unresolvedFastensRef.current.get(evt.target.toString());
+				if(typeof list === "undefined") {
+					list = [];
+					unresolvedFastensRef.current.set(evt.target.toString(), list);
+				}
+				list.push({type: "messageEdit", event: evt});
+
+				return current;
+			}
+		});
+	});
+	useEventHandler(conn, "messageEdit", onMessageEdit);
 
 	const [pageState, setPageState] = useState<LoadState<ResultSetInfo | null> | null>(null);
 
