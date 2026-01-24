@@ -318,8 +318,12 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 		}
 	}, [accountJID, conn.markCounterpartAsRead, counterpart, messagesData.messages, pageState]);
 
-	const submitMessage = useLatestCallback(async (newMessage: string) => {
-		await conn.sendMessageToRoom(accountJID, room!.jid, {body: newMessage});
+	const submitMessage = useLatestCallback(async (newMessage: string, options?: {replaces?: string}) => {
+		await conn.sendMessageToRoom(accountJID, room!.jid, {body: newMessage}, options);
+	});
+
+	const submitEdit = useLatestCallback(async (newMessage: string, replaces: string) => {
+		return submitMessage(newMessage, {replaces});
 	});
 
 	const onChangeComposing = useLatestCallback((composing: boolean) => {
@@ -435,6 +439,29 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 		}
 	}, [$t, retractMessage, room, selfCounterpartInRoom]);
 
+	const canEdit = useCallback((message: Message) => {
+		if(typeof selfCounterpartInRoom !== "undefined") {
+			if(
+				messageEditIsAllowed(
+					message,
+					{
+						from: {
+							jid: selfCounterpartInRoom.jid,
+							occupantID: selfCounterpartInRoom.occupantID === null ?
+								undefined :
+								selfCounterpartInRoom.occupantID,
+						},
+						room: room!.jid,
+					},
+				)
+			) {
+				return true;
+			}
+		}
+
+		return false;
+	}, [room, selfCounterpartInRoom]);
+
 	const onChangeNotificationLevel = useCallback((newValue: NotificationLevel) => {
 		console.log("onChangeNotificationLevel");
 
@@ -488,6 +515,8 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 							messages={messagesData.messages}
 							loaderContent={loaderContent}
 							renderMenu={renderMenu}
+							submitEdit={submitEdit}
+							canEdit={canEdit}
 						/>
 						<div class={styles.messageInputArea}>
 							<TypingIndicator usersTyping={usersTypingSig} inRoom={true} />

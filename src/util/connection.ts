@@ -207,7 +207,7 @@ export interface BaseConnectionContext {
 		listener: (evt: AppEventMap[K]) => void,
 	): void;
 	requestArchive(account: JID, entity: JID, params: {with?: JID}, before?: string): Promise<ResultSetInfo | null>;
-	sendMessageToRoom(account: JID, room: JID, message: {body: string}): Promise<void>;
+	sendMessageToRoom(account: JID, room: JID, message: {body: string}, options?: {replaces?: string}): Promise<void>;
 	sendMessageToCounterpart(account: JID, target: JID, message: {body: string}): Promise<void>;
 	retractMessageToRoom(account: JID, room: JID, messageID: string): Promise<void>;
 	retractMessageToCounterpart(account: JID, target: JID, messageID: string): Promise<void>;
@@ -1954,7 +1954,12 @@ function createBaseConnection(
 		requestArchive(account.jid, account.jid, {with: targetJID}, undefined, {max: 1});
 	}
 
-	async function sendMessageToRoom(accountJID: JID, roomJID: JID, message: {body: string}) {
+	async function sendMessageToRoom(
+		accountJID: JID,
+		roomJID: JID,
+		message: {body: string},
+		options: {replaces?: string} = {},
+	) {
 		const id = xid();
 
 		const account = getAccount(accountJID);
@@ -1970,6 +1975,14 @@ function createBaseConnection(
 				"message",
 				{id, to: roomJID.toString(), type: "groupchat"},
 				...contentResult.elements,
+				...(
+					typeof options.replaces === "undefined" ?
+						[] :
+						[xml(
+							"replace",
+							{xmlns: "urn:xmpp:message-correct:0", id: options.replaces},
+						)]
+				),
 			),
 		);
 
@@ -2877,7 +2890,7 @@ export function messageRemovalIsAllowed(message: Message, evt: Pick<MessageRemov
 	}
 }
 
-export function messageEditIsAllowed(message: Message, evt: Pick<MessageEditEvent, "from" | "edit" | "room">) {
+export function messageEditIsAllowed(message: Message, evt: Pick<MessageEditEvent, "from" | "room">) {
 	// Users can only edit their own messages
 
 	if(evt.room === null) {

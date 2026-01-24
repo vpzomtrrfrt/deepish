@@ -1,19 +1,25 @@
 import { css, cx } from "@emotion/css";
+import { mdiPencil } from "@mdi/js";
 import { useComputed } from "@preact/signals";
 import { useLiveSignal } from "@preact/signals/utils";
 import * as xml from "@xmpp/xml";
 import inlineStyleParser from "inline-style-parser";
 import { ComponentChildren, h, JSX, VNode } from "preact";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "preact/hooks";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { useIntl } from "react-intl";
 import { List, ListImperativeAPI, RowComponentProps, useDynamicRowHeight } from "react-window";
+import useLatestCallback from "use-latest-callback";
 
 import { Message, MessageContent, useAccountSig } from "../util/connection";
 import { parseMarkdown, renderMarkdownToXHTML } from "../util/markdown";
 import { maybeGetNickForCounterpart } from "../util/profileUtil";
+import { StanzaIDType } from "../util/xmpp/StanzaID";
 import { parse0393, StylingBlock0393, StylingSpan0393 } from "../util/xmpp/styling";
 import Avatar from "./Avatar";
 import { ErrorAlert } from "./DataView";
+import Icon from "./Icon";
+import IconButton from "./IconButton";
+import MessageInput from "./MessageInput";
 
 const DEFAULT_ROW_HEIGHT = 70;
 
@@ -45,10 +51,18 @@ const styles = {
 		color: "#888",
 	}),
 	messageMenuArea: cx("messageMenuArea", css({
+		display: "flex",
+		gap: ".5rem",
+		alignItems: "flex-start",
+
 		visibility: "hidden",
 
 		"&:focus-within": {
 			visibility: "visible",
+		},
+
+		"> *": {
+			flexShrink: 0,
 		},
 	})),
 	typingIndicatorPlaceholder: css({
@@ -60,6 +74,8 @@ export default function MessageList(props: {
 	messages: Message[];
 	loaderContent: VNode;
 	renderMenu(message: Message): ComponentChildren;
+	submitEdit?: (text: string, replaces: string) => Promise<void>;
+	canEdit?: (message: Message) => boolean;
 }) {
 	const messages = props.messages;
 
@@ -158,6 +174,8 @@ export default function MessageList(props: {
 			messages,
 			loaderContent: props.loaderContent,
 			renderMenu: props.renderMenu,
+			submitEdit: props.submitEdit,
+			canEdit: props.canEdit,
 		}}
 		listRef={listRef}
 		onResize={onResize}
@@ -169,6 +187,8 @@ function MessageRow(props: RowComponentProps<{
 	messages: Message[];
 	loaderContent: VNode;
 	renderMenu(message: Message): ComponentChildren;
+	submitEdit?: (text: string, replaces: string) => Promise<void>;
+	canEdit?: (message: Message) => boolean;
 }>) {
 	if(props.index === 0) {
 		return props.loaderContent;
@@ -185,7 +205,12 @@ function MessageRow(props: RowComponentProps<{
 	return <RealMessageRow {...props} message={message} />;
 }
 
-function RealMessageRow(props: RowComponentProps<{message: Message; renderMenu(message: Message): ComponentChildren}>) {
+function RealMessageRow(props: RowComponentProps<{
+	message: Message;
+	renderMenu(message: Message): ComponentChildren;
+	submitEdit?: (text: string, replaces: string) => Promise<void>;
+	canEdit?: (message: Message) => boolean;
+}>) {
 	const message = props.message;
 	const messageSig = useLiveSignal(message);
 
@@ -196,6 +221,21 @@ function RealMessageRow(props: RowComponentProps<{message: Message; renderMenu(m
 	const fromSig = useComputed(() => messageSig.value.room === null ? messageSig.value.from.bare() : messageSig.value.from);
 	const counterpartSig = useComputed(() => accountSig.value.counterparts.getSignal(fromSig.value.toString())).value;
 	const nickSig = useComputed(() => maybeGetNickForCounterpart(fromSig.value, counterpartSig.value));
+
+	const [editing, setEditing] = useState(false);
+
+	const edit = useCallback(() => {
+		setEditing(true);
+	}, []);
+
+	const submitEdit = useCallback(async (text: string, replaces: string) => {
+		await props.submitEdit!.call(undefined, text, replaces);
+		setEditing(false);
+	}, [props.submitEdit]);
+
+	const cancelEdit = useCallback(() => {
+		setEditing(false);
+	}, []);
 
 	return <div style={props.style} class={styles.message}>
 		<div>
@@ -211,15 +251,31 @@ function RealMessageRow(props: RowComponentProps<{message: Message; renderMenu(m
 			</div>
 			<div>
 				{
-					message.removal === null ?
-						<MessageContentView content={message.content} /> :
-						<em>{$t({defaultMessage: "This message has been deleted"})}</em>
+					editing ?
+						<MessageEditArea message={message} submitEdit={submitEdit} cancel={cancelEdit} /> :
+						(
+							message.removal === null ?
+								<MessageContentView content={message.content} /> :
+								<em>{$t({defaultMessage: "This message has been deleted"})}</em>
+						)
 				}
 			</div>
 		</div>
-		<div class={styles.messageMenuArea}>
-			{props.renderMenu(message)}
-		</div>
+		{!editing &&
+			<div class={styles.messageMenuArea}>
+				{(
+					typeof props.submitEdit !== "undefined" &&
+						message.removal === null &&
+						message.ids.some(x => x.type === StanzaIDType.Element) &&
+						props.canEdit?.(message) === true
+				) &&
+					<IconButton onClick={edit}>
+						<Icon path={mdiPencil} />
+					</IconButton>
+				}
+				{props.renderMenu(message)}
+			</div>
+		}
 	</div>;
 }
 
@@ -380,4 +436,42 @@ function MessageContentMarkdown(props: {content: string}) {
 	}, [props.content]);
 
 	return <MessageContentXHTMLIM content={content} />;
+}
+
+const MESSAGE_EDIT_CONTENT_TYPE_PRIORITY: Array<MessageContent["type"]> = ["xhtml", "plain", "0393", "markdown"];
+
+function MessageEditArea(props: {
+	message: Message;
+	submitEdit(newMessage: string, replaces: string): Promise<void>;
+	cancel(): void;
+}) {
+	const content = useMemo(() => {
+		let best = props.message.content[0];
+		for(let i = 1; i < props.message.content.length; i++) {
+			const current = props.message.content[i];
+
+			if(
+				MESSAGE_EDIT_CONTENT_TYPE_PRIORITY.indexOf(current.type) >
+					MESSAGE_EDIT_CONTENT_TYPE_PRIORITY.indexOf(best.type)
+			) {
+				best = current;
+			}
+		}
+
+		return best;
+	}, [props.message.content]);
+
+	const submit = useLatestCallback(async (value: string) => {
+		const id = props.message.ids.find(x => x.type === StanzaIDType.Element);
+		if(typeof id === "undefined") throw new Error("Missing ID for edit");
+
+		return props.submitEdit.call(undefined, value, id.id);
+	});
+
+	return <MessageInput
+		submitMessage={submit}
+		autofocus
+		initValue={content.content.toString()}
+		cancel={props.cancel}
+	/>;
 }

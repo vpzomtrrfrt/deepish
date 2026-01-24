@@ -4,11 +4,14 @@ import { Database as EmojiDatabase } from "emoji-picker-element";
 import { EmojiClickEvent, NativeEmoji } from "emoji-picker-element/shared";
 import useLinkState from "linkstate/hook";
 import { JSX } from "preact";
-import { useCallback, useEffect, useRef, useState } from "preact/hooks";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
+import { useIntl } from "react-intl";
 import useLatestCallback from "use-latest-callback";
 
+import { msgActionSend, msgCancel } from "../util/langCommon";
 import useData, { LoadState } from "../util/useData";
 import useSubmitting from "../util/useSubmitting";
+import Button from "./Button";
 import DataView from "./DataView";
 import EmojiPicker, { emojiDataSource } from "./EmojiPicker";
 import Icon from "./Icon";
@@ -20,11 +23,21 @@ import Textarea from "./Textarea";
 const styles = {
 	messageInput: css({
 		display: "flex",
-		padding: ".5rem",
+		flexDirection: "column",
 		gap: ".25rem",
-		alignItems: "center",
+		padding: ".5rem",
 
 		position: "relative",
+	}),
+	mainRow: css({
+		display: "flex",
+		gap: ".25rem",
+		alignItems: "center",
+	}),
+	formButtonsRow: css({
+		display: "flex",
+		gap: ".5rem",
+		justifyContent: "end",
 	}),
 	completionsMenu: cx(menuStyles.popup, css({
 		position: "absolute",
@@ -43,9 +56,15 @@ export default function MessageInput(props: {
 	submitMessage: (text: string) => Promise<void>;
 	autofocus: boolean;
 
+	initValue?: string;
+	submitLabel?: string;
+
 	onChangeComposing?(composing: boolean): void;
+	cancel?(): void;
 }) {
-	const [newMessage, linkNewMessage, setNewMessage] = useLinkState("");
+	const { $t } = useIntl();
+
+	const [newMessage, linkNewMessage, setNewMessage] = useLinkState(props.initValue ?? "");
 
 	const inputRef = useRef<HTMLTextAreaElement>(null);
 	const emojiPopoverActionsRef = useRef<PopoverActions | null>(null);
@@ -58,6 +77,10 @@ export default function MessageInput(props: {
 			getComputedStyle(inputRef.current!).borderWidth +
 			"))";
 	}, []);
+
+	useLayoutEffect(() => {
+		updateInputSize();
+	}, [updateInputSize]);
 
 	const [submittingMessage, submitMessage] = useSubmitting(async (evt: Event) => {
 		evt.preventDefault();
@@ -237,22 +260,34 @@ export default function MessageInput(props: {
 	}, [composing, props.onChangeComposing]);
 
 	return <form onSubmit={submitMessage} class={styles.messageInput}>
-		<Textarea
-			value={newMessage}
-			onChange={linkNewMessage}
-			onInput={onInput}
-			onKeyDown={onKeyDown}
-			style={{flexGrow: 1, resize: "none", boxSizing: "border-box"}}
-			autofocus={props.autofocus}
-			ref={inputRef}
-			rows={1}
-		/>
-		<Popover icon={<Icon path={mdiEmoticon} />} actionsRef={emojiPopoverActionsRef}>
-			<EmojiPicker onEmojiClick={onEmojiClick} />
-		</Popover>
-		<IconButton type="submit" disabled={submittingMessage}>
-			<Icon path={mdiSend} />
-		</IconButton>
+		<div class={styles.mainRow}>
+			<Textarea
+				value={newMessage}
+				onChange={linkNewMessage}
+				onInput={onInput}
+				onKeyDown={onKeyDown}
+				style={{flexGrow: 1, resize: "none", boxSizing: "border-box"}}
+				autofocus={props.autofocus}
+				ref={inputRef}
+				rows={1}
+			/>
+			<Popover icon={<Icon path={mdiEmoticon} />} actionsRef={emojiPopoverActionsRef}>
+				<EmojiPicker onEmojiClick={onEmojiClick} />
+			</Popover>
+			{typeof props.cancel === "undefined" &&
+				<IconButton type="submit" disabled={submittingMessage}>
+					<Icon path={mdiSend} />
+				</IconButton>
+			}
+		</div>
+		{typeof props.cancel !== "undefined" &&
+			<div class={styles.formButtonsRow}>
+				<Button tier="secondary" onClick={props.cancel}>{$t(msgCancel)}</Button>
+				<Button tier="primary" type="submit" disabled={submittingMessage}>
+					{props.submitLabel ?? $t(msgActionSend)}
+				</Button>
+			</div>
+		}
 		{LoadState.ifDone(completionsState, x => x.length > 0, () => true) &&
 			<div class={styles.completionsMenu} ref={completionsMenuRef}>
 				<DataView state={completionsState}>
