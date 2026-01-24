@@ -115,14 +115,6 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 				evt.message.ids.forEach(id => {
 					const list = unresolvedFastensRef.current.get(id.toString());
 					if(typeof list !== "undefined") {
-						list.sort((a, b) => {
-							if(a.type === "messageEdit" && b.type === "messageEdit") {
-								return a.event.edit.timestamp.getTime() - b.event.edit.timestamp.getTime();
-							}
-
-							return 0;
-						});
-
 						list.forEach(entry => {
 							console.log("resolving unresolved fasten", id, entry.event.target, entry);
 							if(entry.type === "messageRemove") {
@@ -131,8 +123,17 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 								}
 							}
 							else if(entry.type === "messageEdit") {
-								if(messageEditIsAllowed(evt.message, entry.event)) {
-									message = {...message, content: entry.event.edit.content, edited: true};
+								if(
+									messageEditIsAllowed(evt.message, entry.event) && (
+										message.editedAt === null ||
+											message.editedAt.getTime() < entry.event.edit.timestamp.getTime()
+									)
+								) {
+									message = {
+										...message,
+										content: entry.event.edit.content,
+										editedAt: entry.event.edit.timestamp,
+									};
 								}
 							}
 						});
@@ -219,11 +220,14 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 
 			const newMessages = current.messages.map(message => {
 				if(message.ids.some(x => x.equals(evt.target))) {
-					if(messageEditIsAllowed(message, evt)) {
+					if(messageEditIsAllowed(message, evt) && (
+						message.editedAt === null ||
+							message.editedAt.getTime() < evt.edit.timestamp.getTime()
+					)) {
 						const newValue: Message = {
 							...message,
 							content: evt.edit.content,
-							edited: true,
+							editedAt: evt.edit.timestamp,
 						};
 
 						message.ids.forEach(id => {

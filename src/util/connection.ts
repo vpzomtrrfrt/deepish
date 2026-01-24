@@ -133,7 +133,7 @@ export interface Message {
 	timestamp: Date;
 
 	removal: null | MessageRemoval;
-	edited: boolean;
+	editedAt: Date | null;
 }
 
 export interface MessageEvent {
@@ -1042,7 +1042,7 @@ function createBaseConnection(
 								localID: ids.length > 0 ? ids[0].toString() : xid(),
 								timestamp,
 								removal: null,
-								edited: false,
+								editedAt: null,
 							},
 							isNew,
 						});
@@ -1240,7 +1240,7 @@ function createBaseConnection(
 							localID: ids.length > 0 ? ids[0].toString() : xid(),
 							timestamp,
 							removal: null,
-							edited: false,
+							editedAt: null,
 						},
 						isNew,
 					});
@@ -1943,7 +1943,7 @@ function createBaseConnection(
 				localID,
 				timestamp: new Date(),
 				removal: null,
-				edited: false,
+				editedAt: null,
 			},
 			isNew: true,
 		});

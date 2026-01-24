@@ -246,7 +246,7 @@ function RealMessageRow(props: RowComponentProps<{
 				<span>{nickSig}</span>
 				<span class={styles.messageTimestamp}>
 					{message.timestamp.toLocaleString()}
-					{message.edited && <>{" "}{$t({defaultMessage: "(edited)"})}</>}
+					{message.editedAt !== null && <>{" "}{$t({defaultMessage: "(edited)"})}</>}
 				</span>
 			</div>
 			<div>
