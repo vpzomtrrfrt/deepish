@@ -308,8 +308,12 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 		}
 	}, [accountSig.value.jid, conn.markCounterpartAsRead, counterpart, messagesData.messages, pageState]);
 
-	const submitMessage = useLatestCallback(async (newMessage: string) => {
-		await conn.sendMessageToCounterpart(accountSig.value.jid, counterpart!.jid, {body: newMessage});
+	const submitMessage = useLatestCallback(async (newMessage: string, options?: {replaces?: string}) => {
+		await conn.sendMessageToCounterpart(accountSig.value.jid, counterpart!.jid, {body: newMessage}, options);
+	});
+
+	const submitEdit = useLatestCallback(async (newMessage: string, replaces: string) => {
+		return submitMessage(newMessage, {replaces});
 	});
 
 	const onChangeComposing = useLatestCallback((composing: boolean) => {
@@ -353,6 +357,17 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 		}
 	}, [$t, accountSig.value.jid, retractMessage]);
 
+	const canEdit = useCallback((message: Message) => {
+		if(message.from.bare().equals(accountSig.value.jid)) {
+			const id = message.ids.find(x => x.type === StanzaIDType.Element && x.by.equals(accountSig.value.jid));
+			if(typeof id !== "undefined") {
+				return true;
+			}
+		}
+
+		return false;
+	}, [accountSig.value.jid]);
+
 	useEffect(() => {
 		return () => onChangeComposing(false);
 	}, [onChangeComposing]);
@@ -378,6 +393,8 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 			messages={messagesData.messages}
 			loaderContent={loaderContent}
 			renderMenu={renderMenu}
+			submitEdit={submitEdit}
+			canEdit={canEdit}
 		/>
 		<TypingIndicator
 			usersTyping={(typeof counterpart !== "undefined" && counterpart.composingFrom) ? [counterpart.jid] : []}

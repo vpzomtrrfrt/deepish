@@ -208,7 +208,7 @@ export interface BaseConnectionContext {
 	): void;
 	requestArchive(account: JID, entity: JID, params: {with?: JID}, before?: string): Promise<ResultSetInfo | null>;
 	sendMessageToRoom(account: JID, room: JID, message: {body: string}, options?: {replaces?: string}): Promise<void>;
-	sendMessageToCounterpart(account: JID, target: JID, message: {body: string}): Promise<void>;
+	sendMessageToCounterpart(account: JID, target: JID, message: {body: string}, options?: {replaces?: string}): Promise<void>;
 	retractMessageToRoom(account: JID, room: JID, messageID: string): Promise<void>;
 	retractMessageToCounterpart(account: JID, target: JID, messageID: string): Promise<void>;
 	markCounterpartAsVisible(account: JID, target: JID): void;
@@ -1914,7 +1914,12 @@ function createBaseConnection(
 			});
 	}
 
-	async function sendMessageToCounterpart(accountJID: JID, targetJID: JID, message: {body: string}) {
+	async function sendMessageToCounterpart(
+		accountJID: JID,
+		targetJID: JID,
+		message: {body: string},
+		options: {replaces?: string} = {},
+	) {
 		const localID = xid();
 
 		const account = getAccount(accountJID);
@@ -1926,32 +1931,53 @@ function createBaseConnection(
 				"message",
 				{id: localID, to: targetJID.toString(), type: "chat"},
 				...contentResult.elements,
+				...(
+					typeof options.replaces === "undefined" ?
+						[] :
+						[xml(
+							"replace",
+							{xmlns: "urn:xmpp:message-correct:0", id: options.replaces},
+						)]
+				),
 			),
 		);
 
-		handleMessage({
-			account: accountJID,
-			message: {
-				room: null,
-				from: accountJID,
-				occupantID: null,
-				to: targetJID,
-				content: contentResult.content,
-				ids: [
-					new StanzaID(StanzaIDType.Element, accountJID, localID),
-				],
-				localID,
-				timestamp: new Date(),
-				removal: null,
-				editedAt: null,
-			},
-			isNew: true,
-		});
+		if(typeof options.replaces === "undefined") {
+			handleMessage({
+				account: accountJID,
+				message: {
+					room: null,
+					from: accountJID,
+					occupantID: null,
+					to: targetJID,
+					content: contentResult.content,
+					ids: [
+						new StanzaID(StanzaIDType.Element, accountJID, localID),
+					],
+					localID,
+					timestamp: new Date(),
+					removal: null,
+					editedAt: null,
+				},
+				isNew: true,
+			});
 
-		// Non-groupchat messages don't get reflected, so we don't know the stanza ID
-		// Make an archive request to get the latest message
-		// (which may or may not be this one, but fine for the purpose of displayed sync)
-		requestArchive(account.jid, account.jid, {with: targetJID}, undefined, {max: 1});
+			// Non-groupchat messages don't get reflected, so we don't know the stanza ID
+			// Make an archive request to get the latest message
+			// (which may or may not be this one, but fine for the purpose of displayed sync)
+			requestArchive(account.jid, account.jid, {with: targetJID}, undefined, {max: 1});
+		}
+		else {
+			emit("messageEdit", {
+				edit: {
+					content: contentResult.content,
+					timestamp: new Date(),
+				},
+				target: new StanzaID(StanzaIDType.Element, accountJID, options.replaces),
+				room: null,
+				from: {jid: accountJID},
+			});
+		}
 	}
 
 	async function sendMessageToRoom(
