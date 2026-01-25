@@ -26,6 +26,8 @@ const DEFAULT_ROW_HEIGHT = 70;
 // Not sure why this is necessary but it seems to fix initial load scrolling
 const BOTTOM_TOLERANCE = 5;
 
+const MESSAGE_MERGE_TIME = 1000 * 60;
+
 const styles = {
 	message: css({
 		display: "flex",
@@ -67,6 +69,9 @@ const styles = {
 	})),
 	typingIndicatorPlaceholder: css({
 		height: "1.5rem",
+	}),
+	avatarSegment: css({
+		width: "35px",
 	}),
 };
 
@@ -202,12 +207,37 @@ function MessageRow(props: RowComponentProps<{
 
 	const message = props.messages[index];
 
-	return <RealMessageRow {...props} message={message} key={message.ids[0].toString()} />;
+	let isMerged = false;
+	if(index > 0) {
+		const prevMessage = props.messages[index - 1];
+
+		if(
+			message.timestamp.getTime() - prevMessage.timestamp.getTime() < MESSAGE_MERGE_TIME &&
+				// TODO show edited state somewhere else so we can merge them too
+				message.editedAt === null
+		) {
+			if(message.room === null) {
+				if(message.from.bare().equals(prevMessage.from.bare())) {
+					isMerged = true;
+				}
+			}
+			else {
+				if(message.from.equals(prevMessage.from)) {
+					isMerged = true;
+				}
+			}
+		}
+	}
+
+	return <RealMessageRow {...props} message={message} key={message.ids[0].toString()} isMerged={isMerged} />;
 }
 
 function RealMessageRow(props: RowComponentProps<{
 	message: Message;
+	isMerged: boolean;
+
 	renderMenu(message: Message): ComponentChildren;
+
 	submitEdit?: (text: string, replaces: string) => Promise<void>;
 	canEdit?: (message: Message) => boolean;
 }>) {
@@ -238,17 +268,21 @@ function RealMessageRow(props: RowComponentProps<{
 	}, []);
 
 	return <div style={props.style} class={styles.message}>
-		<div>
-			<Avatar size="md" jid={fromSig} />
+		<div class={styles.avatarSegment}>
+			{!props.isMerged &&
+				<Avatar size="md" jid={fromSig} />
+			}
 		</div>
 		<div class={styles.messageContentArea}>
-			<div>
-				<span>{nickSig}</span>
-				<span class={styles.messageTimestamp}>
-					{message.timestamp.toLocaleString()}
-					{message.editedAt !== null && <>{" "}{$t({defaultMessage: "(edited)"})}</>}
-				</span>
-			</div>
+			{!props.isMerged &&
+				<div>
+					<span>{nickSig}</span>
+					<span class={styles.messageTimestamp}>
+						{message.timestamp.toLocaleString()}
+						{message.editedAt !== null && <>{" "}{$t({defaultMessage: "(edited)"})}</>}
+					</span>
+				</div>
+			}
 			<div>
 				{
 					editing ?
