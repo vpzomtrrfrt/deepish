@@ -29,10 +29,17 @@ const BOTTOM_TOLERANCE = 5;
 const MESSAGE_MERGE_TIME = 1000 * 60;
 
 const styles = {
+	messageWrapper: css({
+		paddingBlockStart: ".5rem",
+
+		"&.merged": {
+			paddingBlockStart: 0,
+		},
+	}),
 	message: css({
 		display: "flex",
 		gap: ".5rem",
-		paddingBlock: ".5rem",
+		paddingBlock: ".125rem",
 
 		"&:hover": {
 			backgroundColor: "rgba(127, 127, 127, 0.2)",
@@ -269,49 +276,51 @@ function RealMessageRow(props: RowComponentProps<{
 		setEditing(false);
 	}, []);
 
-	return <div style={props.style} class={styles.message}>
-		<div class={styles.avatarSegment}>
-			{!props.isMerged &&
-				<Avatar size="md" jid={fromSig} />
-			}
-		</div>
-		<div class={styles.messageContentArea}>
-			{!props.isMerged &&
+	return <div style={props.style} class={cx(styles.messageWrapper, props.isMerged && "merged")}>
+		<div class={styles.message}>
+			<div class={styles.avatarSegment}>
+				{!props.isMerged &&
+					<Avatar size="md" jid={fromSig} />
+				}
+			</div>
+			<div class={styles.messageContentArea}>
+				{!props.isMerged &&
+					<div>
+						<span>{nickSig}</span>
+						<span class={styles.messageTimestamp}>
+							{message.timestamp.toLocaleString()}
+							{message.editedAt !== null && <>{" "}{$t({defaultMessage: "(edited)"})}</>}
+						</span>
+					</div>
+				}
 				<div>
-					<span>{nickSig}</span>
-					<span class={styles.messageTimestamp}>
-						{message.timestamp.toLocaleString()}
-						{message.editedAt !== null && <>{" "}{$t({defaultMessage: "(edited)"})}</>}
-					</span>
+					{
+						editing ?
+							<MessageEditArea message={message} submitEdit={submitEdit} cancel={cancelEdit} /> :
+							(
+								message.removal === null ?
+									<MessageContentView content={message.content} /> :
+									<em>{$t({defaultMessage: "This message has been deleted"})}</em>
+							)
+					}
+				</div>
+			</div>
+			{!editing &&
+				<div class={styles.messageMenuArea}>
+					{(
+						typeof props.submitEdit !== "undefined" &&
+							message.removal === null &&
+							message.ids.some(x => x.type === StanzaIDType.Element) &&
+							props.canEdit?.(message) === true
+					) &&
+						<IconButton onClick={edit}>
+							<Icon path={mdiPencil} />
+						</IconButton>
+					}
+					{props.renderMenu(message)}
 				</div>
 			}
-			<div>
-				{
-					editing ?
-						<MessageEditArea message={message} submitEdit={submitEdit} cancel={cancelEdit} /> :
-						(
-							message.removal === null ?
-								<MessageContentView content={message.content} /> :
-								<em>{$t({defaultMessage: "This message has been deleted"})}</em>
-						)
-				}
-			</div>
 		</div>
-		{!editing &&
-			<div class={styles.messageMenuArea}>
-				{(
-					typeof props.submitEdit !== "undefined" &&
-						message.removal === null &&
-						message.ids.some(x => x.type === StanzaIDType.Element) &&
-						props.canEdit?.(message) === true
-				) &&
-					<IconButton onClick={edit}>
-						<Icon path={mdiPencil} />
-					</IconButton>
-				}
-				{props.renderMenu(message)}
-			</div>
-		}
 	</div>;
 }
 
