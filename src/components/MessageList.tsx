@@ -35,6 +35,8 @@ const styles = {
 		paddingBlock: ".5rem",
 
 		"&:hover": {
+			backgroundColor: "rgba(127, 127, 127, 0.2)",
+
 			"> .messageMenuArea": {
 				visibility: "visible",
 			},
