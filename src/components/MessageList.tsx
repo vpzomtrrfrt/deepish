@@ -13,6 +13,7 @@ import useLatestCallback from "use-latest-callback";
 import { Message, MessageContent, useAccountSig } from "../util/connection";
 import { parseMarkdown, renderMarkdownToXHTML } from "../util/markdown";
 import { maybeGetNickForCounterpart } from "../util/profileUtil";
+import { themeVars } from "../util/theme";
 import { StanzaIDType } from "../util/xmpp/StanzaID";
 import { parse0393, StylingBlock0393, StylingSpan0393 } from "../util/xmpp/styling";
 import Avatar from "./Avatar";
@@ -41,11 +42,13 @@ const styles = {
 		gap: ".5rem",
 		paddingBlock: ".125rem",
 
+		position: "relative",
+
 		"&:hover": {
 			backgroundColor: "rgba(127, 127, 127, 0.2)",
 
 			"> .messageMenuArea": {
-				visibility: "visible",
+				display: "flex",
 			},
 		},
 	}),
@@ -62,11 +65,18 @@ const styles = {
 		color: "#888",
 	}),
 	messageMenuArea: cx("messageMenuArea", css({
-		display: "flex",
-		gap: ".5rem",
-		alignItems: "flex-start",
+		position: "absolute",
+		right: 0,
+		bottom: "calc(100% - 1rem)",
 
-		visibility: "hidden",
+		backgroundColor: themeVars.bg1,
+		borderStyle: "solid",
+		borderWidth: "1px",
+		borderColor: themeVars.outline1,
+		borderRadius: "2rem",
+
+		display: "none",
+		alignItems: "flex-start",
 
 		"&:focus-within": {
 			visibility: "visible",
