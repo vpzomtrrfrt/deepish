@@ -36,6 +36,7 @@ const FEATURES: string[] = [
 	"urn:xmpp:styling:0",
 	"urn:xmpp:content",
 	"urn:xmpp:message-correct:0",
+	"urn:xmpp:reactions:0",
 ];
 const IDENTITY = {category: "client", type: "web", lang: "", name: "Deepish"};
 const NODE_URL = "https://deepish.vpzom.click";
@@ -136,6 +137,7 @@ export interface Message {
 
 	removal: null | MessageRemoval;
 	editedAt: Date | null;
+	reactions: Map<string, MessageReactionsSet>;
 }
 
 export interface MessageEvent {
@@ -162,9 +164,22 @@ export interface MessageEditEvent {
 	from: {jid: JID; occupantID?: string};
 }
 
+export interface MessageReactionsSet {
+	reactions: Set<string>;
+	timestamp: Date;
+}
+
+export interface MessageReactionsChangeEvent {
+	reactions: MessageReactionsSet;
+	room: JID | null;
+	target: StanzaID;
+	from: {jid: JID; occupantID?: string};
+}
+
 interface AppEventMap {
 	message: MessageEvent;
 	messageEdit: MessageEditEvent;
+	messageReactionsChange: MessageReactionsChangeEvent;
 	messageRemove: MessageRemovalEvent;
 }
 
@@ -997,10 +1012,20 @@ function createBaseConnection(
 					}
 				}
 
+				let timestamp: Date | null = timestampFromWrapper ?? null;
+
+				const delayElem = elem.getChild("delay", "urn:xmpp:delay");
+				if(typeof delayElem !== "undefined") {
+					timestamp = new Date(delayElem.getAttr("stamp"));
+				}
+
+				const isNew = timestamp === null;
+
+				timestamp ??= new Date();
+
 				let ignore = false;
 
 				const retractElem = elem.getChild("retract", "urn:xmpp:message-retract:1");
-
 				if(typeof retractElem !== "undefined") {
 					const targetID = retractElem.getAttr("id");
 
@@ -1020,17 +1045,6 @@ function createBaseConnection(
 					}
 				}
 
-				let timestamp: Date | null = timestampFromWrapper ?? null;
-
-				const delayElem = elem.getChild("delay", "urn:xmpp:delay");
-				if(typeof delayElem !== "undefined") {
-					timestamp = new Date(delayElem.getAttr("stamp"));
-				}
-
-				const isNew = timestamp === null;
-
-				timestamp ??= new Date();
-
 				if(isNew) {
 					const mucElem = elem.getChild("x", "http://jabber.org/protocol/muc#user");
 					if(typeof mucElem !== "undefined") {
@@ -1044,6 +1058,28 @@ function createBaseConnection(
 						if(reloadConfig) {
 							fetchAndStoreRoomDisco(client, room);
 						}
+					}
+				}
+
+				const reactionsElem = elem.getChild("reactions", "urn:xmpp:reactions:0");
+				if(typeof reactionsElem !== "undefined") {
+					const targetID = reactionsElem.getAttr("id");
+					if(typeof targetID === "string") {
+						const reactions = new Set(reactionsElem.getChildren("reaction").map(x => x.getText()));
+
+						emit("messageReactionsChange", {
+							reactions: {
+								reactions,
+								timestamp,
+							},
+							target: new StanzaID(
+								StanzaIDType.Stanza,
+								from.bare(),
+								targetID,
+							),
+							room: from.bare(),
+							from: {jid: from, occupantID: occupantID ?? undefined},
+						});
 					}
 				}
 
@@ -1085,8 +1121,10 @@ function createBaseConnection(
 								ids,
 								localID: ids.length > 0 ? ids[0].toString() : xid(),
 								timestamp,
+
 								removal: null,
 								editedAt: null,
+								reactions: new Map(),
 							},
 							isNew,
 						});
@@ -1283,8 +1321,10 @@ function createBaseConnection(
 							ids,
 							localID: ids.length > 0 ? ids[0].toString() : xid(),
 							timestamp,
+
 							removal: null,
 							editedAt: null,
+							reactions: new Map(),
 						},
 						isNew,
 					});
@@ -1844,8 +1884,9 @@ function createBaseConnection(
 		[K in keyof AppEventMap]: Set<(evt: AppEventMap[K]) => void>;
 	} = {
 		message: new Set(),
-		messageRemove: new Set(),
 		messageEdit: new Set(),
+		messageReactionsChange: new Set(),
+		messageRemove: new Set(),
 	};
 
 	function addEventListener<K extends keyof AppEventMap>(event: K, listener: (evt: AppEventMap[K]) => void) {
@@ -2011,8 +2052,10 @@ function createBaseConnection(
 					],
 					localID,
 					timestamp: new Date(),
+
 					removal: null,
 					editedAt: null,
+					reactions: new Map(),
 				},
 				isNew: true,
 			});

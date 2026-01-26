@@ -2,6 +2,7 @@ import { css, cx } from "@emotion/css";
 import { mdiPencil } from "@mdi/js";
 import { useComputed } from "@preact/signals";
 import { useLiveSignal } from "@preact/signals/utils";
+import { JID, parse as parseJID } from "@xmpp/jid";
 import * as xml from "@xmpp/xml";
 import inlineStyleParser from "inline-style-parser";
 import { ComponentChildren, h, JSX, VNode } from "preact";
@@ -91,6 +92,18 @@ const styles = {
 	}),
 	avatarSegment: css({
 		width: "35px",
+	}),
+	reactionsArea: css({
+		display: "flex",
+		gap: ".5rem",
+	}),
+	reactionButton: css({
+		borderColor: themeVars.outline1,
+		borderStyle: "solid",
+		borderWidth: "1px",
+		borderRadius: ".5rem",
+
+		padding: ".25rem",
 	}),
 };
 
@@ -286,6 +299,30 @@ function RealMessageRow(props: RowComponentProps<{
 		setEditing(false);
 	}, []);
 
+	const reactions = useMemo(() => {
+		const result = new Map<string, Array<{jid: JID; occupantID: string | null}>>();
+
+		message.reactions.forEach((set, key) => {
+			const idx = key.lastIndexOf("/");
+
+			const sender = {
+				jid: parseJID(key.substring(0, idx)),
+				occupantID: idx + 1 < key.length ? key.substring(idx + 1) : null,
+			};
+
+			set.reactions.forEach(value => {
+				let list = result.get(value);
+				if(typeof list === "undefined") {
+					list = [];
+					result.set(value, list);
+				}
+				list.push(sender);
+			});
+		});
+
+		return result;
+	}, [message.reactions]);
+
 	return <div style={props.style} class={cx(styles.messageWrapper, props.isMerged && "merged")}>
 		<div class={styles.message}>
 			<div class={styles.avatarSegment}>
@@ -314,6 +351,9 @@ function RealMessageRow(props: RowComponentProps<{
 							)
 					}
 				</div>
+				{reactions.size > 0 &&
+					<ReactionsArea reactions={reactions} />
+				}
 			</div>
 			{!editing &&
 				<div class={styles.messageMenuArea}>
@@ -529,4 +569,14 @@ function MessageEditArea(props: {
 		initValue={content.content.toString()}
 		cancel={props.cancel}
 	/>;
+}
+
+function ReactionsArea(props: {reactions: Map<string, Array<{jid: JID; occupantID: string | null}>>}) {
+	return <div class={styles.reactionsArea}>
+		{
+			Array.from(props.reactions.entries()).map(([value, senders]) => {
+				return <div class={styles.reactionButton}>{value} {senders.length}</div>;
+			})
+		}
+	</div>;
 }
