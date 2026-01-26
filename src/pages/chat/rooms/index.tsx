@@ -14,6 +14,7 @@ import ConfirmDialog from "../../../components/ConfirmDialog";
 import ConfirmTaskDialog from "../../../components/ConfirmTaskDialog";
 import { DataNonDoneView, ErrorAlert } from "../../../components/DataView";
 import EditRoomDialog from "../../../components/EditRoomDialog";
+import For from "../../../components/For";
 import Menu, { MenuGroupLabel, MenuItem, MenuRadioGroup, MenuRadioItem } from "../../../components/Menu";
 import MessageInput from "../../../components/MessageInput";
 import MessageList, { LoadMoreTriggerer } from "../../../components/MessageList";
@@ -21,6 +22,7 @@ import TaskDialog from "../../../components/TaskDialog";
 import TypingIndicator from "../../../components/TypingIndicator";
 import { Message, MessageEditEvent, messageEditIsAllowed, MessageEvent, MessageReactionsChangeEvent, MessageRemovalEvent, messageRemovalIsAllowed, NotificationLevel, ResultSetInfo, useAccountSig, useConnectionContext } from "../../../util/connection";
 import { msgActionDelete, presenceShowTypeNames } from "../../../util/langCommon";
+import { useSignalMapKeysWhereValueMatches } from "../../../util/SignalMap";
 import { getShowTypeForCounterpart } from "../../../util/statusUtil";
 import { themeVars } from "../../../util/theme";
 import { LoadState } from "../../../util/useData";
@@ -90,12 +92,22 @@ const styles = {
 };
 
 export default function ChatRoomPage(props: {params: {roomJID: string}}) {
-	const roomJID = decodeURIComponent(props.params.roomJID);
+	const { $t } = useIntl();
+
+	let roomJID;
+	try {
+		roomJID = parseJID(decodeURIComponent(props.params.roomJID));
+	}
+	catch(ex) {
+		console.error(ex);
+
+		return <div>{$t({defaultMessage: "Invalid address"})}</div>;
+	}
 
 	return <ChatRoomPageInner roomJID={roomJID} key={roomJID} />;
 }
 
-function ChatRoomPageInner(props: {roomJID: string}) {
+function ChatRoomPageInner(props: {roomJID: JID}) {
 	const { $t } = useIntl();
 	const [, navigate] = useLocation();
 
@@ -104,12 +116,12 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 	const accountSig = useAccountSig();
 
 	const accountJIDSig = useComputed(() => accountSig.value.jid);
-	const roomSig = useComputed(() => accountSig.value.rooms.getSignal(props.roomJID)).value;
+	const roomSig = useComputed(() => accountSig.value.rooms.getSignal(props.roomJID.toString())).value;
 
 	const accountJID = accountJIDSig.value;
 	const room = roomSig.value;
 
-	const counterpart = useComputed(() => accountSig.value.counterparts.getSignal(props.roomJID)).value.value;
+	const counterpart = useComputed(() => accountSig.value.counterparts.getSignal(props.roomJID.toString())).value.value;
 
 	const [messagesData, setMessagesData] = useState<{messages: Message[]; messageMap: Map<string, Message>}>({
 		messages: [],
@@ -127,7 +139,7 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 	const onMessage = useLatestCallback((evt: MessageEvent) => {
 		console.log("room page got message", evt);
 
-		if(evt.message.room !== null && evt.message.room.toString() === props.roomJID) {
+		if(evt.message.room !== null && evt.message.room.equals(props.roomJID)) {
 			setMessagesData(current => {
 				if(evt.message.ids.some(x => current.messageMap.has(x.toString()))) {
 					// we already have this message, ignore
@@ -209,7 +221,7 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 	useEventHandler(conn, "message", onMessage);
 
 	const onMessageRemove = useLatestCallback((evt: MessageRemovalEvent) => {
-		if(evt.room === null || evt.room.toString() !== props.roomJID) return;
+		if(evt.room === null || !evt.room.equals(props.roomJID)) return;
 
 		setMessagesData(current => {
 			const newMessageMap = new Map(current.messageMap);
@@ -257,7 +269,7 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 	useEventHandler(conn, "messageRemove", onMessageRemove);
 
 	const onMessageEdit = useLatestCallback((evt: MessageEditEvent) => {
-		if(evt.room === null || evt.room.toString() !== props.roomJID) return;
+		if(evt.room === null || !evt.room.equals(props.roomJID)) return;
 
 		setMessagesData(current => {
 			const newMessageMap = new Map(current.messageMap);
@@ -309,7 +321,7 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 	useEventHandler(conn, "messageEdit", onMessageEdit);
 
 	const onMessageReactionsChange = useLatestCallback((evt: MessageReactionsChangeEvent) => {
-		if(evt.room === null || evt.room.toString() !== props.roomJID) return;
+		if(evt.room === null || !evt.room.equals(props.roomJID)) return;
 
 		setMessagesData(current => {
 			const newMessageMap = new Map(current.messageMap);
@@ -410,7 +422,7 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 	});
 
 	const onChangeComposing = useLatestCallback((composing: boolean) => {
-		conn.setComposingToRoom(accountJID, parseJID(props.roomJID), composing);
+		conn.setComposingToRoom(accountJID, props.roomJID, composing);
 	});
 
 	useEffect(() => {
@@ -419,7 +431,7 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 
 	const editRoom = useLatestCallback(() => {
 		appCtx.showDialog(
-			<EditRoomDialog room={parseJID(props.roomJID)} />
+			<EditRoomDialog room={props.roomJID} />
 		);
 	});
 
@@ -451,25 +463,16 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 		return new JID(room.jid.local, room.jid.domain, room.nick ?? accountJIDSig.value.local);
 	});
 
+	const allUsersTypingSig = useSignalMapKeysWhereValueMatches(accountSig.value.counterparts, value => {
+		return value.jid.bare().equals(props.roomJID) && value.composingFrom === true;
+	});
+
 	const usersTypingSig = useComputed(() => {
 		const room = roomSig.value;
 
 		if(typeof room === "undefined") return [];
 
-		const result: JID[] = [];
-		for(const [, value] of accountSig.value.counterparts.entries()) {
-			if(value.jid.bare().equals(room.jid)) {
-				if(
-					value.composingFrom === true &&
-						// Don't show myself
-						!value.jid.equals(selfJIDInRoomSig.value!)
-				) {
-					result.push(value.jid);
-				}
-			}
-		}
-
-		return result;
+		return allUsersTypingSig.value.map(parseJID).filter(x => x.equals(selfJIDInRoomSig.value!));
 	});
 
 	const selfCounterpartInRoom = useComputed(() => {
@@ -485,7 +488,7 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 			undefined,
 			<ConfirmTaskDialog
 				submit={async () => {
-					return conn.retractMessageToRoom.call(undefined, accountJID, parseJID(props.roomJID), messageID);
+					return conn.retractMessageToRoom.call(undefined, accountJID, props.roomJID, messageID);
 				}}
 				confirmText={$t(msgActionDelete)}
 			>
@@ -554,7 +557,7 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 	const onChangeNotificationLevel = useCallback((newValue: NotificationLevel) => {
 		console.log("onChangeNotificationLevel");
 
-		conn.setRoomNotificationLevel.call(undefined, accountJID, parseJID(props.roomJID), newValue);
+		conn.setRoomNotificationLevel.call(undefined, accountJID, props.roomJID, newValue);
 	}, [accountJID, conn.setRoomNotificationLevel, props.roomJID]);
 
 	const loaderContent = pageState === null ?
@@ -575,7 +578,7 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 						typeof room !== "undefined" &&
 							LoadState.ifDone(room.infoState, disco => <h1>{disco.name}</h1>, () => null)
 					}
-					<div style={{textOverflow: "ellipsis", overflowX: "hidden"}}>{props.roomJID}</div>
+					<div style={{textOverflow: "ellipsis", overflowX: "hidden"}}>{props.roomJID.toString()}</div>
 				</div>
 				<div>
 					<Menu>
@@ -628,42 +631,45 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 	</Fragment>;
 }
 
-function MembersList(props: {roomJID: string}) {
+function MembersList(props: {roomJID: JID}) {
+	const accountSig = useAccountSig();
+
+	const room = useComputed(() => accountSig.value.rooms.getSignal(props.roomJID.toString())).value.value;
+
+	const membersSig = useSignalMapKeysWhereValueMatches(accountSig.value.counterparts, x => {
+		return x.jid.bare().equals(props.roomJID) &&
+			x.jid.resource !== "" &&
+			x.presences !== null &&
+			x.presences.size > 0;
+	});
+
+	if(typeof room === "undefined" || !room.connected) return null;
+
+	return <SidebarSegment class={styles.membersList}>
+		<For each={membersSig} static>
+			{jid => <MembersListEntry jid={parseJID(jid)} />}
+		</For>
+	</SidebarSegment>;
+}
+
+function MembersListEntry(props: {jid: JID}) {
 	const { $t } = useIntl();
 
 	const accountSig = useAccountSig();
 
-	const room = useComputed(() => accountSig.value.rooms.getSignal(props.roomJID)).value.value;
+	const counterpart = accountSig.value.counterparts.get(props.jid.toString())!;
 
-	if(typeof room === "undefined" || !room.connected) return null;
+	const showType = getShowTypeForCounterpart(counterpart, true);
 
-	const members = Array.from(
-		accountSig.value.counterparts.values()
-			.filter(x => {
-				return x.jid.bare().equals(room.jid) &&
-					x.jid.resource !== "" &&
-					x.presences !== null &&
-					x.presences.size > 0;
-			}),
-	);
-
-	return <SidebarSegment class={styles.membersList}>
-		{
-			members.map(member => {
-				const showType = getShowTypeForCounterpart(member, true);
-
-				return <div key={member.jid.resource} class={styles.membersListEntry}>
-					<AvatarWithStatus size="md" jid={member.jid} inRoom />
-					<div style={{flexGrow: 1}}>
-						<div>{member.jid.resource}</div>
-						{showType !== null &&
-							<div class={styles.statusText}>
-								{$t(presenceShowTypeNames[showType])}
-							</div>
-						}
-					</div>
-				</div>;
-			})
-		}
-	</SidebarSegment>;
+	return <div key={counterpart.jid.resource} class={styles.membersListEntry}>
+		<AvatarWithStatus size="md" jid={counterpart.jid} inRoom />
+		<div style={{flexGrow: 1}}>
+			<div>{counterpart.jid.resource}</div>
+			{showType !== null &&
+				<div class={styles.statusText}>
+					{$t(presenceShowTypeNames[showType])}
+				</div>
+			}
+		</div>
+	</div>;
 }

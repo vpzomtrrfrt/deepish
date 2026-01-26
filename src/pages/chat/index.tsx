@@ -506,18 +506,19 @@ function ChatHomePage() {
 
 	const accountSig = useAccountSig();
 
-	// TODO this seems like a performance problem
+	const possibleConversationsKeysSig = useSignalMapKeysWhereValueMatches(accountSig.value.counterparts, counterpart => {
+		return (counterpart.lastMessageTimestamp !== null || counterpart.overrideVisibleTimestamp !== null);
+	});
+
+	// TODO somehow avoid re-sorting so often?
 	const conversationsSig = useComputed(() => {
-		const list = Array.from(accountSig.value.counterparts.entries())
-			.filter(x => {
-				return !accountSig.value.rooms.has(x[0]) &&
-					(x[1].lastMessageTimestamp !== null || x[1].overrideVisibleTimestamp !== null);
-			});
+		const list = possibleConversationsKeysSig.value.map(x => accountSig.value.counterparts.get(x)!)
+			.filter(x => !accountSig.value.rooms.has(x.jid.toString()));
 		list.sort((a, b) => {
-			return (b[1].lastMessageTimestamp ?? b[1].overrideVisibleTimestamp)!.getTime() -
-				(a[1].lastMessageTimestamp ?? a[1].overrideVisibleTimestamp)!.getTime();
+			return (b.lastMessageTimestamp ?? b.overrideVisibleTimestamp)!.getTime() -
+				(a.lastMessageTimestamp ?? a.overrideVisibleTimestamp)!.getTime();
 		});
-		return list.map(x => x[1].jid);
+		return list.map(x => x.jid);
 	});
 
 	return <div style={{display: "flex", flexGrow: 1}}>
