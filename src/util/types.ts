@@ -45,7 +45,9 @@ export interface Counterpart {
 	lastReportedComposing: boolean;
 	composingFrom: boolean | null;
 	nick: string | null;
+
 	occupantID: string | null;
+	affiliation: string | null;
 
 	lastReadMessageID: string | null;
 }

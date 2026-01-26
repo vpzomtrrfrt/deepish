@@ -5,6 +5,7 @@ import { useCallback, useContext, useEffect, useMemo, useState } from "preact/ho
 import { useIntl } from "react-intl";
 
 import { useAccountSig, useConnectionContext } from "../util/connection";
+import { AVATAR_MAX_SIZE } from "../util/constants";
 import convertImage, { ConvertImageResult } from "../util/convertImage";
 import useData, { LoadState } from "../util/useData";
 import useSubmitting from "../util/useSubmitting";
@@ -14,9 +15,6 @@ import DataView from "./DataView";
 import Dialog, { DialogContext, DialogFooter } from "./Dialog";
 import Field, { FieldLabel } from "./Field";
 import Input from "./Input";
-
-// Arbitrary number. Spec says 64x64 but that seems too small
-const AVATAR_MAX_SIZE = 256;
 
 const styles = {
 	avatarView: css({

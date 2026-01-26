@@ -13,6 +13,7 @@ import AvatarWithStatus from "../../../components/AvatarWithStatus";
 import ConfirmDialog from "../../../components/ConfirmDialog";
 import ConfirmTaskDialog from "../../../components/ConfirmTaskDialog";
 import { DataNonDoneView, ErrorAlert } from "../../../components/DataView";
+import EditRoomDialog from "../../../components/EditRoomDialog";
 import Menu, { MenuGroupLabel, MenuItem, MenuRadioGroup, MenuRadioItem } from "../../../components/Menu";
 import MessageInput from "../../../components/MessageInput";
 import MessageList, { LoadMoreTriggerer } from "../../../components/MessageList";
@@ -338,6 +339,12 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 		return () => onChangeComposing(false);
 	}, [onChangeComposing]);
 
+	const editRoom = useLatestCallback(() => {
+		appCtx.showDialog(
+			<EditRoomDialog room={parseJID(props.roomJID)} />
+		);
+	});
+
 	const leaveRoom = useLatestCallback(() => {
 		appCtx.showDialog(
 			<ConfirmDialog
@@ -504,6 +511,12 @@ function ChatRoomPageInner(props: {roomJID: string}) {
 									return <MenuRadioItem value={parseInt(key, 10)}>{$t(value)}</MenuRadioItem>;
 								})}
 							</MenuRadioGroup>
+						}
+						{(
+							typeof selfCounterpartInRoom !== "undefined" &&
+								selfCounterpartInRoom.affiliation === "owner"
+						) &&
+							<MenuItem onClick={editRoom}>{$t({defaultMessage: "Channel Settings"})}</MenuItem>
 						}
 						<MenuItem onClick={leaveRoom}>{$t({defaultMessage: "Leave Channel"})}</MenuItem>
 					</Menu>

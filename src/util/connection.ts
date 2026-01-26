@@ -1,5 +1,5 @@
 import { IDBCache } from "@instructure/idb-cache";
-import { ReadonlySignal, Signal, signal, useComputed } from "@preact/signals";
+import { batch, ReadonlySignal, Signal, signal, useComputed } from "@preact/signals";
 import { useLiveSignal } from "@preact/signals/utils";
 import Connection from "@xmpp/connection";
 import xid from "@xmpp/id";
@@ -54,7 +54,9 @@ const DEFAULT_COUNTERPART_INFO: Omit<Counterpart, "jid"> = {
 	lastReportedComposing: false,
 	composingFrom: null,
 	nick: null,
+
 	occupantID: null,
+	affiliation: null,
 
 	lastReadMessageID: null,
 };
@@ -183,6 +185,10 @@ export interface RoomCreateParams {
 	persistent: boolean;
 }
 
+export interface RoomEditParams {
+	name?: string;
+}
+
 interface RoomJoinCallbackInfo {
 	statuses: string[];
 }
@@ -221,6 +227,7 @@ export interface BaseConnectionContext {
 	joinRoom(account: JID, room: JID, nick?: string): Promise<void>;
 	leaveRoom(account: JID, room: JID): Promise<void>;
 	createRoom(account: JID, room: JID, params: RoomCreateParams): void;
+	changeRoomConfig(account: JID, room: JID, params: RoomEditParams): void;
 	fetchRoomInfo(account: JID, room: JID): Promise<RoomDiscoInfo>;
 	markCounterpartAsRead(account: JID, target: JID, lastReadMessageID: string, isRoom: boolean): void;
 	setNick(account: JID, value: string): Promise<void>;
@@ -1013,20 +1020,36 @@ function createBaseConnection(
 					}
 				}
 
+				let timestamp: Date | null = timestampFromWrapper ?? null;
+
+				const delayElem = elem.getChild("delay", "urn:xmpp:delay");
+				if(typeof delayElem !== "undefined") {
+					timestamp = new Date(delayElem.getAttr("stamp"));
+				}
+
+				const isNew = timestamp === null;
+
+				timestamp ??= new Date();
+
+				if(isNew) {
+					const mucElem = elem.getChild("x", "http://jabber.org/protocol/muc#user");
+					if(typeof mucElem !== "undefined") {
+						let reloadConfig = false;
+
+						mucElem.getChildren("status").forEach(statusElem => {
+							const code = statusElem.getAttr("code");
+							if(code === "104") reloadConfig = true;
+						});
+
+						if(reloadConfig) {
+							fetchAndStoreRoomDisco(client, room);
+						}
+					}
+				}
+
 				const content = getContentFromMessageElement(elem);
 
 				if(content.length > 0 && !ignore) {
-					let timestamp: Date | null = timestampFromWrapper ?? null;
-
-					const delayElem = elem.getChild("delay", "urn:xmpp:delay");
-					if(typeof delayElem !== "undefined") {
-						timestamp = new Date(delayElem.getAttr("stamp"));
-					}
-
-					const isNew = timestamp === null;
-
-					timestamp ??= new Date();
-
 					const ids = [];
 					if(archiveID !== null) {
 						ids.push(new StanzaID(StanzaIDType.Stanza, room, archiveID));
@@ -1600,16 +1623,27 @@ function createBaseConnection(
 					}
 				}
 
-				const occupantIDElem = elem.getChild("occupant-id", "urn:xmpp:occupant-id:0");
-				if(typeof occupantIDElem !== "undefined") {
-					const occupantID = occupantIDElem.getAttr("id");
-					if(typeof occupantID === "string") {
+				batch(() => {
+					const itemElem = userInfo.getChild("item");
+					const affiliation = itemElem?.getAttr("affiliation");
+					if(typeof affiliation === "string") {
 						upsertCounterpart(client, srcJID, current => ({
 							...current,
-							occupantID,
+							affiliation,
 						}));
 					}
-				}
+
+					const occupantIDElem = elem.getChild("occupant-id", "urn:xmpp:occupant-id:0");
+					if(typeof occupantIDElem !== "undefined") {
+						const occupantID = occupantIDElem.getAttr("id");
+						if(typeof occupantID === "string") {
+							upsertCounterpart(client, srcJID, current => ({
+								...current,
+								occupantID,
+							}));
+						}
+					}
+				});
 			}
 
 			const contact = typeof userInfo === "undefined" ? srcJID.bare() : srcJID;
@@ -2516,6 +2550,68 @@ function createBaseConnection(
 		}
 	}
 
+	async function changeRoomConfig(accountJID: JID, room: JID, params: RoomEditParams) {
+		const realParams: Record<string, string> = {};
+
+		if(typeof params.name !== "undefined") realParams["muc#roomconfig_roomname"] = params.name;
+
+		const account = getAccount(accountJID);
+
+		const formResult = await account.client.iqCaller.get(
+			xml(
+				"query",
+				{xmlns: "http://jabber.org/protocol/muc#owner"},
+			),
+			room.toString(),
+		);
+
+		if(typeof formResult === "undefined") throw new Error("Missing form");
+
+		const formElem = formResult.getChild("x", "jabber:x:data");
+		if(typeof formElem === "undefined") throw new Error("Server is missing required functionality");
+
+		const fieldElems = formElem.getChildren("field");
+
+		const missingFields = new Set(Object.keys(realParams));
+
+		fieldElems.forEach(elem => {
+			const key = elem.getAttr("var");
+			missingFields.delete(key);
+
+			if(typeof elem.getChild("required") !== "undefined") {
+				if(!(key in realParams)) throw new Error("Server requires additional information");
+			}
+		});
+
+		if(missingFields.size > 0) throw new Error("Server is missing required functionality");
+
+		await account.client.iqCaller.set(
+			xml(
+				"query",
+				{xmlns: "http://jabber.org/protocol/muc#owner"},
+				xml(
+					"x",
+					{xmlns: "jabber:x:data", type: "submit"},
+					xml(
+						"field",
+						{var: "FORM_TYPE"},
+						xml("value", {}, "http://jabber.org/protocol/muc#roomconfig"),
+					),
+					...Object.keys(realParams).map(key_ => {
+						const key = key_ as keyof typeof realParams;
+
+						return xml(
+							"field",
+							{var: key},
+							xml("value", {}, realParams[key].toString()),
+						);
+					}),
+				),
+			),
+			room.toString(),
+		);
+	}
+
 	async function submitDisplayedUpdateInner(accountJID: JID, targetJID: JID, lastReadMessageID: string, isRoom: boolean) {
 		const account = getAccount(accountJID);
 
@@ -2782,6 +2878,7 @@ function createBaseConnection(
 		joinRoom,
 		leaveRoom,
 		createRoom,
+		changeRoomConfig,
 		sendFriendRequest,
 		fetchRoomInfo,
 		setNick,
