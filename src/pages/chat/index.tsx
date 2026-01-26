@@ -8,6 +8,7 @@ import { useComputed, useSignalEffect } from "@preact/signals";
 import { JID, parse as parseJID } from "@xmpp/jid";
 import useLinkState from "linkstate/hook";
 import { JSX } from "preact";
+import { memo } from "preact/compat";
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import { useIntl } from "react-intl";
 import useLatestCallback from "use-latest-callback";
@@ -21,6 +22,7 @@ import Button from "../../components/Button";
 import ConfirmDialog from "../../components/ConfirmDialog";
 import { ErrorAlert } from "../../components/DataView";
 import EditProfileDialog from "../../components/EditProfileDialog";
+import For from "../../components/For";
 import Icon from "../../components/Icon";
 import IconButton from "../../components/IconButton";
 import Input from "../../components/Input";
@@ -351,9 +353,14 @@ function ChatView() {
 function HomeLink(props: {active: boolean}) {
 	const accountSig = useAccountSig();
 
-	const incomingRequestCounterparts = useComputed(() => {
-		return Array.from(accountSig.value.counterparts.values())
-			.filter(counterpartIsIncomingRequest);
+	const incomingRequestCounterpartsCount = useComputed(() => {
+		let result = 0;
+
+		for(const counterpart of accountSig.value.counterparts.values()) {
+			if(counterpartIsIncomingRequest(counterpart)) result += 1;
+		}
+
+		return result;
 	}).value;
 
 	return <div>
@@ -361,8 +368,8 @@ function HomeLink(props: {active: boolean}) {
 			<div class={cx(styles.roomLink, props.active && styles.currentRoomLink, styles.homeAvatar)}>
 				<Icon path={mdiHome} class={styles.roomLinkIcon} />
 				{
-					incomingRequestCounterparts.length > 0 &&
-						<PriorityUnreadIndicator count={incomingRequestCounterparts.length} />
+					incomingRequestCounterpartsCount > 0 &&
+						<PriorityUnreadIndicator count={incomingRequestCounterpartsCount} />
 				}
 			</div>
 		</Link>
@@ -499,7 +506,7 @@ function ChatHomePage() {
 	const accountSig = useAccountSig();
 
 	// TODO this seems like a performance problem
-	const conversations = useComputed(() => {
+	const conversationsSig = useComputed(() => {
 		const list = Array.from(accountSig.value.counterparts.entries())
 			.filter(x => {
 				return !accountSig.value.rooms.has(x[0]) &&
@@ -509,8 +516,8 @@ function ChatHomePage() {
 			return (b[1].lastMessageTimestamp ?? b[1].overrideVisibleTimestamp)!.getTime() -
 				(a[1].lastMessageTimestamp ?? a[1].overrideVisibleTimestamp)!.getTime();
 		});
-		return list.map(x => x[0]);
-	}).value;
+		return list.map(x => x[1].jid);
+	});
 
 	return <div style={{display: "flex", flexGrow: 1}}>
 		<SpaceItemsList>
@@ -518,22 +525,9 @@ function ChatHomePage() {
 				<Icon path={mdiAccountMultiple} class={styles.bigSpaceItemIcon} />
 				<span>{$t({defaultMessage: "Friends"})}</span>
 			</Link>
-			{
-				conversations.map(item => {
-					const counterpart = accountSig.value.counterparts.get(item)!;
-
-					return <Link to={"~/chat/direct/" + encodeURIComponent(item)} className={active => cx(styles.spaceItem, active && "active")}>
-						<AvatarWithStatus size="md" jid={item} />
-						<span style={{flexGrow: 1}}>{getNickForCounterpart(counterpart)}</span>
-						{
-							counterpart.lastMessageIDForUnread !== null &&
-								counterpart.lastReadMessageID !== counterpart.lastMessageIDForUnread &&
-								counterpart.lastReadMessageID !== counterpart.lastMessageID &&
-								<div class={styles.counterpartUnreadIndicator} />
-						}
-					</Link>;
-				})
-			}
+			<For each={conversationsSig} static>
+				{jid => <ConversationLink jid={jid} key={jid} />}
+			</For>
 		</SpaceItemsList>
 		<Switch>
 			<Route path="/direct/:counterpartJID" component={DirectChatPage} />
@@ -541,6 +535,25 @@ function ChatHomePage() {
 		</Switch>
 	</div>;
 }
+
+const ConversationLink = memo(function ConversationLink(props: {jid: JID}) {
+	const accountSig = useAccountSig();
+	const counterpart = useComputed(() => accountSig.value.counterparts.get(props.jid.toString())).value!;
+
+	return <Link
+		to={"~/chat/direct/" + encodeURIComponent(props.jid.toString())}
+		className={active => cx(styles.spaceItem, active && "active")}
+	>
+		<AvatarWithStatus size="md" jid={props.jid} />
+		<span style={{flexGrow: 1}}>{getNickForCounterpart(counterpart)}</span>
+		{
+			counterpart.lastMessageIDForUnread !== null &&
+				counterpart.lastReadMessageID !== counterpart.lastMessageIDForUnread &&
+				counterpart.lastReadMessageID !== counterpart.lastMessageID &&
+				<div class={styles.counterpartUnreadIndicator} />
+		}
+	</Link>;
+});
 
 enum FriendsTab {
 	Online,
@@ -569,7 +582,7 @@ function ContactsPage() {
 		conn.removeFriend(accountSig.value.jid, target);
 	}
 
-	function removeFriendAfterConfirm(target: JID) {
+	const removeFriendAfterConfirm = useLatestCallback((target: JID) => {
 		appCtx.showDialog(
 			<ConfirmDialog
 				onConfirm={removeFriend.bind(undefined, target)}
@@ -582,22 +595,69 @@ function ContactsPage() {
 				</p>
 			</ConfirmDialog>,
 		);
-	}
+	});
 
 	const onClickFriendButtons = useCallback((evt: Event) => {
 		evt.stopPropagation();
 		evt.preventDefault();
 	}, []);
 
-	const incomingRequestCounterparts = Array.from(accountSig.value.counterparts.values())
-		.filter(counterpartIsIncomingRequest);
+	const incomingRequestCounterpartsSig = useComputed(() => {
+		return Array.from(accountSig.value.counterparts.values())
+			.filter(counterpartIsIncomingRequest);
+	});
+	const incomingRequestCounterpartsCount = useComputed(() => incomingRequestCounterpartsSig.value.length).value;
 
-	const outgoingRequestCounterparts = Array.from(accountSig.value.counterparts.values())
-		.filter(info => {
-			return info.rosterEntry !== null &&
-				!info.rosterEntry.subscriptionTo &&
-				info.rosterEntry.requestingSubscriptionTo;
-		});
+	const outgoingRequestCounterpartsSig = useComputed(() => {
+		return Array.from(accountSig.value.counterparts.values())
+			.filter(info => {
+				return info.rosterEntry !== null &&
+					!info.rosterEntry.subscriptionTo &&
+					info.rosterEntry.requestingSubscriptionTo;
+			});
+	});
+	const outgoingRequestCounterpartsCount = useComputed(() => outgoingRequestCounterpartsSig.value.length).value;
+
+	const friendsSig = useComputed(() => {
+		return Array.from(accountSig.value.counterparts.values().filter(info => {
+			if(info.rosterEntry === null) return false;
+			if(!info.rosterEntry.subscriptionTo) return false;
+
+			return true;
+		}));
+	});
+
+	const renderFriendEntry = useCallback((info: Counterpart) => {
+		if(tab === FriendsTab.Online) {
+			if(info.presences === null || info.presences.size < 1) return null;
+		}
+
+		const showType = getShowTypeForCounterpart(info);
+
+		return <Link
+			to={"~/chat/direct/" + encodeURIComponent(info.jid.toString())}
+			key={info.jid.toString()}
+			class={styles.friendEntry}
+		>
+			<AvatarWithStatus size="md" jid={info.jid} />
+			<div style={{flexGrow: 1}}>
+				<div class={styles.friendEntryNameRow}>
+					{getNickForCounterpart(info)}
+					<span class={styles.friendEntryJID}>{info.jid.toString()}</span>
+				</div>
+				{showType !== null && <div class={styles.statusText}>
+					{$t(presenceShowTypeNames[showType])}
+				</div>}
+			</div>
+			<div class={styles.friendButtons} onClick={onClickFriendButtons}>
+				<Menu>
+					<MenuItem onClick={removeFriendAfterConfirm.bind(undefined, info.jid)}>
+						{$t({defaultMessage: "Remove Friend"})}
+					</MenuItem>
+				</Menu>
+			</div>
+		</Link>;
+	}, [$t, onClickFriendButtons, removeFriendAfterConfirm, tab]);
 
 	return <div class={styles.contactsPage}>
 		<ManualTabsContainer tab={tab} setTab={setTab}>
@@ -610,10 +670,10 @@ function ContactsPage() {
 				</TabLink>
 				<TabLink tab={FriendsTab.Requests}>
 					{$t({defaultMessage: "Requests"})}
-					{incomingRequestCounterparts.length > 0 &&
+					{incomingRequestCounterpartsCount > 0 &&
 						<>
 							{" "}
-							<PriorityUnreadIndicator count={incomingRequestCounterparts.length} />
+							<PriorityUnreadIndicator count={incomingRequestCounterpartsCount} />
 						</>
 					}
 				</TabLink>
@@ -621,42 +681,9 @@ function ContactsPage() {
 
 			{
 				(tab === FriendsTab.All || tab === FriendsTab.Online) && <div>
-					{
-						Array.from(accountSig.value.counterparts.values(), info => {
-							if(info.rosterEntry === null) return null;
-							if(!info.rosterEntry.subscriptionTo) return null;
-
-							if(tab === FriendsTab.Online) {
-								if(info.presences === null || info.presences.size < 1) return null;
-							}
-
-							const showType = getShowTypeForCounterpart(info);
-
-							return <Link
-								to={"~/chat/direct/" + encodeURIComponent(info.jid.toString())}
-								key={info.jid.toString()}
-								class={styles.friendEntry}
-							>
-								<AvatarWithStatus size="md" jid={info.jid} />
-								<div style={{flexGrow: 1}}>
-									<div class={styles.friendEntryNameRow}>
-										{getNickForCounterpart(info)}
-										<span class={styles.friendEntryJID}>{info.jid.toString()}</span>
-									</div>
-									{showType !== null && <div class={styles.statusText}>
-										{$t(presenceShowTypeNames[showType])}
-									</div>}
-								</div>
-								<div class={styles.friendButtons} onClick={onClickFriendButtons}>
-									<Menu>
-										<MenuItem onClick={removeFriendAfterConfirm.bind(undefined, info.jid)}>
-											{$t({defaultMessage: "Remove Friend"})}
-										</MenuItem>
-									</Menu>
-								</div>
-							</Link>;
-						})
-					}
+					<For each={friendsSig}>
+						{renderFriendEntry}
+					</For>
 				</div>
 			}
 			{
@@ -665,31 +692,33 @@ function ContactsPage() {
 						<h1>{$t({defaultMessage: "Add Friend"})}</h1>
 						<AddFriendForm />
 					</Block>
-					{outgoingRequestCounterparts.length > 0 &&
+					{outgoingRequestCounterpartsCount > 0 &&
 						<Block>
 							<h1>
 								{$t({defaultMessage: "Outgoing", description: "Heading for outgoing friend requests"})}
 							</h1>
 							<div>
-								{outgoingRequestCounterparts.map(info => {
-									return <div class={styles.friendEntry} key={info.jid.toString()}>
-										<div style={{flexGrow: 1}}>
-											{info.jid.toString()}
-										</div>
-										<div class={styles.friendButtons}>
-											<WithTooltip tooltip={$t({defaultMessage: "Cancel Request"})}>
-												<IconButton onClick={removeFriend.bind(undefined, info.jid)}>
-													<Icon path={mdiClose} />
-												</IconButton>
-											</WithTooltip>
-										</div>
-									</div>;
-								})}
+								<For each={outgoingRequestCounterpartsSig}>
+									{info => {
+										return <div class={styles.friendEntry} key={info.jid.toString()}>
+											<div style={{flexGrow: 1}}>
+												{info.jid.toString()}
+											</div>
+											<div class={styles.friendButtons}>
+												<WithTooltip tooltip={$t({defaultMessage: "Cancel Request"})}>
+													<IconButton onClick={removeFriend.bind(undefined, info.jid)}>
+														<Icon path={mdiClose} />
+													</IconButton>
+												</WithTooltip>
+											</div>
+										</div>;
+									}}
+								</For>
 							</div>
 						</Block>
 					}
 					{
-						incomingRequestCounterparts.length > 0 &&
+						incomingRequestCounterpartsCount > 0 &&
 							<Block>
 								<h1>
 									{$t({
@@ -698,25 +727,27 @@ function ContactsPage() {
 									})}
 								</h1>
 								<div>
-									{incomingRequestCounterparts.map(info => {
-										return <div class={styles.friendEntry} key={info.jid.toString()}>
-											<div style={{flexGrow: 1}}>
-												{info.jid.toString()}
-											</div>
-											<div class={styles.friendButtons}>
-												<WithTooltip tooltip={$t({defaultMessage: "Accept Request"})}>
-													<IconButton onClick={acceptFriendRequest.bind(undefined, info.jid)}>
-														<Icon path={mdiCheck} />
-													</IconButton>
-												</WithTooltip>
-												<WithTooltip tooltip={$t({defaultMessage: "Reject Request"})}>
-													<IconButton onClick={rejectFriendRequest.bind(undefined, info.jid)}>
-														<Icon path={mdiClose} />
-													</IconButton>
-												</WithTooltip>
-											</div>
-										</div>;
-									})}
+									<For each={incomingRequestCounterpartsSig}>
+										{info => {
+											return <div class={styles.friendEntry} key={info.jid.toString()}>
+												<div style={{flexGrow: 1}}>
+													{info.jid.toString()}
+												</div>
+												<div class={styles.friendButtons}>
+													<WithTooltip tooltip={$t({defaultMessage: "Accept Request"})}>
+														<IconButton onClick={acceptFriendRequest.bind(undefined, info.jid)}>
+															<Icon path={mdiCheck} />
+														</IconButton>
+													</WithTooltip>
+													<WithTooltip tooltip={$t({defaultMessage: "Reject Request"})}>
+														<IconButton onClick={rejectFriendRequest.bind(undefined, info.jid)}>
+															<Icon path={mdiClose} />
+														</IconButton>
+													</WithTooltip>
+												</div>
+											</div>;
+										}}
+									</For>
 								</div>
 							</Block>
 					}
