@@ -440,7 +440,9 @@ function createBaseConnection(
 			const nick = entry.nick ?? client.jid!.local;
 
 			if(
-				typeof existing === "undefined" || (existing.connectedNick !== null && existing.connectedNick !== nick)
+				typeof existing === "undefined" ||
+					(existing.connectedNick !== null && existing.connectedNick !== nick) ||
+					!existing.connected
 			) {
 				const jid = parseJID(entry.jid);
 
@@ -843,6 +845,23 @@ function createBaseConnection(
 	});
 
 	function onClientOnline(client: xmppClient.Client) {
+		// assume rooms are disconnected, will get reconnected after bookmarks fetch
+
+		const account = getAccount(client);
+
+		for(const [key, value] of account.rooms.entries()) {
+			if(value.connected) {
+				account.rooms.set(
+					key,
+					{
+						...value,
+						connected: false,
+						error: null,
+					},
+				);
+			}
+		}
+
 		sendMyPresence(client)
 			.then(() => {
 				return Promise.all([
@@ -862,7 +881,9 @@ function createBaseConnection(
 		status: keyof Connection.StatusEvents,
 		..._args: unknown[]
 	) {
-		// seems to only sometimes go to "online"?
+		console.log("STATUS IS NOW:", status);
+
+		// seems to only go to "online" when not a resume
 		if(status === "online" || (status === "open" && client.jid !== null && client.jid.resource !== "")) {
 			updateAccount(client, account => ({...account, connected: true}));
 		}
