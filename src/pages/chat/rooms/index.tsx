@@ -477,7 +477,7 @@ function ChatRoomPageInner(props: {roomJID: JID}) {
 
 		if(typeof room === "undefined") return [];
 
-		return allUsersTypingSig.value.map(parseJID).filter(x => x.equals(selfJIDInRoomSig.value!));
+		return allUsersTypingSig.value.map(parseJID).filter(x => !x.equals(selfJIDInRoomSig.value!));
 	});
 
 	const selfCounterpartInRoom = useComputed(() => {
