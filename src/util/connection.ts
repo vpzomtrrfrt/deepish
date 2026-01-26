@@ -58,6 +58,7 @@ const DEFAULT_COUNTERPART_INFO: Omit<Counterpart, "jid"> = {
 
 	occupantID: null,
 	affiliation: null,
+	role: null,
 
 	lastReadMessageID: null,
 };
@@ -1667,11 +1668,20 @@ function createBaseConnection(
 
 				batch(() => {
 					const itemElem = userInfo.getChild("item");
+
 					const affiliation = itemElem?.getAttr("affiliation");
 					if(typeof affiliation === "string") {
 						upsertCounterpart(client, srcJID, current => ({
 							...current,
 							affiliation,
+						}));
+					}
+
+					const role = itemElem?.getAttr("role");
+					if(typeof role === "string") {
+						upsertCounterpart(client, srcJID, current => ({
+							...current,
+							role,
 						}));
 					}
 

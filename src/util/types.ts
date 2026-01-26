@@ -48,6 +48,7 @@ export interface Counterpart {
 
 	occupantID: string | null;
 	affiliation: string | null;
+	role: string | null;
 
 	lastReadMessageID: string | null;
 }

@@ -12,7 +12,7 @@ import { NOTIFICATION_LEVEL_NAMES, useAppContext } from "../../..";
 import AvatarWithStatus from "../../../components/AvatarWithStatus";
 import ConfirmDialog from "../../../components/ConfirmDialog";
 import ConfirmTaskDialog from "../../../components/ConfirmTaskDialog";
-import { DataNonDoneView, ErrorAlert } from "../../../components/DataView";
+import { DataNonDoneView, ErrorAlert, Loading } from "../../../components/DataView";
 import EditRoomDialog from "../../../components/EditRoomDialog";
 import For from "../../../components/For";
 import Menu, { MenuGroupLabel, MenuItem, MenuRadioGroup, MenuRadioItem } from "../../../components/Menu";
@@ -27,6 +27,7 @@ import { getShowTypeForCounterpart } from "../../../util/statusUtil";
 import { themeVars } from "../../../util/theme";
 import { LoadState } from "../../../util/useData";
 import useEventHandler from "../../../util/useEventHandler";
+import { checkPrivilegeForRole, MUCPrivilege } from "../../../util/xmpp/mucPrivileges";
 import { StanzaIDType } from "../../../util/xmpp/StanzaID";
 import { SidebarSegment } from "..";
 
@@ -487,6 +488,10 @@ function ChatRoomPageInner(props: {roomJID: JID}) {
 			accountSig.value.counterparts.get(selfJIDInRoom.toString());
 	}).value;
 
+	const canSend = (typeof selfCounterpartInRoom === "undefined" || selfCounterpartInRoom.role === null) ?
+		null :
+		checkPrivilegeForRole(MUCPrivilege.SendMessagesToAll, selfCounterpartInRoom.role);
+
 	const retractMessage = useCallback((messageID: string) => {
 		appCtx.showDialog.call(
 			undefined,
@@ -536,6 +541,8 @@ function ChatRoomPageInner(props: {roomJID: JID}) {
 	}, [$t, retractMessage, room, selfCounterpartInRoom]);
 
 	const canEdit = useCallback((message: Message) => {
+		if(canSend !== true) return false;
+
 		if(typeof selfCounterpartInRoom !== "undefined") {
 			if(
 				messageEditIsAllowed(
@@ -556,7 +563,7 @@ function ChatRoomPageInner(props: {roomJID: JID}) {
 		}
 
 		return false;
-	}, [room, selfCounterpartInRoom]);
+	}, [canSend, room, selfCounterpartInRoom]);
 
 	const onChangeNotificationLevel = useCallback((newValue: NotificationLevel) => {
 		console.log("onChangeNotificationLevel");
@@ -622,11 +629,24 @@ function ChatRoomPageInner(props: {roomJID: JID}) {
 						/>
 						<div class={styles.messageInputArea}>
 							<TypingIndicator usersTyping={usersTypingSig} inRoom={true} />
-							<MessageInput
-								submitMessage={submitMessage}
-								autofocus
-								onChangeComposing={onChangeComposing}
-							/>
+							{
+								canSend === null ?
+									<Loading /> :
+									(
+										canSend ?
+											<MessageInput
+												submitMessage={submitMessage}
+												autofocus
+												onChangeComposing={onChangeComposing}
+											/> :
+											<p>
+												{$t({
+													defaultMessage:
+														"You don't have permission to send messages in this channel",
+												})}
+											</p>
+									)
+							}
 						</div>
 					</>
 			}
