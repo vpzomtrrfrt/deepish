@@ -115,7 +115,7 @@ export default function Avatar(props: {size: AvatarSize; jid: Signalish<string |
 					}
 				</text>
 			</svg> :
-			<img src={image} />
+			<img src={image} draggable={false} />
 		}
 	</div>;
 }
