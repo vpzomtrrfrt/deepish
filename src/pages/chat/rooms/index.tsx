@@ -2,7 +2,7 @@ import { css } from "@emotion/css";
 import { useComputed } from "@preact/signals";
 import { JID, parse as parseJID } from "@xmpp/jid";
 import { pushAtSortPosition } from "array-push-at-sort-position";
-import { useCallback, useEffect, useRef, useState } from "preact/hooks";
+import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { Fragment } from "preact/jsx-runtime";
 import { useIntl } from "react-intl";
 import useLatestCallback from "use-latest-callback";
@@ -94,13 +94,17 @@ const styles = {
 export default function ChatRoomPage(props: {params: {roomJID: string}}) {
 	const { $t } = useIntl();
 
-	let roomJID;
-	try {
-		roomJID = parseJID(decodeURIComponent(props.params.roomJID));
-	}
-	catch(ex) {
-		console.error(ex);
+	const roomJID = useMemo(() => {
+		try {
+			return parseJID(decodeURIComponent(props.params.roomJID))
+		}
+		catch(ex) {
+			console.error(ex);
+			return undefined;
+		}
+	}, [props.params.roomJID]);
 
+	if(typeof roomJID === "undefined") {
 		return <div>{$t({defaultMessage: "Invalid address"})}</div>;
 	}
 
