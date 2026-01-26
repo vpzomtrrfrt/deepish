@@ -4,7 +4,7 @@ import { attachInstruction, extractInstruction, Instruction } from "@atlaskit/pr
 import { DropIndicator } from "@atlaskit/pragmatic-drag-and-drop-react-drop-indicator/list-item";
 import { css, cx } from "@emotion/css";
 import { mdiAccountMultiple, mdiCheck, mdiClose, mdiHome, mdiPlus } from "@mdi/js";
-import { useComputed, useSignalEffect } from "@preact/signals";
+import { useComputed, useSignal, useSignalEffect } from "@preact/signals";
 import { JID, parse as parseJID } from "@xmpp/jid";
 import useLinkState from "linkstate/hook";
 import { JSX } from "preact";
@@ -36,6 +36,7 @@ import { Room, useAccountSig, useConnectionContext } from "../../util/connection
 import { msgActionAdd, presenceShowTypeNames } from "../../util/langCommon";
 import { compareRanks } from "../../util/lexrank";
 import { getNickForCounterpart } from "../../util/profileUtil";
+import { useSignalMapKeysWhereValueMatches } from "../../util/SignalMap";
 import { getShowTypeForCounterpart } from "../../util/statusUtil";
 import { themeVars } from "../../util/theme";
 import { Counterpart } from "../../util/types";
@@ -564,11 +565,13 @@ enum FriendsTab {
 function ContactsPage() {
 	const { $t } = useIntl();
 
-	const appCtx = useAppContext();
 	const conn = useConnectionContext();
 	const accountSig = useAccountSig();
 
-	const [tab, setTab] = useState<FriendsTab>(FriendsTab.All);
+	const tabSig = useSignal<FriendsTab>(FriendsTab.All);
+	const setTab = useCallback((newTab: FriendsTab) => {
+		tabSig.value = newTab;
+	}, [tabSig]);
 
 	function acceptFriendRequest(target: JID) {
 		conn.acceptFriendRequest(accountSig.value.jid, target);
@@ -581,26 +584,6 @@ function ContactsPage() {
 	function removeFriend(target: JID) {
 		conn.removeFriend(accountSig.value.jid, target);
 	}
-
-	const removeFriendAfterConfirm = useLatestCallback((target: JID) => {
-		appCtx.showDialog(
-			<ConfirmDialog
-				onConfirm={removeFriend.bind(undefined, target)}
-				confirmText={$t({defaultMessage: "Remove Friend"})}
-			>
-				<p>
-					{$t({
-						defaultMessage: "Are you sure you want to remove {target} as a friend?"
-					}, {target: <em>{target.toString()}</em>})}
-				</p>
-			</ConfirmDialog>,
-		);
-	});
-
-	const onClickFriendButtons = useCallback((evt: Event) => {
-		evt.stopPropagation();
-		evt.preventDefault();
-	}, []);
 
 	const incomingRequestCounterpartsSig = useComputed(() => {
 		return Array.from(accountSig.value.counterparts.values())
@@ -618,49 +601,26 @@ function ContactsPage() {
 	});
 	const outgoingRequestCounterpartsCount = useComputed(() => outgoingRequestCounterpartsSig.value.length).value;
 
-	const friendsSig = useComputed(() => {
-		return Array.from(accountSig.value.counterparts.values().filter(info => {
-			if(info.rosterEntry === null) return false;
-			if(!info.rosterEntry.subscriptionTo) return false;
+	const friendsSig = useSignalMapKeysWhereValueMatches(accountSig.value.counterparts, info => {
+		if(info.rosterEntry === null) return false;
+		if(!info.rosterEntry.subscriptionTo) return false;
 
-			return true;
-		}));
+		return true;
 	});
 
-	const renderFriendEntry = useCallback((info: Counterpart) => {
-		if(tab === FriendsTab.Online) {
-			if(info.presences === null || info.presences.size < 1) return null;
+	const visibleFriendsSig = useComputed(() => {
+		if(tabSig.value === FriendsTab.All) return friendsSig.value;
+		else if(tabSig.value === FriendsTab.Online) {
+			return friendsSig.value.filter(key => {
+				const info = accountSig.value.counterparts.get(key)!;
+				return info.presences !== null && info.presences.size > 0;
+			});
 		}
-
-		const showType = getShowTypeForCounterpart(info);
-
-		return <Link
-			to={"~/chat/direct/" + encodeURIComponent(info.jid.toString())}
-			key={info.jid.toString()}
-			class={styles.friendEntry}
-		>
-			<AvatarWithStatus size="md" jid={info.jid} />
-			<div style={{flexGrow: 1}}>
-				<div class={styles.friendEntryNameRow}>
-					{getNickForCounterpart(info)}
-					<span class={styles.friendEntryJID}>{info.jid.toString()}</span>
-				</div>
-				{showType !== null && <div class={styles.statusText}>
-					{$t(presenceShowTypeNames[showType])}
-				</div>}
-			</div>
-			<div class={styles.friendButtons} onClick={onClickFriendButtons}>
-				<Menu>
-					<MenuItem onClick={removeFriendAfterConfirm.bind(undefined, info.jid)}>
-						{$t({defaultMessage: "Remove Friend"})}
-					</MenuItem>
-				</Menu>
-			</div>
-		</Link>;
-	}, [$t, onClickFriendButtons, removeFriendAfterConfirm, tab]);
+		else return [];
+	});
 
 	return <div class={styles.contactsPage}>
-		<ManualTabsContainer tab={tab} setTab={setTab}>
+		<ManualTabsContainer tab={tabSig.value} setTab={setTab}>
 			<TabsList>
 				<TabLink tab={FriendsTab.Online}>
 					{$t({defaultMessage: "Online", description: "Friends tab"})}
@@ -680,14 +640,14 @@ function ContactsPage() {
 			</TabsList>
 
 			{
-				(tab === FriendsTab.All || tab === FriendsTab.Online) && <div>
-					<For each={friendsSig}>
-						{renderFriendEntry}
+				(tabSig.value === FriendsTab.All || tabSig.value === FriendsTab.Online) && <div>
+					<For each={visibleFriendsSig} static>
+						{item => <FriendEntry jid={item} />}
 					</For>
 				</div>
 			}
 			{
-				tab === FriendsTab.Requests && <div>
+				tabSig.value === FriendsTab.Requests && <div>
 					<Block>
 						<h1>{$t({defaultMessage: "Add Friend"})}</h1>
 						<AddFriendForm />
@@ -755,6 +715,66 @@ function ContactsPage() {
 			}
 		</ManualTabsContainer>
 	</div>;
+}
+
+function FriendEntry(props: {jid: string}) {
+	const { $t } = useIntl();
+
+	const appCtx = useAppContext();
+	const conn = useConnectionContext();
+	const accountSig = useAccountSig();
+
+	const info = useComputed(() => accountSig.value.counterparts.get(props.jid)).value!;
+
+	const showType = getShowTypeForCounterpart(info);
+
+	const onClickFriendButtons = useCallback((evt: Event) => {
+		evt.stopPropagation();
+		evt.preventDefault();
+	}, []);
+
+	function removeFriend(target: JID) {
+		conn.removeFriend(accountSig.value.jid, target);
+	}
+
+	const removeFriendAfterConfirm = useLatestCallback((target: JID) => {
+		appCtx.showDialog(
+			<ConfirmDialog
+				onConfirm={removeFriend.bind(undefined, target)}
+				confirmText={$t({defaultMessage: "Remove Friend"})}
+			>
+				<p>
+					{$t({
+						defaultMessage: "Are you sure you want to remove {target} as a friend?"
+					}, {target: <em>{target.toString()}</em>})}
+				</p>
+			</ConfirmDialog>,
+		);
+	});
+
+	return <Link
+		to={"~/chat/direct/" + encodeURIComponent(info.jid.toString())}
+		key={info.jid.toString()}
+		class={styles.friendEntry}
+	>
+		<AvatarWithStatus size="md" jid={info.jid} />
+		<div style={{flexGrow: 1}}>
+			<div class={styles.friendEntryNameRow}>
+				{getNickForCounterpart(info)}
+				<span class={styles.friendEntryJID}>{info.jid.toString()}</span>
+			</div>
+			{showType !== null && <div class={styles.statusText}>
+				{$t(presenceShowTypeNames[showType])}
+			</div>}
+		</div>
+		<div class={styles.friendButtons} onClick={onClickFriendButtons}>
+			<Menu>
+				<MenuItem onClick={removeFriendAfterConfirm.bind(undefined, info.jid)}>
+					{$t({defaultMessage: "Remove Friend"})}
+				</MenuItem>
+			</Menu>
+		</div>
+	</Link>;
 }
 
 function ConnectingView() {

@@ -14,6 +14,8 @@ export default defineConfig(
 			"simple-import-sort": simpleImportSort,
 		},
 		rules: {
+			"react-hooks/immutability": "off", // triggers false positives with signals
+
 			"@typescript-eslint/no-unused-vars": ["warn", {argsIgnorePattern: "^_", varsIgnorePattern: "^_"}],
 			"simple-import-sort/imports": "warn",
 			"simple-import-sort/exports": "warn",
