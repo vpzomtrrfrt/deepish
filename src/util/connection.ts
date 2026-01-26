@@ -1080,6 +1080,8 @@ function createBaseConnection(
 							room: from.bare(),
 							from: {jid: from, occupantID: occupantID ?? undefined},
 						});
+
+						ignore = true;
 					}
 				}
 
