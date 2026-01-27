@@ -244,6 +244,7 @@ export interface BaseConnectionContext {
 	leaveRoom(account: JID, room: JID): Promise<void>;
 	createRoom(account: JID, room: JID, params: RoomCreateParams): void;
 	changeRoomConfig(account: JID, room: JID, params: RoomEditParams): void;
+	setRoomAvatar(account: JID, room: JID, info: ImageInfo): void;
 	fetchRoomInfo(account: JID, room: JID): Promise<RoomDiscoInfo>;
 	markCounterpartAsRead(account: JID, target: JID, lastReadMessageID: string, isRoom: boolean): void;
 	setNick(account: JID, value: string): Promise<void>;
@@ -2667,6 +2668,54 @@ function createBaseConnection(
 		);
 	}
 
+	async function setRoomAvatar(accountJID: JID, roomJID: JID, value: ImageInfo) {
+		const account = getAccount(accountJID);
+
+		const existingVCardQuery = account.client.iqCaller.get(
+			xml("vCard", "vcard-temp"),
+			roomJID.toString(),
+		)
+			.then(async result => {
+				if(typeof result === "undefined") throw new Error("Missing result from vcard query");
+				return result;
+			}, err => {
+				if(err instanceof StanzaError && err.condition === "item-not-found") {
+					return xml("vCard", "vcard-temp");
+				}
+				else throw err;
+			});
+
+		const content = await value.content.bytes();
+		const hash = await crypto.subtle.digest("SHA-1", content);
+		const hashStr = toHex(new Uint8Array(hash));
+
+		const contentB64 = toBase64(content);
+
+		// Prefill local cache
+		await cacheSig.value.setItem(
+			"avatarImages/" + encodeURIComponent(hashStr),
+			JSON.stringify({contentB64, type: "image/png"} satisfies AvatarImageCacheEntry),
+		);
+
+		const vCard = await existingVCardQuery;
+		vCard.remove("PHOTO");
+		vCard.append(
+			xml(
+				"PHOTO",
+				{},
+				xml("TYPE", {}, "image/png"),
+				xml("BINVAL", {}, contentB64),
+			),
+		);
+
+		await account.client.iqCaller.set(
+			vCard,
+			roomJID.toString(),
+		);
+
+		fetchAndStoreRoomDisco(account.client, roomJID);
+	}
+
 	async function submitDisplayedUpdateInner(accountJID: JID, targetJID: JID, lastReadMessageID: string, isRoom: boolean) {
 		const account = getAccount(accountJID);
 
@@ -2934,6 +2983,7 @@ function createBaseConnection(
 		leaveRoom,
 		createRoom,
 		changeRoomConfig,
+		setRoomAvatar,
 		sendFriendRequest,
 		fetchRoomInfo,
 		setNick,

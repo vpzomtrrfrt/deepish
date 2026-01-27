@@ -1,17 +1,28 @@
+import { css } from "@emotion/css";
 import { useComputed } from "@preact/signals";
 import { JID } from "@xmpp/jid";
 import { JSX } from "preact";
-import { useCallback, useContext, useState } from "preact/hooks";
+import { useCallback, useContext, useEffect, useMemo, useState } from "preact/hooks";
 import { useIntl } from "react-intl";
 
 import { RoomDiscoInfo, RoomEditParams, useAccountSig, useConnectionContext } from "../util/connection";
-import useData from "../util/useData";
+import { AVATAR_MAX_SIZE } from "../util/constants";
+import convertImage, { ConvertImageResult } from "../util/convertImage";
+import useData, { LoadState } from "../util/useData";
 import useSubmitting from "../util/useSubmitting";
+import Avatar, { RawAvatar } from "./Avatar";
 import Button from "./Button";
 import DataView from "./DataView";
 import Dialog, { DialogContext, DialogFooter } from "./Dialog";
 import Field, { FieldLabel } from "./Field";
 import Input from "./Input";
+
+const styles = {
+	avatarView: css({
+		display: "flex",
+		justifyContent: "space-around",
+	}),
+};
 
 export default function EditRoomDialog(props: {room: JID}) {
 	const account = useAccountSig();
@@ -50,6 +61,18 @@ function Content(props: {room: JID; info: RoomDiscoInfo}) {
 
 	const info = {...baseInfo, ...changes};
 
+	const [newAvatarSrc, setNewAvatarSrc] = useState<File | null>(null);
+
+	const onChangeNewAvatar = useCallback((evt: JSX.TargetedEvent<HTMLInputElement>) => {
+		setNewAvatarSrc(evt.currentTarget.files?.[0] ?? null);
+	}, []);
+
+	const newAvatarState = useData(async () => {
+		if(newAvatarSrc === null) return null;
+
+		return convertImage(newAvatarSrc, {maxSize: AVATAR_MAX_SIZE, square: true});
+	}, [newAvatarSrc]);
+
 	const accountJID = useComputed(() => accountSig.value.jid).value;
 
 	const [submitting, submit] = useSubmitting(async (evt: Event) => {
@@ -68,6 +91,16 @@ function Content(props: {room: JID; info: RoomDiscoInfo}) {
 			}
 		}
 
+		if(newAvatarSrc !== null) {
+			calls.push(
+				conn.setRoomAvatar(
+					accountJID,
+					props.room,
+					LoadState.assertDone(newAvatarState)!,
+				),
+			);
+		}
+
 		if(Object.keys(mainChanges).length > 0) calls.push(conn.changeRoomConfig(accountJID, props.room, mainChanges));
 
 		await Promise.all(calls);
@@ -81,13 +114,43 @@ function Content(props: {room: JID; info: RoomDiscoInfo}) {
 				<FieldLabel>{$t({defaultMessage: "Name"})}</FieldLabel>
 				<Input autofocus value={info.name} onChange={onChangeName} />
 			</Field>
-			
+			<Field>
+				<FieldLabel>{$t({defaultMessage: "Profile Picture"})}</FieldLabel>
+				<Input type="file" onChange={onChangeNewAvatar} />
+				<DataView state={newAvatarState}>
+					{info => {
+						return <AvatarView newInfo={info} roomJID={props.room} />;
+					}}
+				</DataView>
+			</Field>
 		</div>
 		<DialogFooter>
 			<Button tier="secondary" onClick={dialogCtx.close}>{$t({defaultMessage: "Cancel"})}</Button>
-			<Button type="submit" tier="primary" disabled={submitting}>
+			<Button type="submit" tier="primary" disabled={submitting || newAvatarState.state !== "done"}>
 				{$t({defaultMessage: "Save"})}
 			</Button>
 		</DialogFooter>
 	</form>;
+}
+
+function AvatarView(props: {newInfo: ConvertImageResult | null; roomJID: JID}) {
+	const newURL = useMemo(() => {
+		return props.newInfo === null ? null : URL.createObjectURL(props.newInfo.content);
+	}, [props.newInfo]);
+
+	useEffect(() => {
+		if(newURL !== null) {
+			return () => {
+				URL.revokeObjectURL(newURL);
+			};
+		}
+	}, [newURL]);
+
+	return <div class={styles.avatarView}>
+		{
+			newURL === null ?
+				<Avatar jid={props.roomJID} size="lg" /> :
+				<RawAvatar src={newURL} size="lg" />
+		}
+	</div>;
 }
