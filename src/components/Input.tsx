@@ -29,12 +29,19 @@ const styles = {
 		outline: 0,
 		border: "none",
 		padding: 0,
+
+		flexBasis: 0,
+		minWidth: 0,
 	}),
 	inputSuffixWrapper: css({
 		display: "inline-flex",
 		cursor: "text",
 	}),
 	inputSuffix: css({
+		display: "block",
+		overflowX: "hidden",
+		textOverflow: "ellipsis",
+
 		opacity: 0.65,
 	}),
 };
