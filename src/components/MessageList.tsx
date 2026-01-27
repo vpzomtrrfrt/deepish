@@ -7,7 +7,7 @@ import * as xml from "@xmpp/xml";
 import inlineStyleParser from "inline-style-parser";
 import { ComponentChildren, h, JSX, VNode } from "preact";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import { useIntl } from "react-intl";
+import { FormattedList, useIntl } from "react-intl";
 import { List, ListImperativeAPI, RowComponentProps, useDynamicRowHeight } from "react-window";
 import useLatestCallback from "use-latest-callback";
 
@@ -22,6 +22,7 @@ import { ErrorAlert } from "./DataView";
 import Icon from "./Icon";
 import IconButton from "./IconButton";
 import MessageInput from "./MessageInput";
+import WithTooltip from "./WithTooltip";
 
 const DEFAULT_ROW_HEIGHT = 70;
 
@@ -352,7 +353,7 @@ function RealMessageRow(props: RowComponentProps<{
 					}
 				</div>
 				{reactions.size > 0 &&
-					<ReactionsArea reactions={reactions} />
+					<ReactionsArea reactions={reactions} isRoom={props.message.room !== null} />
 				}
 			</div>
 			{!editing &&
@@ -571,11 +572,36 @@ function MessageEditArea(props: {
 	/>;
 }
 
-function ReactionsArea(props: {reactions: Map<string, Array<{jid: JID; occupantID: string | null}>>}) {
+function ReactionsArea(props: {isRoom: boolean; reactions: Map<string, Array<{jid: JID; occupantID: string | null}>>}) {
+	const { $t } = useIntl();
+
+	const accountSig = useAccountSig();
+
 	return <div class={styles.reactionsArea}>
 		{
 			Array.from(props.reactions.entries()).map(([value, senders]) => {
-				return <div class={styles.reactionButton}>{value} {senders.length}</div>;
+				return <WithTooltip
+					key={value}
+					instant={false}
+					tooltip={$t(
+						{defaultMessage: "{list} reacted with {text}"},
+						{
+							text: value,
+							list: <FormattedList
+								value={senders.map(sender => {
+									const from = props.isRoom ? sender.jid : sender.jid.bare();
+
+									const counterpart = accountSig.value.counterparts.get(from.toString());
+
+									return maybeGetNickForCounterpart(from, counterpart);
+								})}
+								type="conjunction"
+							/>
+						},
+					)}
+				>
+					<div class={styles.reactionButton}>{value} {senders.length}</div>
+				</WithTooltip>;
 			})
 		}
 	</div>;

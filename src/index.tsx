@@ -198,7 +198,7 @@ function App() {
 				<DataView state={messagesState}>
 					{() => {
 						return <div class={styles.appWrapper} style={prefersDark ? themeCSS.dark : themeCSS.light}>
-							<Tooltip.Provider delay={0}>
+							<Tooltip.Provider>
 								<AppContent />
 							</Tooltip.Provider>
 							<DialogContainer ref={dialogContainerRef} />

@@ -22,12 +22,13 @@ export default function WithTooltip(props: {
 	children: JSX.Element;
 	tooltip: ComponentChildren;
 
+	instant?: boolean;
 	side?: Tooltip.Positioner.Props["side"];
 }) {
 	const appCtx = useAppContext();
 
 	return <Tooltip.Root>
-		<Tooltip.Trigger render={<span>{props.children}</span>} />
+		<Tooltip.Trigger render={<span>{props.children}</span>} delay={props.instant === false ? 600 : 0} />
 		<Tooltip.Portal container={appCtx.portalContainerRef}>
 			<Tooltip.Positioner side={props.side}>
 				<Tooltip.Popup className={styles.popup}>
