@@ -5,9 +5,11 @@ import { JSX } from "preact";
 import { useCallback, useContext, useEffect, useMemo, useState } from "preact/hooks";
 import { useIntl } from "react-intl";
 
-import { RoomDiscoInfo, RoomEditParams, useAccountSig, useConnectionContext } from "../util/connection";
+import { RoomConfig, RoomEditParams, useAccountSig, useConnectionContext } from "../util/connection";
 import { AVATAR_MAX_SIZE } from "../util/constants";
 import convertImage, { ConvertImageResult } from "../util/convertImage";
+import { publishingTypeNames } from "../util/langCommon";
+import { RoomPublishing } from "../util/types";
 import useData, { LoadState } from "../util/useData";
 import useSubmitting from "../util/useSubmitting";
 import Avatar, { RawAvatar } from "./Avatar";
@@ -16,6 +18,7 @@ import DataView from "./DataView";
 import Dialog, { DialogContext, DialogFooter } from "./Dialog";
 import Field, { FieldLabel } from "./Field";
 import Input from "./Input";
+import Select from "./Select";
 
 const styles = {
 	avatarView: css({
@@ -31,7 +34,7 @@ export default function EditRoomDialog(props: {room: JID}) {
 	const accountJID = useComputed(() => account.value.jid).value;
 
 	const infoState = useData(async () => {
-		return conn.fetchRoomInfo(accountJID, props.room);
+		return conn.fetchRoomConfig(accountJID, props.room);
 	}, []);
 
 	return <Dialog>
@@ -41,7 +44,7 @@ export default function EditRoomDialog(props: {room: JID}) {
 	</Dialog>;
 }
 
-function Content(props: {room: JID; info: RoomDiscoInfo}) {
+function Content(props: {room: JID; info: RoomConfig}) {
 	const { $t } = useIntl();
 
 	const conn = useConnectionContext();
@@ -51,12 +54,19 @@ function Content(props: {room: JID; info: RoomDiscoInfo}) {
 
 	const baseInfo = {
 		name: props.info.name ?? props.room.local,
+		publishing: props.info.membersOnly ?
+			RoomPublishing.Private :
+			(props.info.publicRoom ? RoomPublishing.Public : RoomPublishing.Unlisted),
 	};
 
 	const [changes, setChanges] = useState<Partial<typeof baseInfo>>({});
 
 	const onChangeName = useCallback((evt: JSX.TargetedEvent<HTMLInputElement>) => {
 		setChanges(current => ({...current, name: evt.currentTarget.value}));
+	}, []);
+
+	const onChangePublishing = useCallback((evt: JSX.TargetedEvent<HTMLSelectElement>) => {
+		setChanges(current => ({...current, publishing: evt.currentTarget.value as RoomPublishing}));
 	}, []);
 
 	const info = {...baseInfo, ...changes};
@@ -85,6 +95,11 @@ function Content(props: {room: JID; info: RoomDiscoInfo}) {
 			const key = key_ as keyof typeof changes;
 
 			if(key === "name") mainChanges.name = changes[key];
+			else if(key === "publishing") {
+				const value = changes[key];
+				mainChanges.publicRoom = value === RoomPublishing.Public;
+				mainChanges.membersOnly = value === RoomPublishing.Private;
+			}
 			else {
 				const _: never = key;
 				throw new Error("Unknown key");
@@ -113,6 +128,17 @@ function Content(props: {room: JID; info: RoomDiscoInfo}) {
 			<Field>
 				<FieldLabel>{$t({defaultMessage: "Name"})}</FieldLabel>
 				<Input autofocus value={info.name} onChange={onChangeName} />
+			</Field>
+			<Field>
+				<FieldLabel>{$t({defaultMessage: "Publishing"})}</FieldLabel>
+				<Select value={info.publishing} onChange={onChangePublishing}>
+					{
+						Object.keys(publishingTypeNames).map(key_ => {
+							const key = key_ as keyof typeof publishingTypeNames;
+							return <option key={key} value={key}>{$t(publishingTypeNames[key])}</option>;
+						})
+					}
+				</Select>
 			</Field>
 			<Field>
 				<FieldLabel>{$t({defaultMessage: "Profile Picture"})}</FieldLabel>

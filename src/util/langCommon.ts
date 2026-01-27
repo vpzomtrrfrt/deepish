@@ -1,6 +1,6 @@
 import { defineMessage, MessageDescriptor } from "react-intl";
 
-import { PresenceShowTypeExtended } from "./types";
+import { PresenceShowTypeExtended, RoomPublishing } from "./types";
 
 export const msgActionAdd = defineMessage({defaultMessage: "Add"});
 export const msgActionCreate = defineMessage({defaultMessage: "Create"});
@@ -37,4 +37,10 @@ export const presenceShowTypeNames: Record<PresenceShowTypeExtended, MessageDesc
 		defaultMessage: "Offline",
 		description: "Status indicating user is not online",
 	}),
+};
+
+export const publishingTypeNames: Record<RoomPublishing, MessageDescriptor> = {
+	[RoomPublishing.Private]: defineMessage({defaultMessage: "Private"}),
+	[RoomPublishing.Unlisted]: defineMessage({defaultMessage: "Unlisted"}),
+	[RoomPublishing.Public]: defineMessage({defaultMessage: "Public"}),
 };

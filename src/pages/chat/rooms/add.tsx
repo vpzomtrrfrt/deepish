@@ -14,7 +14,7 @@ import FieldList from "../../../components/FieldList";
 import Input, { InputSuffixWrapper } from "../../../components/Input";
 import Select from "../../../components/Select";
 import { RoomDiscoInfo, ServiceInfo, useAccountSig, useConnectionContext } from "../../../util/connection";
-import { msgActionCreate, msgCancel, msgJIDShort } from "../../../util/langCommon";
+import { msgActionCreate, msgCancel, msgJIDShort, publishingTypeNames } from "../../../util/langCommon";
 import { LoadState } from "../../../util/useData";
 import useSubmitting from "../../../util/useSubmitting";
 
@@ -162,9 +162,12 @@ function CreateRoomDialogInner(props: {service: ServiceInfo}) {
 				<Field>
 					<FieldLabel>{$t({defaultMessage: "Publishing"})}</FieldLabel>
 					<Select value={publishing} onChange={linkPublishing}>
-						<option value="private">{$t({defaultMessage: "Private"})}</option>
-						<option value="unlisted">{$t({defaultMessage: "Unlisted"})}</option>
-						<option value="public">{$t({defaultMessage: "Public"})}</option>
+						{
+							Object.keys(publishingTypeNames).map(key_ => {
+								const key = key_ as keyof typeof publishingTypeNames;
+								return <option key={key} value={key}>{$t(publishingTypeNames[key])}</option>;
+							})
+						}
 					</Select>
 				</Field>
 			</FieldList>

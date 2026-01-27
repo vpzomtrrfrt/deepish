@@ -57,3 +57,9 @@ export enum NotificationCategory {
 	Direct = "direct",
 	Room = "room",
 }
+
+export enum RoomPublishing {
+	Private = "private",
+	Unlisted = "unlisted",
+	Public = "public",
+}

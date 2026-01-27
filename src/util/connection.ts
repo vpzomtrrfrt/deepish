@@ -68,6 +68,12 @@ export interface RoomDiscoInfo {
 	avatarHashes: string[];
 }
 
+export interface RoomConfig {
+	name: string | null;
+	publicRoom: boolean | null;
+	membersOnly: boolean | null;
+}
+
 export enum NotificationLevel {
 	Never = "never",
 	OnMention = "on-mention",
@@ -203,6 +209,8 @@ export interface RoomCreateParams {
 
 export interface RoomEditParams {
 	name?: string;
+	membersOnly?: boolean;
+	publicRoom?: boolean;
 }
 
 interface RoomJoinCallbackInfo {
@@ -246,6 +254,7 @@ export interface BaseConnectionContext {
 	changeRoomConfig(account: JID, room: JID, params: RoomEditParams): void;
 	setRoomAvatar(account: JID, room: JID, info: ImageInfo): void;
 	fetchRoomInfo(account: JID, room: JID): Promise<RoomDiscoInfo>;
+	fetchRoomConfig(account: JID, room: JID): Promise<RoomConfig>;
 	markCounterpartAsRead(account: JID, target: JID, lastReadMessageID: string, isRoom: boolean): void;
 	setNick(account: JID, value: string): Promise<void>;
 	setAvatar(account: JID, info: ImageInfo): Promise<void>;
@@ -1576,6 +1585,45 @@ function createBaseConnection(
 			});
 	}
 
+	async function fetchRoomConfig(accountJID: JID, roomJID: JID): Promise<RoomConfig> {
+		const account = getAccount(accountJID);
+
+		return account.client.iqCaller.get(
+			xml("query", {xmlns: "http://jabber.org/protocol/muc#owner"}),
+			roomJID.toString(),
+		)
+			.then((result): RoomConfig => {
+				if(typeof result === "undefined") throw new Error("Missing result from MUC disco");
+
+				const info: RoomConfig = {
+					name: null,
+					publicRoom: null,
+					membersOnly: null,
+				};
+
+				result.getChildren("x", "jabber:x:data").forEach(x => {
+					if(x.getAttr("type") === "form") {
+						x.getChildren("field").forEach(fieldElem => {
+							const key = fieldElem.getAttr("var");
+							const values = fieldElem.getChildren("value").map(x => x.getText());
+
+							if(key === "muc#roomconfig_roomname") {
+								if(values.length === 1) info.name = values[0];
+							}
+							else if(key === "muc#roomconfig_publicroom") {
+								if(values.length === 1) info.publicRoom = parseDataFormsBoolean(values[0]);
+							}
+							else if(key === "muc#roomconfig_membersonly") {
+								if(values.length === 1) info.membersOnly = parseDataFormsBoolean(values[0]);
+							}
+						});
+					}
+				});
+
+				return info;
+			});
+	}
+
 	function fetchAndStoreRoomDisco(client: xmppClient.Client, roomJID: JID) {
 		{
 			const account = getAccount(client);
@@ -2610,6 +2658,12 @@ function createBaseConnection(
 		const realParams: Record<string, string> = {};
 
 		if(typeof params.name !== "undefined") realParams["muc#roomconfig_roomname"] = params.name;
+		if(typeof params.publicRoom !== "undefined") {
+			realParams["muc#roomconfig_publicroom"] = params.publicRoom.toString();
+		}
+		if(typeof params.membersOnly !== "undefined") {
+			realParams["muc#roomconfig_membersonly"] = params.membersOnly.toString();
+		}
 
 		const account = getAccount(accountJID);
 
@@ -2986,6 +3040,7 @@ function createBaseConnection(
 		setRoomAvatar,
 		sendFriendRequest,
 		fetchRoomInfo,
+		fetchRoomConfig,
 		setNick,
 		setAvatar,
 		reorderRoom,
@@ -3281,4 +3336,11 @@ function getContentFromMessageElement(elem: Element): MessageContent[] {
 	});
 
 	return content;
+}
+
+function parseDataFormsBoolean(src: string) {
+	if(src === "1" || src === "true") return true;
+	else if(src === "0" || src === "false") return false;
+
+	throw new Error("Invalid boolean value");
 }
