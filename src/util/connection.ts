@@ -96,7 +96,11 @@ export interface Room {
 	stopped: boolean;
 
 	infoState: LoadState<RoomDiscoInfo>;
-	lastReportedComposing: boolean;
+
+	internalMutable: {
+		lastReportedComposing: boolean;
+		lastSeen: Date;
+	};
 }
 
 export interface ServiceInfo {
@@ -266,6 +270,7 @@ export interface BaseConnectionContext {
 	setRoomNotificationLevel(account: JID, room: JID, level: NotificationLevel): Promise<void>;
 
 	loadAccounts(): void;
+	pingRoom(account: JID, room: JID): void;
 }
 
 export interface ConnectionContext extends BaseConnectionContext {
@@ -313,6 +318,23 @@ export function useCreateConnection(
 	useEffectOnce(() => {
 		loadAccounts();
 	});
+
+	const maybePingRooms = useCallback(() => {
+		conn.accountsSig.value.forEach(account => {
+			account.rooms.values().forEach(room => {
+				if(room.connected && new Date().getTime() - room.internalMutable.lastSeen.getTime() > 60000) {
+					conn.pingRoom.call(undefined, account.jid, room.jid);
+				}
+			});
+		});
+	}, [conn.accountsSig, conn.pingRoom]);
+
+	useEffect(() => {
+		const interval = setInterval(maybePingRooms, 10000);
+		return () => {
+			clearInterval(interval);
+		};
+	}, [maybePingRooms]);
 
 	const onUnmount = useLatestCallback(() => {
 		conn.accountsSig.value.forEach(account => {
@@ -506,7 +528,11 @@ function createBaseConnection(
 					error: null,
 					stopped: false,
 					infoState: LoadState.loading,
-					lastReportedComposing: false,
+
+					internalMutable: {
+						lastReportedComposing: false,
+						lastSeen: new Date(),
+					},
 				});
 				connectMUCFromBookmarks(client, jid);
 			}
@@ -1708,7 +1734,7 @@ function createBaseConnection(
 
 							const oldInfo = account.rooms.get(srcJID.bare().toString());
 
-							if(typeof oldInfo !== "undefined" && oldInfo.connected) {
+							if(typeof oldInfo !== "undefined") {
 								account.rooms.set(srcJID.bare().toString(), {
 									...oldInfo,
 									connected: false,
@@ -1735,11 +1761,13 @@ function createBaseConnection(
 									// already up to date
 								}
 								else {
-									account.rooms.set(srcJID.bare().toString(), {
+									const newInfo = {
 										...oldInfo,
 										connected: true,
 										nick: srcJID.resource,
-									});
+									};
+									account.rooms.set(srcJID.bare().toString(), newInfo);
+									newInfo.internalMutable.lastSeen = new Date();
 								}
 							}
 
@@ -1983,6 +2011,27 @@ function createBaseConnection(
 					}
 				});
 			}
+		}
+	}
+
+	function pingRoom(accountJID: JID, roomJID: JID) {
+		const account = getAccount(accountJID);
+		const room = account.rooms.get(roomJID.toString());
+
+		if(typeof room !== "undefined" && room.connected && room.connectedNick !== null) {
+			account.client.iqCaller.get(
+				xml("ping", "urn:xmpp:ping"),
+				new JID(room.jid.local, room.jid.domain, room.connectedNick).toString(),
+			)
+				.then(() => {
+					room.internalMutable.lastSeen = new Date();
+				}, () => {
+					const currentEntry = account.rooms.get(room.jid.toString());
+					if(typeof currentEntry !== "undefined") {
+						account.rooms.set(room.jid.toString(), {...currentEntry, connected: false});
+						connectMUCFromBookmarks(account.client, roomJID);
+					}
+				});
 		}
 	}
 
@@ -2454,7 +2503,7 @@ function createBaseConnection(
 		const account = getAccount(accountJID);
 
 		const room = account.rooms.get(roomJID.toString());
-		if(room?.lastReportedComposing === composing) return;
+		if(room?.internalMutable.lastReportedComposing === composing) return;
 
 		account.client.send(
 			xml(
@@ -2470,13 +2519,7 @@ function createBaseConnection(
 			console.warn("Attempting to send composing state to unknown room");
 		}
 		else {
-			account.rooms.set(
-				roomJID.toString(),
-				{
-					...room,
-					lastReportedComposing: composing,
-				},
-			);
+			room.internalMutable.lastReportedComposing = composing;
 		}
 	}
 
@@ -2525,7 +2568,11 @@ function createBaseConnection(
 					stopped: false,
 					error: null,
 					infoState: LoadState.loading,
-					lastReportedComposing: false,
+
+					internalMutable: {
+						lastReportedComposing: false,
+						lastSeen: new Date(),
+					},
 				});
 			}
 
@@ -3098,6 +3145,7 @@ function createBaseConnection(
 		setRoomNotificationLevel,
 
 		loadAccounts,
+		pingRoom,
 	};
 }
 
