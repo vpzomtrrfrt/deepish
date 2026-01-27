@@ -63,6 +63,8 @@ const DEFAULT_COUNTERPART_INFO: Omit<Counterpart, "jid"> = {
 	lastReadMessageID: null,
 };
 
+const ROOM_RETRY_DELAY = 7000;
+
 export interface RoomDiscoInfo {
 	name: string | null;
 	avatarHashes: string[];
@@ -91,6 +93,8 @@ export interface Room {
 	connected: boolean;
 	connectedNick: string | null;
 	error: unknown;
+	stopped: boolean;
+
 	infoState: LoadState<RoomDiscoInfo>;
 	lastReportedComposing: boolean;
 }
@@ -393,6 +397,16 @@ function createBaseConnection(
 		));
 	}
 
+	function connectMUCFromBookmarks(client: xmppClient.Client, roomJID: JID) {
+		const account = getAccount(client);
+
+		const info = account.rooms.get(roomJID.toString());
+		if(typeof info === "undefined") throw new Error("No such bookmark");
+
+		const nick = info.nick ?? client.jid!.local;
+		connectMUC(client, roomJID, nick);
+	}
+
 	function handleBookmarksUpdate(
 		client: xmppClient.Client,
 		mode: "add" | "remove" | "all",
@@ -490,10 +504,11 @@ function createBaseConnection(
 					connected: false,
 					connectedNick: nick,
 					error: null,
+					stopped: false,
 					infoState: LoadState.loading,
 					lastReportedComposing: false,
 				});
-				connectMUC(client, jid, nick);
+				connectMUCFromBookmarks(client, jid);
 			}
 		});
 
@@ -1666,6 +1681,9 @@ function createBaseConnection(
 
 			const userInfo = elem.getChild("x", "http://jabber.org/protocol/muc#user");
 			if(typeof userInfo !== "undefined") {
+				const itemElem = userInfo.getChild("item");
+				const role = itemElem?.getAttr("role");
+
 				const statusElems = userInfo.getChildren("status");
 
 				if(statusElems.length > 0) {
@@ -1677,38 +1695,56 @@ function createBaseConnection(
 						statuses.push(statusElem.getAttr("code"));
 					});
 
-					const success = statuses.includes("110");
+					const isMe = statuses.includes("110");
 
 					const callback = newRooms.get(srcJID.bare().toString());
 					newRooms.delete(srcJID.bare().toString());
 
-					if(success) {
-						callback?.resolve({statuses});
+					if(isMe) {
+						if(role === "none") {
+							callback?.reject(new Error("Somehow didn't join"));
 
-						let shouldFetchDisco = false;
+							const account = getAccount(client);
 
-						const account = getAccount(client);
+							const oldInfo = account.rooms.get(srcJID.bare().toString());
 
-						const oldInfo = account.rooms.get(srcJID.bare().toString());
-						if(typeof oldInfo === "undefined") {
-							console.log("Tried to update room missing in list");
-						}
-						else {
-							if(!oldInfo.connected) shouldFetchDisco = true;
-
-							if(oldInfo.connected && oldInfo.nick === srcJID.resource) {
-								// already up to date
-							}
-							else {
+							if(typeof oldInfo !== "undefined" && oldInfo.connected) {
 								account.rooms.set(srcJID.bare().toString(), {
 									...oldInfo,
-									connected: true,
-									nick: srcJID.resource,
+									connected: false,
 								});
+
+								connectMUCFromBookmarks(client, srcJID.bare());
 							}
 						}
+						else {
+							callback?.resolve({statuses});
 
-						if(shouldFetchDisco) fetchAndStoreRoomDisco(client, srcJID.bare());
+							let shouldFetchDisco = false;
+
+							const account = getAccount(client);
+
+							const oldInfo = account.rooms.get(srcJID.bare().toString());
+							if(typeof oldInfo === "undefined") {
+								console.log("Tried to update room missing in list");
+							}
+							else {
+								if(!oldInfo.connected) shouldFetchDisco = true;
+
+								if(oldInfo.connected && oldInfo.nick === srcJID.resource) {
+									// already up to date
+								}
+								else {
+									account.rooms.set(srcJID.bare().toString(), {
+										...oldInfo,
+										connected: true,
+										nick: srcJID.resource,
+									});
+								}
+							}
+
+							if(shouldFetchDisco) fetchAndStoreRoomDisco(client, srcJID.bare());
+						}
 					}
 					else {
 						callback?.reject(new Error("Failed to join room"));
@@ -1716,8 +1752,6 @@ function createBaseConnection(
 				}
 
 				batch(() => {
-					const itemElem = userInfo.getChild("item");
-
 					const affiliation = itemElem?.getAttr("affiliation");
 					if(typeof affiliation === "string") {
 						upsertCounterpart(client, srcJID, current => ({
@@ -1726,7 +1760,6 @@ function createBaseConnection(
 						}));
 					}
 
-					const role = itemElem?.getAttr("role");
 					if(typeof role === "string") {
 						upsertCounterpart(client, srcJID, current => ({
 							...current,
@@ -1763,7 +1796,11 @@ function createBaseConnection(
 
 					if(
 						typeof errorElem !== "undefined" &&
-							(errorElem.getAttr("by") === roomJID.toString() || errorElem.getAttr("by") === roomJID.domain)
+							(
+								errorElem.getAttr("by") === roomJID.toString() ||
+									errorElem.getAttr("by") === roomJID.domain ||
+									typeof errorElem.getAttr("by") === "undefined"
+							)
 					) {
 						const errorType = errorElem.getAttr("type");
 
@@ -1793,7 +1830,15 @@ function createBaseConnection(
 								account.rooms.set(roomJID.toString(), {
 									...entry,
 									error,
+									connected: false,
 								});
+
+								setTimeout(() => {
+									const entryNow = account.rooms.get(roomJID.toString());
+									if(typeof entryNow !== "undefined" && !entryNow.connected && !entryNow.stopped) {
+										connectMUCFromBookmarks(client, roomJID);
+									}
+								}, ROOM_RETRY_DELAY);
 							}
 
 							const callback = newRooms.get(roomJID.toString());
@@ -2477,6 +2522,7 @@ function createBaseConnection(
 
 					connected: false,
 					connectedNick: connectNick,
+					stopped: false,
 					error: null,
 					infoState: LoadState.loading,
 					lastReportedComposing: false,
@@ -2539,6 +2585,11 @@ function createBaseConnection(
 
 			const room = account.rooms.get(roomJID.toString());
 			if(typeof room === "undefined") return;
+
+			account.rooms.set(roomJID.toString(), {
+				...room,
+				stopped: true,
+			});
 
 			disconnectRoom(account, room);
 

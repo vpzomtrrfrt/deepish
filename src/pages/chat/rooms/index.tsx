@@ -488,7 +488,12 @@ function ChatRoomPageInner(props: {roomJID: JID}) {
 			accountSig.value.counterparts.get(selfJIDInRoom.toString());
 	}).value;
 
-	const canSend = (typeof selfCounterpartInRoom === "undefined" || selfCounterpartInRoom.role === null) ?
+	const canSend = (
+		typeof room === "undefined" ||
+			!room.connected ||
+			typeof selfCounterpartInRoom === "undefined" ||
+			selfCounterpartInRoom.role === null
+	) ?
 		null :
 		checkPrivilegeForRole(MUCPrivilege.SendMessagesToAll, selfCounterpartInRoom.role);
 
@@ -631,7 +636,11 @@ function ChatRoomPageInner(props: {roomJID: JID}) {
 							<TypingIndicator usersTyping={usersTypingSig} inRoom={true} />
 							{
 								canSend === null ?
-									<Loading /> :
+									(
+										room?.connected === false ?
+											<p>{$t({defaultMessage: "Connecting…"})}</p> :
+											<Loading />
+									) :
 									(
 										canSend ?
 											<MessageInput
