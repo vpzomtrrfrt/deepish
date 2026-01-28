@@ -1299,6 +1299,32 @@ function createBaseConnection(
 
 			timestamp = timestamp ?? new Date();
 
+			if(typeof from !== "undefined") {
+				const reactionsElem = elem.getChild("reactions", "urn:xmpp:reactions:0");
+				if(typeof reactionsElem !== "undefined") {
+					const targetID = reactionsElem.getAttr("id");
+					if(typeof targetID === "string") {
+						const reactions = new Set(reactionsElem.getChildren("reaction").map(x => x.getText()));
+
+						emit("messageReactionsChange", {
+							reactions: {
+								reactions,
+								timestamp,
+							},
+							target: new StanzaID(
+								StanzaIDType.Element,
+								from.bare(),
+								targetID,
+							),
+							room: null,
+							from: {jid: from.bare()},
+						});
+
+						ignore = true;
+					}
+				}
+			}
+
 			const content = getContentFromMessageElement(elem);
 
 			if(content.length > 0 && typeof from !== "undefined" && typeof to !== "undefined" && !ignore) {

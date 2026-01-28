@@ -13,7 +13,7 @@ import Menu, { MenuItem } from "../../components/Menu";
 import MessageInput from "../../components/MessageInput";
 import MessageList, { LoadMoreTriggerer } from "../../components/MessageList";
 import TypingIndicator from "../../components/TypingIndicator";
-import { Message, MessageEditEvent, messageEditIsAllowed, MessageEvent, MessageRemovalEvent, messageRemovalIsAllowed, ResultSetInfo, useAccountSig, useConnectionContext } from "../../util/connection";
+import { Message, MessageEditEvent, messageEditIsAllowed, MessageEvent, MessageReactionsChangeEvent, MessageRemovalEvent, messageRemovalIsAllowed, ResultSetInfo, useAccountSig, useConnectionContext } from "../../util/connection";
 import { msgActionDelete } from "../../util/langCommon";
 import { getNickForCounterpart } from "../../util/profileUtil";
 import { LoadState } from "../../util/useData";
@@ -62,7 +62,11 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 	});
 
 	const unresolvedFastensRef = useRef<Map<string,
-		Array<{type: "messageRemove"; event: MessageRemovalEvent} | {type: "messageEdit"; event: MessageEditEvent}>
+		Array<
+			{type: "messageRemove"; event: MessageRemovalEvent} |
+				{type: "messageEdit"; event: MessageEditEvent} |
+				{type: "messageReactionsChange"; event: MessageReactionsChangeEvent}
+		>
 	>>(new Map());
 
 	const onMessage = useLatestCallback((evt: MessageEvent) => {
@@ -133,6 +137,27 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 										...message,
 										content: entry.event.edit.content,
 										editedAt: entry.event.edit.timestamp,
+									};
+								}
+							}
+							else if(entry.type === "messageReactionsChange") {
+								const key = entry.event.from.jid.toString() + "/" + (
+									typeof entry.event.from.occupantID === "undefined" ?
+										"" :
+										encodeURIComponent(entry.event.from.occupantID)
+								);
+								const reactionsEntry = message.reactions.get(key);
+
+								if(
+									typeof reactionsEntry === "undefined" ||
+										reactionsEntry.timestamp.getTime() < entry.event.reactions.timestamp.getTime()
+								) {
+									const newReactions = new Map(message.reactions);
+									newReactions.set(key, entry.event.reactions);
+
+									message = {
+										...message,
+										reactions: newReactions,
 									};
 								}
 							}
@@ -261,6 +286,60 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 		});
 	});
 	useEventHandler(conn, "messageEdit", onMessageEdit);
+
+	const onMessageReactionsChange = useLatestCallback((evt: MessageReactionsChangeEvent) => {
+		if(evt.room !== null) return;
+
+		setMessagesData(current => {
+			const newMessageMap = new Map(current.messageMap);
+
+			let anyHit = false;
+
+			const newMessages = current.messages.map(message => {
+				if(message.ids.some(x => x.equals(evt.target))) {
+					const key = evt.from.jid.bare().toString() + "/";
+					const entry = message.reactions.get(key);
+
+					if(typeof entry === "undefined" || entry.timestamp.getTime() < evt.reactions.timestamp.getTime()) {
+						const newReactions = new Map(message.reactions);
+						newReactions.set(key, evt.reactions);
+
+						const newValue: Message = {
+							...message,
+							reactions: newReactions,
+						};
+
+						message.ids.forEach(id => {
+							newMessageMap.set(id.toString(), newValue);
+						});
+
+						anyHit = true;
+
+						return newValue;
+					}
+				}
+
+				return message;
+			});
+
+			if(anyHit) {
+				return {messages: newMessages, messageMap: newMessageMap};
+			}
+			else {
+				console.log("got unresolved edit", evt);
+
+				let list = unresolvedFastensRef.current.get(evt.target.toString());
+				if(typeof list === "undefined") {
+					list = [];
+					unresolvedFastensRef.current.set(evt.target.toString(), list);
+				}
+				list.push({type: "messageReactionsChange", event: evt});
+
+				return current;
+			}
+		});
+	});
+	useEventHandler(conn, "messageReactionsChange", onMessageReactionsChange);
 
 	const [pageState, setPageState] = useState<LoadState<ResultSetInfo | null> | null>(null);
 
