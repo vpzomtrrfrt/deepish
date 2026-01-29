@@ -64,6 +64,10 @@ const styles = {
 			marginBlockStart: 0,
 			marginBlockEnd: ".5rem",
 		},
+
+		"a": {
+			color: themeVars.link,
+		},
 	}),
 	messageTimestamp: css({
 		marginInlineStart: ".5em",
@@ -588,11 +592,28 @@ function convertXHTMLIMNodeToNode(src: xml.Node): ComponentChildren {
 
 		if(src.is("br")) return <br />;
 
+		const content = src.children.map(convertXHTMLIMNodeToNode);
+
+		const attrs = {style};
+
+		if(src.is("a")) {
+			const href = src.getAttr("href");
+			try {
+				const url = new URL(href);
+				if(["https:", "http:", "ftp:", "mailto:"].includes(url.protocol)) {
+					return <a {...attrs} href={url.toString()} target="_blank">{content}</a>;
+				}
+			}
+			catch {
+				// ignore
+			}
+		}
+
 		let elem = "span";
 		if(["p", "em", "strong", "ul", "ol", "li", "blockquote", "div"].includes(src.getName())) elem = src.getName();
 		if(src.getName() === "body") elem = "div";
 
-		return h(elem, {style}, src.children.map(convertXHTMLIMNodeToNode));
+		return h(elem, attrs, content);
 	}
 	else {
 		console.warn("Unexpected node type:", src);

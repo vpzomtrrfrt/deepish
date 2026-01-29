@@ -4,6 +4,7 @@ import MarkdownIt, { Token } from "markdown-it";
 const parser = new MarkdownIt("zero", {
 	breaks: true,
 	xhtmlOut: true,
+	linkify: true,
 });
 parser.enable([
 	"blockquote",
@@ -17,6 +18,7 @@ parser.enable([
 	"newline",
 	"text",
 	"strikethrough",
+	"linkify",
 ]);
 
 export function parseMarkdown(src: string) {
