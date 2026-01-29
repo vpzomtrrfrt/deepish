@@ -1228,6 +1228,17 @@ function createBaseConnection(
 			}
 		}
 		else if(elem.getAttr("type") === "chat") {
+			const carbonsElem = elem.getChild("sent", "urn:xmpp:carbons:2");
+			if(typeof carbonsElem !== "undefined") {
+				const forwardedElem = carbonsElem.getChild("forwarded", "urn:xmpp:forward:0");
+				if(typeof forwardedElem !== "undefined") {
+					const messageElem = forwardedElem.getChild("message", "jabber:client");
+					if(typeof messageElem !== "undefined") {
+						handleMessageStanza(client, messageElem);
+					}
+				}
+			}
+
 			let archiveID = (
 				idFromWrapper?.type === StanzaIDType.Stanza && idFromWrapper.by.equals(client.jid!.bare())
 			) ?
