@@ -23,10 +23,11 @@ export default function Popover(props: {
 	children: ComponentChildren;
 	icon: ComponentChildren;
 	actionsRef?: RefObject<PopoverActions | null>;
+	onOpenChange?: (open: boolean) => void;
 }) {
 	const appCtx = useAppContext();
 
-	return <BasePopover.Root actionsRef={props.actionsRef}>
+	return <BasePopover.Root actionsRef={props.actionsRef} onOpenChange={props.onOpenChange}>
 		<BasePopover.Trigger render={IconButton}>
 			{props.icon}
 		</BasePopover.Trigger>

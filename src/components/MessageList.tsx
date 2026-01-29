@@ -1,9 +1,10 @@
 import { css, cx } from "@emotion/css";
-import { mdiPencil } from "@mdi/js";
+import { mdiEmoticonPlus, mdiPencil } from "@mdi/js";
 import { useComputed } from "@preact/signals";
 import { useLiveSignal } from "@preact/signals/utils";
 import { JID, parse as parseJID } from "@xmpp/jid";
 import * as xml from "@xmpp/xml";
+import { EmojiClickEvent } from "emoji-picker-element/shared";
 import inlineStyleParser from "inline-style-parser";
 import { ComponentChildren, h, JSX, VNode } from "preact";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
@@ -19,9 +20,11 @@ import { StanzaIDType } from "../util/xmpp/StanzaID";
 import { parse0393, StylingBlock0393, StylingSpan0393 } from "../util/xmpp/styling";
 import Avatar from "./Avatar";
 import { ErrorAlert } from "./DataView";
+import EmojiPicker from "./EmojiPicker";
 import Icon from "./Icon";
 import IconButton from "./IconButton";
 import MessageInput from "./MessageInput";
+import Popover, { PopoverActions } from "./Popover";
 import WithTooltip from "./WithTooltip";
 
 const DEFAULT_ROW_HEIGHT = 70;
@@ -80,8 +83,8 @@ const styles = {
 		display: "none",
 		alignItems: "flex-start",
 
-		"&:focus-within": {
-			visibility: "visible",
+		"&:focus-within, &.forceOpen": {
+			display: "flex",
 		},
 
 		"> *": {
@@ -369,6 +372,16 @@ function RealMessageRow(props: RowComponentProps<{
 		props.submitReactions!.call(undefined, Array.from(newReactions), messageSig.value);
 	}, [messageSig, myReactionsSig, props.submitReactions]);
 
+	const emojiPopoverActionsRef = useRef<PopoverActions | null>(null);
+	const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
+
+	const onEmojiClick = useCallback((evt: EmojiClickEvent) => {
+		const text = evt.detail.unicode!;
+
+		toggleReaction(text);
+		emojiPopoverActionsRef.current!.close();
+	}, [toggleReaction]);
+
 	const myReactions = myReactionsSig.value;
 
 	return <div style={props.style} class={cx(styles.messageWrapper, props.isMerged && "merged")}>
@@ -409,7 +422,16 @@ function RealMessageRow(props: RowComponentProps<{
 				}
 			</div>
 			{!editing &&
-				<div class={styles.messageMenuArea}>
+				<div class={cx(styles.messageMenuArea, emojiPickerOpen && "forceOpen")}>
+					{typeof props.submitReactions !== "undefined" &&
+						<Popover
+							icon={<Icon path={mdiEmoticonPlus} />}
+							actionsRef={emojiPopoverActionsRef}
+							onOpenChange={setEmojiPickerOpen}
+						>
+							<EmojiPicker onEmojiClick={onEmojiClick} />
+						</Popover>
+					}
 					{(
 						typeof props.submitEdit !== "undefined" &&
 							message.removal === null &&
