@@ -12,14 +12,22 @@ export enum StanzaIDType {
 }
 
 export default class StanzaID {
-	public constructor(public readonly type: StanzaIDType, public readonly by: JID, public readonly id: string) {
+	public constructor(public readonly type: StanzaIDType, public readonly by: JID | null, public readonly id: string) {
 	}
 
 	public toString() {
-		return this.type + "/" + encodeURIComponent(this.by.toString()) + "/" + encodeURIComponent(this.id);
+		return this.type +
+			"/" +
+			(this.by === null ? "" : encodeURIComponent(this.by.toString())) +
+			"/" +
+			encodeURIComponent(this.id);
 	}
 
-	public equals(other: StanzaID) {
-		return this.type === other.type && this.id === other.id && this.by.equals(other.by);
+	public equals(other: StanzaID, ignoreElementBy: boolean = false) {
+		if(this.type === other.type && this.id === other.id) {
+			if(ignoreElementBy && this.type === StanzaIDType.Element) return true;
+			else return (this.by === null ? other.by === null : (other.by !== null && this.by.equals(other.by)));
+		}
+		else return false;
 	}
 }

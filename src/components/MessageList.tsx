@@ -106,8 +106,14 @@ const styles = {
 
 		padding: ".25rem",
 
+		cursor: "pointer",
+
 		"&.active": {
 			backgroundColor: themeVars.active,
+		},
+
+		"&.disabled": {
+			cursor: "not-allowed",
 		},
 	}),
 };
@@ -118,6 +124,7 @@ export default function MessageList(props: {
 	renderMenu(message: Message): ComponentChildren;
 	submitEdit?: (text: string, replaces: string) => Promise<void>;
 	canEdit?: (message: Message) => boolean;
+	submitReactions?: (reactions: string[], message: Message) => Promise<void>;
 }) {
 	const messages = props.messages;
 
@@ -218,6 +225,7 @@ export default function MessageList(props: {
 			renderMenu: props.renderMenu,
 			submitEdit: props.submitEdit,
 			canEdit: props.canEdit,
+			submitReactions: props.submitReactions,
 		}}
 		listRef={listRef}
 		onResize={onResize}
@@ -231,6 +239,7 @@ function MessageRow(props: RowComponentProps<{
 	renderMenu(message: Message): ComponentChildren;
 	submitEdit?: (text: string, replaces: string) => Promise<void>;
 	canEdit?: (message: Message) => boolean;
+	submitReactions?: (reactions: string[], message: Message) => Promise<void>;
 }>) {
 	if(props.index === 0) {
 		return props.loaderContent;
@@ -277,6 +286,7 @@ function RealMessageRow(props: RowComponentProps<{
 
 	submitEdit?: (text: string, replaces: string) => Promise<void>;
 	canEdit?: (message: Message) => boolean;
+	submitReactions?: (reactions: string[], message: Message) => Promise<void>;
 }>) {
 	const message = props.message;
 	const messageSig = useLiveSignal(message);
@@ -328,7 +338,7 @@ function RealMessageRow(props: RowComponentProps<{
 		return result;
 	}, [message.reactions]);
 
-	const myReactions = useComputed(() => {
+	const myReactionsSig = useComputed(() => {
 		let key;
 		if(messageSig.value.room === null) {
 			key = accountSig.value.jid.toString() + "/";
@@ -349,7 +359,17 @@ function RealMessageRow(props: RowComponentProps<{
 		const set = messageSig.value.reactions.get(key);
 		if(typeof set === "undefined") return null;
 		else return set.reactions;
-	}).value;
+	});
+
+	const toggleReaction = useCallback((value: string) => {
+		const newReactions = new Set(myReactionsSig.value ?? undefined);
+		if(newReactions.has(value)) newReactions.delete(value);
+		else newReactions.add(value);
+
+		props.submitReactions!.call(undefined, Array.from(newReactions), messageSig.value);
+	}, [messageSig, myReactionsSig, props.submitReactions]);
+
+	const myReactions = myReactionsSig.value;
 
 	return <div style={props.style} class={cx(styles.messageWrapper, props.isMerged && "merged")}>
 		<div class={styles.message}>
@@ -384,6 +404,7 @@ function RealMessageRow(props: RowComponentProps<{
 						reactions={reactions}
 						isRoom={props.message.room !== null}
 						myReactions={myReactions}
+						toggleReaction={typeof props.submitReactions === "undefined" ? undefined : toggleReaction}
 					/>
 				}
 			</div>
@@ -607,6 +628,7 @@ function ReactionsArea(props: {
 	isRoom: boolean;
 	reactions: Map<string, Array<{jid: JID; occupantID: string | null}>>;
 	myReactions: Set<string> | null;
+	toggleReaction?: (value: string) => void;
 }) {
 	const { $t } = useIntl();
 
@@ -635,7 +657,16 @@ function ReactionsArea(props: {
 						},
 					)}
 				>
-					<div class={cx(styles.reactionButton, props.myReactions?.has(value) && "active")}>{value} {senders.length}</div>
+					<div
+						class={cx(
+							styles.reactionButton,
+							props.myReactions?.has(value) && "active",
+							typeof props.toggleReaction === "undefined" && "disabled",
+						)}
+						onClick={props.toggleReaction?.bind(undefined, value)}
+					>
+						{value} {senders.length}
+					</div>
 				</WithTooltip>;
 			})
 		}

@@ -18,7 +18,7 @@ import { msgActionDelete } from "../../util/langCommon";
 import { getNickForCounterpart } from "../../util/profileUtil";
 import { LoadState } from "../../util/useData";
 import useEventHandler from "../../util/useEventHandler";
-import { StanzaIDType } from "../../util/xmpp/StanzaID";
+import StanzaID, { StanzaIDType } from "../../util/xmpp/StanzaID";
 
 const styles = {
 	page: css({
@@ -117,7 +117,16 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 
 				let message = evt.message;
 				evt.message.ids.forEach(id => {
-					const list = unresolvedFastensRef.current.get(id.toString());
+					let list = unresolvedFastensRef.current.get(id.toString());
+
+					if(id.type === StanzaIDType.Element) {
+						const list2 = unresolvedFastensRef.current.get(new StanzaID(id.type, null, id.id).toString());
+						if(typeof list2 !== "undefined") {
+							if(typeof list === "undefined") list = list2;
+							else list = [...list, ...list2];
+						}
+					}
+
 					if(typeof list !== "undefined") {
 						list.forEach(entry => {
 							console.log("resolving unresolved fasten", id, entry.event.target, entry);
@@ -296,7 +305,7 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 			let anyHit = false;
 
 			const newMessages = current.messages.map(message => {
-				if(message.ids.some(x => x.equals(evt.target))) {
+				if(message.ids.some(x => x.equals(evt.target, true))) {
 					const key = evt.from.jid.bare().toString() + "/";
 					const entry = message.reactions.get(key);
 
@@ -379,8 +388,9 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 				typeof counterpart !== "undefined"
 		) {
 			const lastMessage = messagesData.messages[messagesData.messages.length - 1];
-			const lastMessageID =
-				lastMessage.ids.find(x => x.type === StanzaIDType.Stanza && x.by.equals(accountSig.value.jid));
+			const lastMessageID = lastMessage.ids.find(x => {
+				return x.type === StanzaIDType.Stanza && x.by !== null && x.by.equals(accountSig.value.jid);
+			});
 			if(typeof lastMessageID !== "undefined" && counterpart.lastReadMessageID !== lastMessageID.id) {
 				conn.markCounterpartAsRead.call(undefined, accountSig.value.jid, counterpart.jid, lastMessageID.id, false);
 			}
@@ -393,6 +403,19 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 
 	const submitEdit = useLatestCallback(async (newMessage: string, replaces: string) => {
 		return submitMessage(newMessage, {replaces});
+	});
+
+	const submitReactions = useLatestCallback(async (reactions: string[], message: Message) => {
+		const id = message.ids.find(x => x.type === StanzaIDType.Element);
+		if(typeof id === "undefined") throw new Error("Cannot react to this message");
+
+		await conn.sendMessageReactionsToCounterpart.call(
+			undefined,
+			accountSig.value.jid,
+			parseJID(props.counterpartJID),
+			id.id,
+			reactions,
+		);
 	});
 
 	const onChangeComposing = useLatestCallback((composing: boolean) => {
@@ -422,7 +445,9 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 		const items = [];
 
 		if(message.from.bare().equals(accountSig.value.jid)) {
-			const id = message.ids.find(x => x.type === StanzaIDType.Element && x.by.equals(accountSig.value.jid));
+			const id = message.ids.find(x => {
+				return x.type === StanzaIDType.Element && x.by !== null && x.by.equals(accountSig.value.jid);
+			});
 			if(typeof id !== "undefined") {
 				items.push(
 					<MenuItem onClick={retractMessage.bind(undefined, id.id)}>{$t({defaultMessage: "Delete Message"})}</MenuItem>
@@ -438,7 +463,9 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 
 	const canEdit = useCallback((message: Message) => {
 		if(message.from.bare().equals(accountSig.value.jid)) {
-			const id = message.ids.find(x => x.type === StanzaIDType.Element && x.by.equals(accountSig.value.jid));
+			const id = message.ids.find(x => {
+				return x.type === StanzaIDType.Element && x.by !== null && x.by.equals(accountSig.value.jid);
+			});
 			if(typeof id !== "undefined") {
 				return true;
 			}
@@ -474,6 +501,7 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 			renderMenu={renderMenu}
 			submitEdit={submitEdit}
 			canEdit={canEdit}
+			submitReactions={submitReactions}
 		/>
 		<TypingIndicator
 			usersTyping={(typeof counterpart !== "undefined" && counterpart.composingFrom) ? [counterpart.jid] : []}

@@ -253,6 +253,8 @@ export interface BaseConnectionContext {
 	sendMessageToCounterpart(account: JID, target: JID, message: {body: string}, options?: {replaces?: string}): Promise<void>;
 	retractMessageToRoom(account: JID, room: JID, messageID: string): Promise<void>;
 	retractMessageToCounterpart(account: JID, target: JID, messageID: string): Promise<void>;
+	sendMessageReactionsToRoom(account: JID, room: JID, messageID: string, reactions: string[]): Promise<void>;
+	sendMessageReactionsToCounterpart(account: JID, room: JID, messageID: string, reactions: string[]): Promise<void>;
 	markCounterpartAsVisible(account: JID, target: JID): void;
 	acceptFriendRequest(account: JID, target: JID): void;
 	rejectFriendRequest(account: JID, target: JID): void;
@@ -1042,7 +1044,11 @@ function createBaseConnection(
 			if(typeof from !== "undefined") {
 				const room = from.bare();
 
-				let archiveID = (idFromWrapper?.type === StanzaIDType.Stanza && idFromWrapper.by.equals(room)) ?
+				let archiveID = (
+					idFromWrapper?.type === StanzaIDType.Stanza &&
+						idFromWrapper.by !== null &&
+						idFromWrapper.by.equals(room)
+				) ?
 					idFromWrapper.id :
 					null;
 
@@ -1266,7 +1272,9 @@ function createBaseConnection(
 			}
 
 			let archiveID = (
-				idFromWrapper?.type === StanzaIDType.Stanza && idFromWrapper.by.equals(client.jid!.bare())
+				idFromWrapper?.type === StanzaIDType.Stanza &&
+					idFromWrapper.by !== null &&
+					idFromWrapper.by.equals(client.jid!.bare())
 			) ?
 				idFromWrapper.id :
 				null;
@@ -1350,7 +1358,7 @@ function createBaseConnection(
 							},
 							target: new StanzaID(
 								StanzaIDType.Element,
-								from.bare(),
+								null,
 								targetID,
 							),
 							room: null,
@@ -2406,6 +2414,80 @@ function createBaseConnection(
 		await reflectDefer.promise;
 	}
 
+	async function sendMessageReactionsToRoom(accountJID: JID, roomJID: JID, messageID: string, reactions: string[]) {
+		const id = xid();
+
+		const account = getAccount(accountJID);
+
+		const reflectDefer = Promise.withResolvers<void>();
+
+		outgoingMessages.set(id, reflectDefer);
+
+		// Some clients send a fallback body, but the spec doesn't seem to expect that
+		// If we were to, it would probably be similar to replies
+
+		await account.client.send(
+			xml(
+				"message",
+				{id, to: roomJID.toString(), type: "groupchat"},
+				xml(
+					"reactions",
+					{xmlns: "urn:xmpp:reactions:0", id: messageID},
+					...reactions.map(value => {
+						return xml("reaction", {}, value);
+					}),
+				),
+				xml(
+					"store",
+					{xmlns: "urn:xmpp:hints"},
+				),
+			),
+		);
+
+		await reflectDefer.promise;
+	}
+
+	async function sendMessageReactionsToCounterpart(
+		accountJID: JID,
+		targetJID: JID,
+		messageID: string,
+		reactions: string[],
+	) {
+		const account = getAccount(accountJID);
+
+		await account.client.send(
+			xml(
+				"message",
+				{id: xid(), to: targetJID.toString(), type: "chat"},
+				xml(
+					"reactions",
+					{xmlns: "urn:xmpp:reactions:0", id: messageID},
+					...reactions.map(value => {
+						return xml("reaction", {}, value);
+					}),
+				),
+				xml(
+					"store",
+					{xmlns: "urn:xmpp:hints"},
+				),
+			),
+		);
+
+		emit("messageReactionsChange", {
+			reactions: {
+				reactions: new Set(reactions),
+				timestamp: new Date(),
+			},
+			room: null,
+			target: new StanzaID(
+				StanzaIDType.Element,
+				null,
+				messageID,
+			),
+			from: {jid: accountJID},
+		});
+	}
+
 	function markCounterpartAsVisible(accountJID: JID, target: JID) {
 		upsertCounterpart(accountJID, target, entry => {
 			if(entry.overrideVisibleTimestamp !== null || entry.lastMessageTimestamp !== null) {
@@ -3187,6 +3269,8 @@ function createBaseConnection(
 		sendMessageToRoom,
 		retractMessageToCounterpart,
 		retractMessageToRoom,
+		sendMessageReactionsToRoom,
+		sendMessageReactionsToCounterpart,
 		markCounterpartAsVisible,
 		markCounterpartAsRead,
 		acceptFriendRequest,

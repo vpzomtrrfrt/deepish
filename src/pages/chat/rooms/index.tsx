@@ -410,8 +410,9 @@ function ChatRoomPageInner(props: {roomJID: JID}) {
 				typeof counterpart !== "undefined"
 		) {
 			const lastMessage = messagesData.messages[messagesData.messages.length - 1];
-			const lastMessageID =
-				lastMessage.ids.find(x => x.type === StanzaIDType.Stanza && x.by.equals(counterpart.jid));
+			const lastMessageID = lastMessage.ids.find(x => {
+				return x.type === StanzaIDType.Stanza && x.by !== null && x.by.equals(counterpart.jid);
+			});
 			if(typeof lastMessageID !== "undefined" && counterpart.lastReadMessageID !== lastMessageID.id) {
 				conn.markCounterpartAsRead.call(undefined, accountJID, counterpart.jid, lastMessageID.id, false);
 			}
@@ -530,7 +531,9 @@ function ChatRoomPageInner(props: {roomJID: JID}) {
 					},
 				)
 			) {
-				const id = message.ids.find(x => x.type === StanzaIDType.Stanza && x.by.equals(room!.jid));
+				const id = message.ids.find(x => {
+					return x.type === StanzaIDType.Stanza && x.by !== null && x.by.equals(room!.jid);
+				});
 				if(typeof id !== "undefined") {
 					items.push(
 						<MenuItem onClick={retractMessage.bind(undefined, id.id)}>{$t({defaultMessage: "Delete Message"})}</MenuItem>
