@@ -427,6 +427,19 @@ function ChatRoomPageInner(props: {roomJID: JID}) {
 		return submitMessage(newMessage, {replaces});
 	});
 
+	const submitReactions = useLatestCallback(async (reactions: string[], message: Message) => {
+		const id = message.ids.find(x => x.type === StanzaIDType.Stanza && x.by?.equals(props.roomJID));
+		if(typeof id === "undefined") throw new Error("Cannot react to this message");
+
+		await conn.sendMessageReactionsToRoom.call(
+			undefined,
+			accountSig.value.jid,
+			props.roomJID,
+			id.id,
+			reactions,
+		);
+	});
+
 	const onChangeComposing = useLatestCallback((composing: boolean) => {
 		conn.setComposingToRoom(accountJID, props.roomJID, composing);
 	});
@@ -634,6 +647,7 @@ function ChatRoomPageInner(props: {roomJID: JID}) {
 							renderMenu={renderMenu}
 							submitEdit={submitEdit}
 							canEdit={canEdit}
+							submitReactions={submitReactions}
 						/>
 						<div class={styles.messageInputArea}>
 							<TypingIndicator usersTyping={usersTypingSig} inRoom={true} />
