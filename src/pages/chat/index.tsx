@@ -3,7 +3,7 @@ import { draggable, dropTargetForElements } from "@atlaskit/pragmatic-drag-and-d
 import { attachInstruction, extractInstruction, Instruction } from "@atlaskit/pragmatic-drag-and-drop-hitbox/list-item";
 import { DropIndicator } from "@atlaskit/pragmatic-drag-and-drop-react-drop-indicator/list-item";
 import { css, cx } from "@emotion/css";
-import { mdiAccountMultiple, mdiCheck, mdiClose, mdiHome, mdiPlus } from "@mdi/js";
+import { mdiAccountMultiple, mdiCheck, mdiClose, mdiConnection, mdiHome, mdiPlus } from "@mdi/js";
 import { useComputed, useSignal, useSignalEffect } from "@preact/signals";
 import { JID, parse as parseJID } from "@xmpp/jid";
 import useLinkState from "linkstate/hook";
@@ -248,6 +248,20 @@ const styles = {
 		justifyContent: "center",
 		alignItems: "center",
 	})),
+	roomDisconnectedIndicator: css({
+		position: "absolute",
+		top: 0,
+		left: 0,
+		width: "100%",
+		height: "100%",
+
+		display: "flex",
+
+		justifyContent: "end",
+		alignItems: "end",
+
+		color: themeVars.error,
+	}),
 };
 
 export default function ChatPage() {
@@ -494,6 +508,11 @@ function RoomLink(props: {
 				<Avatar size="lg" jid={props.room.jid.toString()} />
 				{
 					unread && <div class={styles.roomUnreadIndicator} />
+				}
+				{
+					!props.room.connected && <div class={styles.roomDisconnectedIndicator}>
+						<Icon path={mdiConnection} />
+					</div>
 				}
 			</Link>
 		</WithTooltip>

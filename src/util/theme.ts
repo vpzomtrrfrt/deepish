@@ -17,6 +17,7 @@ const src = {
 	textLight: "#fff",
 	textOn1: {light: "#000", dark: "#eee"},
 	link: {light: "#3F51B5", dark: "#7986CB"},
+	error: {light: "#C62828", dark: "#E53935"},
 } satisfies Record<string, Record<Theme, csstype.DataType.Color> | csstype.DataType.Color>;
 
 const themeVars = {} as {
