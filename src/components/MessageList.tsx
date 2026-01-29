@@ -249,7 +249,7 @@ function MessageRow(props: RowComponentProps<{
 	submitReactions?: (reactions: string[], message: Message) => Promise<void>;
 }>) {
 	if(props.index === 0) {
-		return props.loaderContent;
+		return <div style={props.style}>{props.loaderContent}</div>;
 	}
 
 	if(props.index === props.messages.length + 1) {
