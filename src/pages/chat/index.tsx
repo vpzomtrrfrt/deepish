@@ -772,6 +772,24 @@ function FriendEntry(props: {jid: string}) {
 		);
 	});
 
+	let statusContent = null;
+	if(info.currentTune !== null && typeof info.currentTune.artist !== "undefined") {
+		statusContent = $t({
+			defaultMessage: "Listening to {name}",
+		}, {
+			name: <span>
+				<em>{info.currentTune.artist}</em>
+				{
+					typeof info.currentTune.title !== "undefined" &&
+						<>{" - "}<em>{info.currentTune.title}</em></>
+				}
+			</span>,
+		});
+	}
+	else if(showType !== null) {
+		statusContent = $t(presenceShowTypeNames[showType]);
+	}
+
 	return <Link
 		to={"~/chat/direct/" + encodeURIComponent(info.jid.toString())}
 		key={info.jid.toString()}
@@ -783,8 +801,8 @@ function FriendEntry(props: {jid: string}) {
 				{getNickForCounterpart(info)}
 				<span class={styles.friendEntryJID}>{info.jid.toString()}</span>
 			</div>
-			{showType !== null && <div class={styles.statusText}>
-				{$t(presenceShowTypeNames[showType])}
+			{statusContent !== null && <div class={styles.statusText}>
+				{statusContent}
 			</div>}
 		</div>
 		<div class={styles.friendButtons} onClick={onClickFriendButtons}>

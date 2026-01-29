@@ -18,7 +18,7 @@ import { DEFAULT_NOTIFICATIONS_SETTINGS, NotificationsSettings } from "..";
 import { compareRanks, DEFAULT_RANK, genRankBetween } from "./lexrank";
 import { markdownHasAnyFormatting, parseMarkdown, renderMarkdownTo0393, renderMarkdownToXHTML } from "./markdown";
 import SignalMap from "./SignalMap";
-import { AvatarMetadata, Counterpart, NotificationCategory, Presence, PresenceShowType, RosterEntry } from "./types";
+import { AvatarMetadata, Counterpart, NotificationCategory, Presence, PresenceShowType, RosterEntry, TuneInfo } from "./types";
 import { LoadState } from "./useData";
 import useEffectOnce from "./useEffectOnce";
 import useIdle, { IdleState } from "./useIdle";
@@ -31,6 +31,8 @@ const FEATURES: string[] = [
 	"urn:xmpp:avatar:metadata+notify",
 	"urn:xmpp:mds:displayed:0+notify",
 	"http://jabber.org/protocol/nick+notify",
+	"http://jabber.org/protocol/tune+notify",
+
 	"http://jabber.org/protocol/chatstates",
 	"urn:xmpp:message-retract:1",
 	"urn:xmpp:styling:0",
@@ -55,6 +57,8 @@ const DEFAULT_COUNTERPART_INFO: Omit<Counterpart, "jid"> = {
 	lastReportedComposing: false,
 	composingFrom: null,
 	nick: null,
+
+	currentTune: null,
 
 	occupantID: null,
 	affiliation: null,
@@ -800,6 +804,24 @@ function createBaseConnection(
 						nick,
 					}));
 				}
+			}
+		}
+		else if(node === "http://jabber.org/protocol/tune") {
+			if(typeof from !== "undefined") {
+				const tuneElem = item.element.getChild("tune", "http://jabber.org/protocol/tune");
+
+				let value: TuneInfo | null = null;
+				if(typeof tuneElem !== "undefined") {
+					value = {
+						artist: tuneElem.getChildText("artist") ?? undefined,
+						title: tuneElem.getChildText("title") ?? undefined,
+					};
+				}
+
+				upsertCounterpart(client, from, current => ({
+					...current,
+					currentTune: value,
+				}));
 			}
 		}
 		else if(node === "urn:xmpp:avatar:metadata") {

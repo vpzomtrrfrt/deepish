@@ -46,11 +46,18 @@ export interface Counterpart {
 	composingFrom: boolean | null;
 	nick: string | null;
 
+	currentTune: TuneInfo | null;
+
 	occupantID: string | null;
 	affiliation: string | null;
 	role: string | null;
 
 	lastReadMessageID: string | null;
+}
+
+export interface TuneInfo {
+	artist?: string;
+	title?: string;
 }
 
 export enum NotificationCategory {
