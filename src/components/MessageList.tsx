@@ -105,6 +105,10 @@ const styles = {
 		borderRadius: ".5rem",
 
 		padding: ".25rem",
+
+		"&.active": {
+			backgroundColor: themeVars.active,
+		},
 	}),
 };
 
@@ -324,6 +328,29 @@ function RealMessageRow(props: RowComponentProps<{
 		return result;
 	}, [message.reactions]);
 
+	const myReactions = useComputed(() => {
+		let key;
+		if(messageSig.value.room === null) {
+			key = accountSig.value.jid.toString() + "/";
+		}
+		else {
+			const room = accountSig.value.rooms.get(messageSig.value.room.toString());
+			if(typeof room === "undefined" || room.connectedNick === null) return null;
+
+			const myJID = new JID(room.jid.local, room.jid.domain, room.connectedNick);
+			const myCounterpart = accountSig.value.counterparts.get(myJID.toString());
+
+			if(typeof myCounterpart === "undefined") return null;
+
+			key = myJID.toString() + "/" +
+				(myCounterpart.occupantID === null ? "" : encodeURIComponent(myCounterpart.occupantID));
+		}
+
+		const set = messageSig.value.reactions.get(key);
+		if(typeof set === "undefined") return null;
+		else return set.reactions;
+	}).value;
+
 	return <div style={props.style} class={cx(styles.messageWrapper, props.isMerged && "merged")}>
 		<div class={styles.message}>
 			<div class={styles.avatarSegment}>
@@ -353,7 +380,11 @@ function RealMessageRow(props: RowComponentProps<{
 					}
 				</div>
 				{reactions.size > 0 &&
-					<ReactionsArea reactions={reactions} isRoom={props.message.room !== null} />
+					<ReactionsArea
+						reactions={reactions}
+						isRoom={props.message.room !== null}
+						myReactions={myReactions}
+					/>
 				}
 			</div>
 			{!editing &&
@@ -572,7 +603,11 @@ function MessageEditArea(props: {
 	/>;
 }
 
-function ReactionsArea(props: {isRoom: boolean; reactions: Map<string, Array<{jid: JID; occupantID: string | null}>>}) {
+function ReactionsArea(props: {
+	isRoom: boolean;
+	reactions: Map<string, Array<{jid: JID; occupantID: string | null}>>;
+	myReactions: Set<string> | null;
+}) {
 	const { $t } = useIntl();
 
 	const accountSig = useAccountSig();
@@ -600,7 +635,7 @@ function ReactionsArea(props: {isRoom: boolean; reactions: Map<string, Array<{ji
 						},
 					)}
 				>
-					<div class={styles.reactionButton}>{value} {senders.length}</div>
+					<div class={cx(styles.reactionButton, props.myReactions?.has(value) && "active")}>{value} {senders.length}</div>
 				</WithTooltip>;
 			})
 		}
