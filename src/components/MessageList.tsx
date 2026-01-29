@@ -528,6 +528,7 @@ function convert0393SpanToNode(span: StylingSpan0393) {
 	else if(span.type === "strikethrough") return <del>~{span.children.map(convert0393SpanToNode)}~</del>;
 	else if(span.type === "strong") return <strong>*{span.children.map(convert0393SpanToNode)}*</strong>;
 	else if(span.type === "em") return <em>_{span.children.map(convert0393SpanToNode)}_</em>;
+	else if(span.type === "link") return <a href={span.href}>{span.text}</a>;
 	else {
 		const _: never = span.type;
 		console.warn("Unknown span type");

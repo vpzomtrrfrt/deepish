@@ -1,3 +1,7 @@
+import LinkifyIt, { Match } from "linkify-it";
+
+const linkify = new LinkifyIt();
+
 export type StylingBlock0393 = {
 	type: "plain";
 	children: StylingSpan0393[];
@@ -15,11 +19,20 @@ export type StylingSpan0393 = {
 } | {
 	type: "em" | "strong" | "strikethrough";
 	children: StylingSpan0393[];
-}
+} | {
+	type: "link";
+	href: string;
+	text: string;
+};
 
 const IS_WHITESPACE_CHAR = /^[\p{White_Space}]$/u;
 
 export function parse0393(src: string): StylingBlock0393[] {
+	const linksMap = new Map<number, Match>();
+	linkify.match(src)?.forEach(match => {
+		linksMap.set(match.index, match);
+	});
+
 	const blocks: StylingBlock0393[] = [];
 
 	let index = 0;
@@ -98,6 +111,20 @@ export function parse0393(src: string): StylingBlock0393[] {
 			let restStartIndex = index;
 
 			while(index < lineEnd) {
+				const link = linksMap.get(index);
+				if(typeof link !== "undefined") {
+					(formattingStack.length < 1 ? block.children : formattingStack[formattingStack.length - 1].children)
+						.push({type: "link", href: link.url, text: src.substring(index, link.lastIndex)});
+
+					index = link.lastIndex;
+					restStartIndex = index;
+
+					// probably correct?
+					lastChar = String.fromCodePoint((src.codePointAt(index - 1) ?? src.codePointAt(index - 2))!);
+
+					continue;
+				}
+
 				const thisChar = String.fromCodePoint(src.codePointAt(index)!);
 
 				let formattingType: "em" | "strong" | "strikethrough" | null = null;
