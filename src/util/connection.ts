@@ -127,7 +127,9 @@ export interface Account {
 }
 
 export type MessageRemoval = {
-	"type": "retract";
+	type: "retract";
+} | {
+	type: "moderate";
 };
 
 export type MessageContent = {
@@ -1110,8 +1112,11 @@ function createBaseConnection(
 					const targetID = retractElem.getAttr("id");
 
 					if(typeof targetID === "string") {
+						const moderated =
+							typeof retractElem.getChild("moderated", "urn:xmpp:message-moderate:1") !== "undefined";
+
 						emit("messageRemove", {
-							removal: {type: "retract"},
+							removal: moderated ? {type: "moderate"} : {type: "retract"},
 							target: new StanzaID(
 								StanzaIDType.Stanza,
 								from.bare(),
@@ -3433,8 +3438,15 @@ export function messageRemovalIsAllowed(message: Message, evt: Pick<MessageRemov
 		return (evt.room === null ? evt.from.jid.bare() : evt.from.jid)
 			.equals(evt.room === null ? message.from.bare() : message.from)
 	}
+	else if(evt.removal.type === "moderate") {
+		// Moderation is sent by the room itself
+
+		if(message.room === null) return false;
+
+		return evt.from.jid.equals(message.room);
+	}
 	else {
-		const _: never = evt.removal.type;
+		const _: never = evt.removal;
 		console.warn("Unknown removal type");
 		return false;
 	}

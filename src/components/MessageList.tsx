@@ -409,7 +409,13 @@ function RealMessageRow(props: {
 							(
 								message.removal === null ?
 									<MessageContentView content={message.content} /> :
-									<em>{$t({defaultMessage: "This message has been deleted"})}</em>
+									(
+										message.removal.type === "moderate" ?
+											<em>
+												{$t({defaultMessage: "This message has been removed by a moderator"})}
+											</em> :
+											<em>{$t({defaultMessage: "This message has been deleted"})}</em>
+									)
 							)
 					}
 				</div>
