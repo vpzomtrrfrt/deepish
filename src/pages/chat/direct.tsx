@@ -441,7 +441,7 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 		);
 	}, [$t, accountSig.value.jid, appCtx.showDialog, conn.retractMessageToCounterpart, props.counterpartJID]);
 
-	const renderMenu = useCallback((message: Message) => {
+	const renderMenu = useCallback((message: Message, setMenuOpen: (value: boolean) => void) => {
 		const items = [];
 
 		if(message.from.bare().equals(accountSig.value.jid)) {
@@ -457,7 +457,7 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 
 		if(items.length < 1) return null;
 		else {
-			return <Menu>{items}</Menu>;
+			return <Menu onOpenChange={setMenuOpen}>{items}</Menu>;
 		}
 	}, [$t, accountSig.value.jid, retractMessage]);
 

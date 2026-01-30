@@ -136,7 +136,7 @@ const styles = {
 export default function MessageList(props: {
 	messages: Message[];
 	loaderContent: VNode;
-	renderMenu(message: Message): ComponentChildren;
+	renderMenu(message: Message, setMenuOpen: (value: boolean) => void): ComponentChildren;
 	submitEdit?: (text: string, replaces: string) => Promise<void>;
 	canEdit?: (message: Message) => boolean;
 	submitReactions?: (reactions: string[], message: Message) => Promise<void>;
@@ -248,7 +248,7 @@ function MessageRow(props: {
 	messages: Message[];
 	index: number;
 
-	renderMenu(message: Message): ComponentChildren;
+	renderMenu(message: Message, setMenuOpen: (value: boolean) => void): ComponentChildren;
 	submitEdit?: (text: string, replaces: string) => Promise<void>;
 	canEdit?: (message: Message) => boolean;
 	submitReactions?: (reactions: string[], message: Message) => Promise<void>;
@@ -286,7 +286,7 @@ function RealMessageRow(props: {
 	message: Message;
 	isMerged: boolean;
 
-	renderMenu(message: Message): ComponentChildren;
+	renderMenu(message: Message, setMenuOpen: (value: boolean) => void): ComponentChildren;
 
 	submitEdit?: (text: string, replaces: string) => Promise<void>;
 	canEdit?: (message: Message) => boolean;
@@ -376,6 +376,8 @@ function RealMessageRow(props: {
 	const emojiPopoverActionsRef = useRef<PopoverActions | null>(null);
 	const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
 
+	const [menuOpen, setMenuOpen] = useState(false);
+
 	const onEmojiClick = useCallback((evt: EmojiClickEvent) => {
 		const text = evt.detail.unicode!;
 
@@ -429,7 +431,7 @@ function RealMessageRow(props: {
 				}
 			</div>
 			{!editing &&
-				<div class={cx(styles.messageMenuArea, emojiPickerOpen && "forceOpen")}>
+				<div class={cx(styles.messageMenuArea, (emojiPickerOpen || menuOpen) && "forceOpen")}>
 					{typeof props.submitReactions !== "undefined" &&
 						<Popover
 							icon={<Icon path={mdiEmoticonPlus} />}
@@ -449,7 +451,7 @@ function RealMessageRow(props: {
 							<Icon path={mdiPencil} />
 						</IconButton>
 					}
-					{props.renderMenu(message)}
+					{props.renderMenu(message, setMenuOpen)}
 				</div>
 			}
 		</div>

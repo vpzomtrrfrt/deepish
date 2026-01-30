@@ -539,7 +539,7 @@ function ChatRoomPageInner(props: {roomJID: JID}) {
 		);
 	}, [$t, accountJID, appCtx.showDialog, conn.moderateMessageToRoom, props.roomJID]);
 
-	const renderMenu = useCallback((message: Message) => {
+	const renderMenu = useCallback((message: Message, setMenuOpen: (value: boolean) => void) => {
 		const items = [];
 
 		{
@@ -586,7 +586,7 @@ function ChatRoomPageInner(props: {roomJID: JID}) {
 
 		if(items.length < 1) return null;
 		else {
-			return <Menu>{items}</Menu>;
+			return <Menu onOpenChange={setMenuOpen}>{items}</Menu>;
 		}
 	}, [$t, moderateMessage, retractMessage, room, selfCounterpartInRoom]);
 

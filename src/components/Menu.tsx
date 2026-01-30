@@ -48,10 +48,11 @@ export const styles = {
 
 export default function Menu(props: {
 	children: ComponentChildren;
+	onOpenChange?(value: boolean): void;
 }) {
 	const appCtx = useAppContext();
 
-	return <BaseMenu.Root>
+	return <BaseMenu.Root onOpenChange={props.onOpenChange}>
 		<BaseMenu.Trigger render={IconButton}>
 			<Icon path={mdiDotsVertical} />
 		</BaseMenu.Trigger>
