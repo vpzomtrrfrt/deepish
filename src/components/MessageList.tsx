@@ -199,6 +199,15 @@ export default function MessageList(props: {
 		}
 	}, []);
 
+	useEffect(() => {
+		const observer = new ResizeObserver(onResize);
+		observer.observe(listRef.current!);
+
+		return () => {
+			observer.disconnect();
+		};
+	}, [onResize]);
+
 	const onScroll = useCallback((evt: JSX.TargetedEvent<HTMLDivElement>) => {
 		const elem = evt.currentTarget;
 
@@ -216,7 +225,7 @@ export default function MessageList(props: {
 		}
 	}, []);
 
-	return <div class={styles.messageList} ref={listRef} onResize={onResize} onScroll={onScroll}>
+	return <div class={styles.messageList} ref={listRef} onScroll={onScroll}>
 		<div style={{margin: "auto"}} />
 		{props.loaderContent}
 		<div class={styles.messageListMain} ref={listMainRef}>
