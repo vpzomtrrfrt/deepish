@@ -9,7 +9,6 @@ import inlineStyleParser from "inline-style-parser";
 import { ComponentChildren, h, JSX, VNode } from "preact";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { FormattedList, useIntl } from "react-intl";
-import { List, ListImperativeAPI, RowComponentProps, useDynamicRowHeight } from "react-window";
 import useLatestCallback from "use-latest-callback";
 
 import { Message, MessageContent, useAccountSig } from "../util/connection";
@@ -27,14 +26,23 @@ import MessageInput from "./MessageInput";
 import Popover, { PopoverActions } from "./Popover";
 import WithTooltip from "./WithTooltip";
 
-const DEFAULT_ROW_HEIGHT = 70;
-
 // Not sure why this is necessary but it seems to fix initial load scrolling
 const BOTTOM_TOLERANCE = 5;
 
 const MESSAGE_MERGE_TIME = 1000 * 60;
 
 const styles = {
+	messageList: css({
+		flexGrow: 1,
+
+		display: "flex",
+		flexDirection: "column",
+		overflowY: "auto",
+	}),
+	messageListMain: css({
+		display: "flex",
+		flexDirection: "column",
+	}),
 	messageWrapper: css({
 		paddingBlockStart: ".5rem",
 
@@ -135,52 +143,44 @@ export default function MessageList(props: {
 }) {
 	const messages = props.messages;
 
-	const rowHeight = useDynamicRowHeight({defaultRowHeight: DEFAULT_ROW_HEIGHT});
+	const listRef = useRef<HTMLDivElement>(null);
+	const listMainRef = useRef<HTMLDivElement>(null);
 
-	const listRef = useRef<ListImperativeAPI>(null);
-	const lastScrollHeightRef = useRef(0);
-	const lastClientHeightRef = useRef(0);
+	const lastLastItemKeyRef = useRef<string | null>(null);
+	const lastLastItemYRef = useRef<number | null>(null);
 
-	const lastMessagesRef = useRef<Message[]>([]);
+	const lastScrollHeightRef = useRef<number>(0);
+	const lastClientHeightRef = useRef<number>(0);
 
 	const atBottomRef = useRef(true);
 
 	useLayoutEffect(() => {
-		let lastCenterItem = null;
-		let lastCenterItemPos = null;
-		let lastCenterItemIndex = null;
-		if(listRef.current !== null && listRef.current.element !== null && listRef.current.element.children.length > 0) {
-			const centerItem = listRef.current.element.children[Math.floor(listRef.current.element.children.length / 2)] as HTMLElement;
-			lastCenterItemPos = centerItem.getBoundingClientRect().top;
-			lastCenterItemIndex = parseInt(centerItem.dataset.reactWindowIndex as string, 10);
-			lastCenterItem = lastMessagesRef.current[lastCenterItemIndex - 1] ?? null;
-		}
-
-		const elem = listRef.current!.element;
+		const elem = listRef.current;
 
 		if(elem !== null) {
-			const currentScrollLocation = elem.scrollTop;
-
-			console.log("maybe adjusting scroll", currentScrollLocation, lastScrollHeightRef.current, elem.clientHeight, lastScrollHeightRef.current - elem.clientHeight, elem.scrollHeight);
-
 			if(atBottomRef.current) {
 				console.log("adjusting scroll to bottom");
 				elem.scrollTop = elem.scrollHeight;
 				console.log("scroll was to", elem.scrollTop, elem.scrollHeight - elem.clientHeight);
 			}
 			else {
-				if(lastCenterItem !== null && lastCenterItemPos !== null) {
-					const centerItemNewIndex = messages.indexOf(lastCenterItem) + 1;
+				const lastItem = listMainRef.current!.lastChild as HTMLElement | null;
+				if(lastItem !== null) {
+					const lastItemKey = lastItem.dataset.key!;
+					const lastItemY = lastItem.offsetTop;
 
-					const topItem = elem.children[0] as HTMLElement;
-					const topItemIndex = parseInt(topItem.dataset.reactWindowIndex as string, 10);
+					console.log("maybe adjusting scroll", lastItemKey, lastLastItemKeyRef.current, lastLastItemYRef.current);
 
-					console.log("lci", lastCenterItem, lastCenterItemPos, centerItemNewIndex, topItemIndex);
+					if(lastItemKey === lastLastItemKeyRef.current) {
+						const offset = lastItemY - lastLastItemYRef.current!;
 
-					if(lastCenterItemIndex !== null && centerItemNewIndex > lastCenterItemIndex) {
-						console.log("adjusting scroll");
-						elem.scrollTop += elem.scrollHeight - lastScrollHeightRef.current;
+						console.log("adjusting scroll by", offset);
+
+						elem.scrollBy({top: offset, behavior: "instant"});
 					}
+
+					lastLastItemKeyRef.current = lastItemKey;
+					lastLastItemYRef.current = lastItemY;
 				}
 			}
 
@@ -189,12 +189,8 @@ export default function MessageList(props: {
 		}
 	});
 
-	useEffect(() => {
-		lastMessagesRef.current = messages;
-	}, [messages]);
-
 	const onResize = useCallback(() => {
-		const elem = listRef.current!.element;
+		const elem = listRef.current;
 
 		if(elem !== null) {
 			if(atBottomRef.current) {
@@ -214,49 +210,41 @@ export default function MessageList(props: {
 			)
 		) {
 			atBottomRef.current = atBottom;
-
-			console.log("updated from scroll, atBottom=", atBottomRef.current, elem.scrollTop, elem.scrollHeight - elem.clientHeight);
 		}
 		else {
 			console.log("ignoring scroll as height has changed");
 		}
 	}, []);
 
-	return <List
-		rowComponent={MessageRow}
-		rowCount={messages.length + 2}
-		rowHeight={rowHeight}
-		rowProps={{
-			messages,
-			loaderContent: props.loaderContent,
-			renderMenu: props.renderMenu,
-			submitEdit: props.submitEdit,
-			canEdit: props.canEdit,
-			submitReactions: props.submitReactions,
-		}}
-		listRef={listRef}
-		onResize={onResize}
-		onScroll={onScroll}
-	/>;
+	return <div class={styles.messageList} ref={listRef} onResize={onResize} onScroll={onScroll}>
+		<div style={{margin: "auto"}} />
+		{props.loaderContent}
+		<div class={styles.messageListMain} ref={listMainRef}>
+			{messages.map((message, index) => {
+				return <MessageRow
+					messages={messages}
+					index={index}
+					renderMenu={props.renderMenu}
+					submitEdit={props.submitEdit}
+					canEdit={props.canEdit}
+					submitReactions={props.submitReactions}
+				/>;
+			})}
+		</div>
+		<div class={styles.typingIndicatorPlaceholder} />
+	</div>;
 }
 
-function MessageRow(props: RowComponentProps<{
+function MessageRow(props: {
 	messages: Message[];
-	loaderContent: VNode;
+	index: number;
+
 	renderMenu(message: Message): ComponentChildren;
 	submitEdit?: (text: string, replaces: string) => Promise<void>;
 	canEdit?: (message: Message) => boolean;
 	submitReactions?: (reactions: string[], message: Message) => Promise<void>;
-}>) {
-	if(props.index === 0) {
-		return <div style={props.style}>{props.loaderContent}</div>;
-	}
-
-	if(props.index === props.messages.length + 1) {
-		return <div class={styles.typingIndicatorPlaceholder} style={props.style} />;
-	}
-
-	const index = props.index - 1;
+}) {
+	const index = props.index;
 
 	const message = props.messages[index];
 
@@ -285,7 +273,7 @@ function MessageRow(props: RowComponentProps<{
 	return <RealMessageRow {...props} message={message} key={message.ids[0].toString()} isMerged={isMerged} />;
 }
 
-function RealMessageRow(props: RowComponentProps<{
+function RealMessageRow(props: {
 	message: Message;
 	isMerged: boolean;
 
@@ -294,7 +282,7 @@ function RealMessageRow(props: RowComponentProps<{
 	submitEdit?: (text: string, replaces: string) => Promise<void>;
 	canEdit?: (message: Message) => boolean;
 	submitReactions?: (reactions: string[], message: Message) => Promise<void>;
-}>) {
+}) {
 	const message = props.message;
 	const messageSig = useLiveSignal(message);
 
@@ -388,7 +376,7 @@ function RealMessageRow(props: RowComponentProps<{
 
 	const myReactions = myReactionsSig.value;
 
-	return <div style={props.style} class={cx(styles.messageWrapper, props.isMerged && "merged")}>
+	return <div class={cx(styles.messageWrapper, props.isMerged && "merged")} data-key={"message-" + props.message.localID}>
 		<div class={styles.message}>
 			<div class={styles.avatarSegment}>
 				{!props.isMerged &&
@@ -453,11 +441,19 @@ function RealMessageRow(props: RowComponentProps<{
 	</div>;
 }
 
+const LOAD_MORE_THRESHOLD = 0.5;
+
 export function LoadMoreTriggerer(props: {loadMore: () => void}) {
 	const elemRef = useRef<HTMLDivElement>(null);
 
 	useEffect(() => {
-		const observer = new IntersectionObserver(props.loadMore, {
+		const observer = new IntersectionObserver((entries) => {
+			if(entries.some(x => x.intersectionRatio > LOAD_MORE_THRESHOLD)) {
+				console.log("loading more because of", entries);
+
+				props.loadMore.call(undefined);
+			}
+		}, {
 			root: elemRef.current!.parentNode as Element,
 		});
 
