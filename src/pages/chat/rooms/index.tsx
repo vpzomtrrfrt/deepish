@@ -571,7 +571,9 @@ function ChatRoomPageInner(props: {roomJID: JID}) {
 				}
 				else if(
 					typeof room !== "undefined" &&
-						LoadState.ifDone(room.infoState, info => info.features.has("urn:xmpp:message-moderate:1"))
+						LoadState.ifDone(room.infoState, info => info.features.has("urn:xmpp:message-moderate:1")) &&
+						typeof selfCounterpartInRoom !== "undefined" &&
+						checkPrivilegeForRole(MUCPrivilege.ModerateMessages, selfCounterpartInRoom.role!)
 				) {
 					items.push(
 						<MenuItem onClick={moderateMessage.bind(undefined, id.id)}>
