@@ -525,31 +525,58 @@ function ChatRoomPageInner(props: {roomJID: JID}) {
 		);
 	}, [$t, accountJID, appCtx.showDialog, conn.retractMessageToRoom, props.roomJID]);
 
+	const moderateMessage = useCallback((messageID: string) => {
+		appCtx.showDialog.call(
+			undefined,
+			<ConfirmTaskDialog
+				submit={async () => {
+					return conn.moderateMessageToRoom.call(undefined, accountJID, props.roomJID, messageID);
+				}}
+				confirmText={$t(msgActionDelete)}
+			>
+				{$t({defaultMessage: "Are you sure you want to delete this message?"})}
+			</ConfirmTaskDialog>
+		);
+	}, [$t, accountJID, appCtx.showDialog, conn.moderateMessageToRoom, props.roomJID]);
+
 	const renderMenu = useCallback((message: Message) => {
 		const items = [];
 
-		if(typeof selfCounterpartInRoom !== "undefined") {
-			if(
-				messageRemovalIsAllowed(
-					message,
-					{
-						from: {
-							jid: selfCounterpartInRoom.jid,
-							occupantID: selfCounterpartInRoom.occupantID === null ?
-								undefined :
-								selfCounterpartInRoom.occupantID,
+		{
+			const id = message.ids.find(x => {
+				return x.type === StanzaIDType.Stanza && x.by !== null && x.by.equals(room!.jid);
+			});
+
+			if(typeof id !== "undefined") {
+				if(
+					typeof selfCounterpartInRoom !== "undefined" && messageRemovalIsAllowed(
+						message,
+						{
+							from: {
+								jid: selfCounterpartInRoom.jid,
+								occupantID: selfCounterpartInRoom.occupantID === null ?
+									undefined :
+									selfCounterpartInRoom.occupantID,
+							},
+							removal: {type: "retract"},
+							room: room!.jid,
 						},
-						removal: {type: "retract"},
-						room: room!.jid,
-					},
-				)
-			) {
-				const id = message.ids.find(x => {
-					return x.type === StanzaIDType.Stanza && x.by !== null && x.by.equals(room!.jid);
-				});
-				if(typeof id !== "undefined") {
+					)
+				) {
 					items.push(
-						<MenuItem onClick={retractMessage.bind(undefined, id.id)}>{$t({defaultMessage: "Delete Message"})}</MenuItem>
+						<MenuItem onClick={retractMessage.bind(undefined, id.id)}>
+							{$t({defaultMessage: "Delete Message"})}
+						</MenuItem>
+					);
+				}
+				else if(
+					typeof room !== "undefined" &&
+						LoadState.ifDone(room.infoState, info => info.features.has("urn:xmpp:message-moderate:1"))
+				) {
+					items.push(
+						<MenuItem onClick={moderateMessage.bind(undefined, id.id)}>
+							{$t({defaultMessage: "Delete Message"})}
+						</MenuItem>
 					);
 				}
 			}
@@ -559,7 +586,7 @@ function ChatRoomPageInner(props: {roomJID: JID}) {
 		else {
 			return <Menu>{items}</Menu>;
 		}
-	}, [$t, retractMessage, room, selfCounterpartInRoom]);
+	}, [$t, moderateMessage, retractMessage, room, selfCounterpartInRoom]);
 
 	const canEdit = useCallback((message: Message) => {
 		if(canSend !== true) return false;

@@ -72,6 +72,7 @@ const ROOM_RETRY_DELAY = 7000;
 export interface RoomDiscoInfo {
 	name: string | null;
 	avatarHashes: string[];
+	features: Set<string>;
 }
 
 export interface RoomConfig {
@@ -254,6 +255,7 @@ export interface BaseConnectionContext {
 	sendMessageToRoom(account: JID, room: JID, message: {body: string}, options?: {replaces?: string}): Promise<void>;
 	sendMessageToCounterpart(account: JID, target: JID, message: {body: string}, options?: {replaces?: string}): Promise<void>;
 	retractMessageToRoom(account: JID, room: JID, messageID: string): Promise<void>;
+	moderateMessageToRoom(account: JID, room: JID, messageID: string): Promise<void>;
 	retractMessageToCounterpart(account: JID, target: JID, messageID: string): Promise<void>;
 	sendMessageReactionsToRoom(account: JID, room: JID, messageID: string, reactions: string[]): Promise<void>;
 	sendMessageReactionsToCounterpart(account: JID, room: JID, messageID: string, reactions: string[]): Promise<void>;
@@ -1678,6 +1680,7 @@ function createBaseConnection(
 				const info: RoomDiscoInfo = {
 					name: null,
 					avatarHashes: [],
+					features: new Set(),
 				};
 
 				const identityElem = result.getChild("identity");
@@ -1685,6 +1688,11 @@ function createBaseConnection(
 					const name = identityElem.getAttr("name");
 					if(typeof name === "string") info.name = name;
 				}
+
+				result.getChildren("feature").forEach(elem => {
+					const key = elem.getAttr("var");
+					if(typeof key === "string") info.features.add(key);
+				});
 
 				result.getChildren("x", "jabber:x:data").forEach(x => {
 					if(x.getAttr("type") === "result") {
@@ -2417,6 +2425,22 @@ function createBaseConnection(
 		);
 
 		await reflectDefer.promise;
+	}
+
+	async function moderateMessageToRoom(accountJID: JID, roomJID: JID, messageID: string) {
+		const account = getAccount(accountJID);
+
+		await account.client.iqCaller.set(
+			xml(
+				"moderate",
+				{xmlns: "urn:xmpp:message-moderate:1", id: messageID},
+				xml(
+					"retract",
+					"urn:xmpp:message-retract:1",
+				),
+			),
+			roomJID.toString(),
+		);
 	}
 
 	async function sendMessageReactionsToRoom(accountJID: JID, roomJID: JID, messageID: string, reactions: string[]) {
@@ -3274,6 +3298,7 @@ function createBaseConnection(
 		sendMessageToRoom,
 		retractMessageToCounterpart,
 		retractMessageToRoom,
+		moderateMessageToRoom,
 		sendMessageReactionsToRoom,
 		sendMessageReactionsToCounterpart,
 		markCounterpartAsVisible,
