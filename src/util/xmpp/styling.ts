@@ -113,7 +113,15 @@ export function parse0393(src: string): StylingBlock0393[] {
 			while(index < lineEnd) {
 				const link = linksMap.get(index);
 				if(typeof link !== "undefined") {
-					(formattingStack.length < 1 ? block.children : formattingStack[formattingStack.length - 1].children)
+					const targetList = formattingStack.length < 1 ?
+						block.children :
+						formattingStack[formattingStack.length - 1].children;
+
+					if(restStartIndex < index) {
+						targetList.push({type: "plain", text: src.substring(restStartIndex, index)});
+					}
+
+					targetList
 						.push({type: "link", href: link.url, text: src.substring(index, link.lastIndex)});
 
 					index = link.lastIndex;
