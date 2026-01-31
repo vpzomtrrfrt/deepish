@@ -1086,8 +1086,6 @@ function createBaseConnection(
 					return;
 				}
 
-				handleChatStateUpdate(client, elem, from);
-
 				let occupantID: string | null = null;
 				{
 					const occupantIDElem = elem.getChild("occupant-id", "urn:xmpp:occupant-id:0");
@@ -1107,6 +1105,8 @@ function createBaseConnection(
 				const isNew = timestamp === null;
 
 				timestamp ??= new Date();
+
+				if(isNew) handleChatStateUpdate(client, elem, from);
 
 				let ignore = false;
 
@@ -1336,8 +1336,6 @@ function createBaseConnection(
 				return;
 			}
 
-			if(typeof from !== "undefined") handleChatStateUpdate(client, elem, from.bare());
-
 			let ignore = false;
 
 			const retractElem = elem.getChild("retract", "urn:xmpp:message-retract:1");
@@ -1373,6 +1371,8 @@ function createBaseConnection(
 			timestamp = timestamp ?? new Date();
 
 			if(typeof from !== "undefined") {
+				if(isNew) handleChatStateUpdate(client, elem, from.bare());
+
 				const reactionsElem = elem.getChild("reactions", "urn:xmpp:reactions:0");
 				if(typeof reactionsElem !== "undefined") {
 					const targetID = reactionsElem.getAttr("id");
