@@ -106,6 +106,7 @@ const styles = {
 	})),
 	typingIndicatorPlaceholder: css({
 		height: "1.5rem",
+		flexShrink: 0,
 	}),
 	avatarSegment: css({
 		width: "35px",
