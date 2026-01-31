@@ -1,8 +1,7 @@
 import { css } from "@emotion/css";
 import { useComputed } from "@preact/signals";
-import { parse as parseJID } from "@xmpp/jid";
-import { pushAtSortPosition } from "array-push-at-sort-position";
-import { useCallback, useEffect, useRef, useState } from "preact/hooks";
+import { JID, parse as parseJID } from "@xmpp/jid";
+import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { useIntl } from "react-intl";
 import useLatestCallback from "use-latest-callback";
 
@@ -13,13 +12,13 @@ import Menu, { MenuItem } from "../../components/Menu";
 import MessageInput from "../../components/MessageInput";
 import MessageList, { LoadMoreTriggerer, MessageReplyQuoteContent } from "../../components/MessageList";
 import TypingIndicator from "../../components/TypingIndicator";
-import { Message, MessageEditEvent, messageEditIsAllowed, MessageEvent, MessageReactionsChangeEvent, MessageRemovalEvent, messageRemovalIsAllowed, ResultSetInfo, useAccountSig, useConnectionContext } from "../../util/connection";
+import { Message, ResultSetInfo, useAccountSig, useConnectionContext } from "../../util/connection";
 import { msgActionDelete } from "../../util/langCommon";
+import { useCreateMessageCache } from "../../util/messageCache";
 import { getNickForCounterpart } from "../../util/profileUtil";
 import { themeVars } from "../../util/theme";
 import { LoadState } from "../../util/useData";
-import useEventHandler from "../../util/useEventHandler";
-import StanzaID, { StanzaIDType } from "../../util/xmpp/StanzaID";
+import { StanzaIDType } from "../../util/xmpp/StanzaID";
 
 const styles = {
 	page: css({
@@ -54,316 +53,34 @@ const styles = {
 };
 
 export default function DirectChatPage(props: {params: {counterpartJID: string}}) {
-	const counterpartJID = decodeURIComponent(props.params.counterpartJID);
+	const { $t } = useIntl();
+
+	const counterpartJID = useMemo(() => {
+		try {
+			return parseJID(decodeURIComponent(props.params.counterpartJID))
+		}
+		catch(ex) {
+			console.error(ex);
+			return undefined;
+		}
+	}, [props.params.counterpartJID]);
+
+	if(typeof counterpartJID === "undefined") {
+		return <div>{$t({defaultMessage: "Invalid address"})}</div>;
+	}
 
 	return <DirectChatPageInner counterpartJID={counterpartJID} key={counterpartJID} />;
 }
 
-function DirectChatPageInner(props: {counterpartJID: string}) {
+function DirectChatPageInner(props: {counterpartJID: JID}) {
 	const { $t } = useIntl();
 
 	const appCtx = useAppContext();
 	const conn = useConnectionContext();
 	const accountSig = useAccountSig();
-	const counterpart = useComputed(() => accountSig.value.counterparts.getSignal(props.counterpartJID)).value.value;
+	const counterpart = useComputed(() => accountSig.value.counterparts.getSignal(props.counterpartJID.toString())).value.value;
 
-	const [messagesData, setMessagesData] = useState<{
-		messages: Message[];
-		messageMap: Map<string, Message>;
-	}>({
-		messages: [],
-		messageMap: new Map(),
-	});
-
-	const unresolvedFastensRef = useRef<Map<string,
-		Array<
-			{type: "messageRemove"; event: MessageRemovalEvent} |
-				{type: "messageEdit"; event: MessageEditEvent} |
-				{type: "messageReactionsChange"; event: MessageReactionsChangeEvent}
-		>
-	>>(new Map());
-
-	const onMessage = useLatestCallback((evt: MessageEvent) => {
-		if(
-			evt.message.room === null && (
-				evt.message.from.bare().toString() === props.counterpartJID ||
-					evt.message.to?.bare().toString() === props.counterpartJID
-			)
-		) {
-			setMessagesData(current => {
-				let newMessages;
-				{
-					let existing = undefined;
-					for(const id of evt.message.ids) {
-						existing = current.messageMap.get(id.toString());
-						if(typeof existing !== "undefined") break;
-					}
-
-					if(typeof existing !== "undefined") {
-						// Already present, but we might need to add more IDs
-
-						const newIDs = evt.message.ids.filter(newID => existing.ids.some(x => x.equals(newID)));
-						if(newIDs.length > 0) {
-							const newValue = {...existing, ids: [...existing.ids, ...newIDs]};
-							newMessages = current.messages.map(x => {
-								if(x === existing) return newValue;
-								else return x;
-							});
-
-							const newMap = new Map(current.messageMap);
-							newIDs.forEach(id => {
-								newMap.set(id.toString(), newValue);
-							});
-
-							return {
-								messages: newMessages,
-								messageMap: newMap,
-							};
-						}
-						else {
-							return current;
-						}
-					}
-					else {
-						newMessages = current.messages.slice();
-					}
-				}
-
-				let message = evt.message;
-				evt.message.ids.forEach(id => {
-					let list = unresolvedFastensRef.current.get(id.toString());
-
-					if(id.type === StanzaIDType.Element) {
-						const list2 = unresolvedFastensRef.current.get(new StanzaID(id.type, null, id.id).toString());
-						if(typeof list2 !== "undefined") {
-							if(typeof list === "undefined") list = list2;
-							else list = [...list, ...list2];
-						}
-					}
-
-					if(typeof list !== "undefined") {
-						list.forEach(entry => {
-							console.log("resolving unresolved fasten", id, entry.event.target, entry);
-							if(entry.type === "messageRemove") {
-								if(messageRemovalIsAllowed(evt.message, entry.event)) {
-									message = {...message, removal: entry.event.removal};
-								}
-							}
-							else if(entry.type === "messageEdit") {
-								if(
-									messageEditIsAllowed(evt.message, entry.event) && (
-										message.editedAt === null ||
-											message.editedAt.getTime() < entry.event.edit.timestamp.getTime()
-									)
-								) {
-									message = {
-										...message,
-										content: entry.event.edit.content,
-										editedAt: entry.event.edit.timestamp,
-									};
-								}
-							}
-							else if(entry.type === "messageReactionsChange") {
-								const key = entry.event.from.jid.toString() + "/" + (
-									typeof entry.event.from.occupantID === "undefined" ?
-										"" :
-										encodeURIComponent(entry.event.from.occupantID)
-								);
-								const reactionsEntry = message.reactions.get(key);
-
-								if(
-									typeof reactionsEntry === "undefined" ||
-										reactionsEntry.timestamp.getTime() < entry.event.reactions.timestamp.getTime()
-								) {
-									const newReactions = new Map(message.reactions);
-									newReactions.set(key, entry.event.reactions);
-
-									message = {
-										...message,
-										reactions: newReactions,
-									};
-								}
-							}
-						});
-						unresolvedFastensRef.current.delete(id.toString());
-					}
-				});
-
-				const newMap = new Map(current.messageMap);
-				evt.message.ids.forEach(id => {
-					newMap.set(id.toString(), message);
-				});
-
-				pushAtSortPosition(
-					newMessages,
-					message,
-					(a, b) => (a.timestamp - b.timestamp) as (0 | 1 | -1), // it's not but should be fine
-					0,
-				);
-
-				return {
-					messages: newMessages,
-					messageMap: newMap,
-				};
-			});
-		}
-	});
-	useEventHandler(conn, "message", onMessage);
-
-	const onMessageRemove = useLatestCallback((evt: MessageRemovalEvent) => {
-		if(evt.room !== null) return;
-
-		setMessagesData(current => {
-			const newMessageMap = new Map(current.messageMap);
-
-			let anyHit = false;
-
-			const newMessages = current.messages.map(message => {
-				if(message.ids.some(x => x.equals(evt.target))) {
-					if(messageRemovalIsAllowed(message, evt)) {
-						const newValue: Message = {
-							...message,
-							removal: evt.removal,
-						};
-
-						message.ids.forEach(id => {
-							newMessageMap.set(id.toString(), newValue);
-						});
-
-						anyHit = true;
-
-						return newValue;
-					}
-				}
-
-				return message;
-			});
-
-			if(anyHit) {
-				return {messages: newMessages, messageMap: newMessageMap};
-			}
-			else {
-				console.log("got unresolved removal", evt);
-
-				let list = unresolvedFastensRef.current.get(evt.target.toString());
-				if(typeof list === "undefined") {
-					list = [];
-					unresolvedFastensRef.current.set(evt.target.toString(), list);
-				}
-				list.push({type: "messageRemove", event: evt});
-
-				return current;
-			}
-		});
-	});
-	useEventHandler(conn, "messageRemove", onMessageRemove);
-
-	const onMessageEdit = useLatestCallback((evt: MessageEditEvent) => {
-		if(evt.room !== null) return;
-
-		setMessagesData(current => {
-			const newMessageMap = new Map(current.messageMap);
-
-			let anyHit = false;
-
-			const newMessages = current.messages.map(message => {
-				if(message.ids.some(x => x.equals(evt.target))) {
-					if(messageEditIsAllowed(message, evt) && (
-						message.editedAt === null ||
-							message.editedAt.getTime() < evt.edit.timestamp.getTime()
-					)) {
-						const newValue: Message = {
-							...message,
-							content: evt.edit.content,
-							editedAt: evt.edit.timestamp,
-						};
-
-						message.ids.forEach(id => {
-							newMessageMap.set(id.toString(), newValue);
-						});
-
-						anyHit = true;
-
-						return newValue;
-					}
-				}
-
-				return message;
-			});
-
-			if(anyHit) {
-				return {messages: newMessages, messageMap: newMessageMap};
-			}
-			else {
-				console.log("got unresolved edit", evt.target, evt);
-
-				let list = unresolvedFastensRef.current.get(evt.target.toString());
-				if(typeof list === "undefined") {
-					list = [];
-					unresolvedFastensRef.current.set(evt.target.toString(), list);
-				}
-				list.push({type: "messageEdit", event: evt});
-
-				return current;
-			}
-		});
-	});
-	useEventHandler(conn, "messageEdit", onMessageEdit);
-
-	const onMessageReactionsChange = useLatestCallback((evt: MessageReactionsChangeEvent) => {
-		if(evt.room !== null) return;
-
-		setMessagesData(current => {
-			const newMessageMap = new Map(current.messageMap);
-
-			let anyHit = false;
-
-			const newMessages = current.messages.map(message => {
-				if(message.ids.some(x => x.equals(evt.target, true))) {
-					const key = evt.from.jid.bare().toString() + "/";
-					const entry = message.reactions.get(key);
-
-					if(typeof entry === "undefined" || entry.timestamp.getTime() < evt.reactions.timestamp.getTime()) {
-						const newReactions = new Map(message.reactions);
-						newReactions.set(key, evt.reactions);
-
-						const newValue: Message = {
-							...message,
-							reactions: newReactions,
-						};
-
-						message.ids.forEach(id => {
-							newMessageMap.set(id.toString(), newValue);
-						});
-
-						anyHit = true;
-
-						return newValue;
-					}
-				}
-
-				return message;
-			});
-
-			if(anyHit) {
-				return {messages: newMessages, messageMap: newMessageMap};
-			}
-			else {
-				console.log("got unresolved edit", evt);
-
-				let list = unresolvedFastensRef.current.get(evt.target.toString());
-				if(typeof list === "undefined") {
-					list = [];
-					unresolvedFastensRef.current.set(evt.target.toString(), list);
-				}
-				list.push({type: "messageReactionsChange", event: evt});
-
-				return current;
-			}
-		});
-	});
-	useEventHandler(conn, "messageReactionsChange", onMessageReactionsChange);
-
+	const msgCache = useCreateMessageCache(useMemo(() => ({type: "direct", jid: props.counterpartJID}), [props.counterpartJID]));
 	const [pageState, setPageState] = useState<LoadState<ResultSetInfo | null> | null>(null);
 
 	const nextPageRef = useRef<string | null>(null);
@@ -371,7 +88,7 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 	const loadMore = useLatestCallback(() => {
 		setPageState(LoadState.loading);
 
-		conn.requestArchive(accountSig.value.jid, accountSig.value.jid, {with: counterpart!.jid}, nextPageRef.current ?? undefined)
+		conn.requestArchive(accountSig.value.jid, accountSig.value.jid, {with: props.counterpartJID}, nextPageRef.current ?? undefined)
 			.then(value => {
 				nextPageRef.current = value === null ? null : value.firstItem;
 				setPageState(LoadState.wrapValue(value));
@@ -393,15 +110,17 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 		}
 	}, [accountSig.value.jid, conn.markCounterpartAsVisible, counterpart]);
 
+	const messages = msgCache.getMessages();
+
 	useEffect(() => {
 		// TODO skip marking when scrolled up
 		if(
 			pageState !== null &&
 				pageState.state === "done" &&
-				messagesData.messages.length > 0 &&
+				messages.length > 0 &&
 				typeof counterpart !== "undefined"
 		) {
-			const lastMessage = messagesData.messages[messagesData.messages.length - 1];
+			const lastMessage = messages[messages.length - 1];
 			const lastMessageID = lastMessage.ids.find(x => {
 				return x.type === StanzaIDType.Stanza && x.by !== null && x.by.equals(accountSig.value.jid);
 			});
@@ -409,7 +128,7 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 				conn.markCounterpartAsRead.call(undefined, accountSig.value.jid, counterpart.jid, lastMessageID.id, false);
 			}
 		}
-	}, [accountSig.value.jid, conn.markCounterpartAsRead, counterpart, messagesData.messages, pageState]);
+	}, [accountSig.value.jid, conn.markCounterpartAsRead, counterpart, messages, pageState]);
 
 	const submitMessage = useLatestCallback(async (newMessage: string, options?: {replaces?: string}) => {
 		await conn.sendMessageToCounterpart(accountSig.value.jid, counterpart!.jid, {body: newMessage}, options);
@@ -426,14 +145,14 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 		await conn.sendMessageReactionsToCounterpart.call(
 			undefined,
 			accountSig.value.jid,
-			parseJID(props.counterpartJID),
+			props.counterpartJID,
 			id.id,
 			reactions,
 		);
 	});
 
 	const onChangeComposing = useLatestCallback((composing: boolean) => {
-		conn.setComposingToCounterpart(accountSig.value.jid, parseJID(props.counterpartJID), composing);
+		conn.setComposingToCounterpart(accountSig.value.jid, props.counterpartJID, composing);
 	});
 
 	const retractMessage = useCallback((messageID: string) => {
@@ -444,7 +163,7 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 					return conn.retractMessageToCounterpart.call(
 						undefined,
 						accountSig.value.jid,
-						parseJID(props.counterpartJID),
+						props.counterpartJID,
 						messageID,
 					);
 				}}
@@ -458,13 +177,14 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 	const renderReply = useCallback((message: Message) => {
 		if(message.replyingTo === null) return null;
 
-		const target = messagesData.messageMap.get(message.replyingTo.id.toString());
+		// TODO react to changes
+		const target = msgCache.getMessage(message.replyingTo.id);
 		if(typeof target === "undefined") return null;
 
 		return <blockquote class={styles.replyQuote}>
 			<MessageReplyQuoteContent message={target} />
 		</blockquote>;
-	}, [messagesData.messageMap]);
+	}, [msgCache]);
 
 	const renderMenu = useCallback((message: Message, setMenuOpen: (value: boolean) => void) => {
 		const items = [];
@@ -518,10 +238,10 @@ function DirectChatPageInner(props: {counterpartJID: string}) {
 			{typeof counterpart !== "undefined" && <h1>
 				{getNickForCounterpart(counterpart)}
 			</h1>}
-			<div>{props.counterpartJID}</div>
+			<div>{props.counterpartJID.toString()}</div>
 		</div>
 		<MessageList
-			messages={messagesData.messages}
+			messages={messages}
 			loaderContent={loaderContent}
 			renderMenu={renderMenu}
 			renderReply={renderReply}

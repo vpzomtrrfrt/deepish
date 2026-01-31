@@ -1,7 +1,6 @@
 import { css } from "@emotion/css";
 import { useComputed } from "@preact/signals";
 import { JID, parse as parseJID } from "@xmpp/jid";
-import { pushAtSortPosition } from "array-push-at-sort-position";
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { Fragment } from "preact/jsx-runtime";
 import { useIntl } from "react-intl";
@@ -20,13 +19,13 @@ import MessageInput from "../../../components/MessageInput";
 import MessageList, { LoadMoreTriggerer, MessageReplyQuoteContent } from "../../../components/MessageList";
 import TaskDialog from "../../../components/TaskDialog";
 import TypingIndicator from "../../../components/TypingIndicator";
-import { Message, MessageEditEvent, messageEditIsAllowed, MessageEvent, MessageReactionsChangeEvent, MessageRemovalEvent, messageRemovalIsAllowed, NotificationLevel, ResultSetInfo, useAccountSig, useConnectionContext } from "../../../util/connection";
+import { Message, messageEditIsAllowed, messageRemovalIsAllowed, NotificationLevel, ResultSetInfo, useAccountSig, useConnectionContext } from "../../../util/connection";
 import { msgActionDelete, presenceShowTypeNames } from "../../../util/langCommon";
+import { useCreateMessageCache } from "../../../util/messageCache";
 import { useSignalMapKeysWhereValueMatches } from "../../../util/SignalMap";
 import { getShowTypeForCounterpart } from "../../../util/statusUtil";
 import { themeVars } from "../../../util/theme";
 import { LoadState } from "../../../util/useData";
-import useEventHandler from "../../../util/useEventHandler";
 import { checkPrivilegeForRole, MUCPrivilege } from "../../../util/xmpp/mucPrivileges";
 import { StanzaIDType } from "../../../util/xmpp/StanzaID";
 import { SidebarSegment } from "..";
@@ -141,255 +140,7 @@ function ChatRoomPageInner(props: {roomJID: JID}) {
 
 	const counterpart = useComputed(() => accountSig.value.counterparts.getSignal(props.roomJID.toString())).value.value;
 
-	const [messagesData, setMessagesData] = useState<{messages: Message[]; messageMap: Map<string, Message>}>({
-		messages: [],
-		messageMap: new Map(),
-	});
-
-	const unresolvedFastensRef = useRef<Map<string,
-		Array<
-			{type: "messageRemove"; event: MessageRemovalEvent} |
-				{type: "messageEdit"; event: MessageEditEvent} |
-				{type: "messageReactionsChange"; event: MessageReactionsChangeEvent}
-		>
-	>>(new Map());
-
-	const onMessage = useLatestCallback((evt: MessageEvent) => {
-		console.log("room page got message", evt);
-
-		if(evt.message.room !== null && evt.message.room.equals(props.roomJID)) {
-			setMessagesData(current => {
-				if(evt.message.ids.some(x => current.messageMap.has(x.toString()))) {
-					// we already have this message, ignore
-					return current;
-				}
-
-				let message = evt.message;
-				evt.message.ids.forEach(id => {
-					const list = unresolvedFastensRef.current.get(id.toString());
-					if(typeof list !== "undefined") {
-						list.forEach(entry => {
-							console.log("resolving unresolved fasten", id, entry);
-							if(entry.type === "messageRemove") {
-								if(messageRemovalIsAllowed(evt.message, entry.event)) {
-									message = {...message, removal: entry.event.removal};
-								}
-							}
-							else if(entry.type === "messageEdit") {
-								if(
-									messageEditIsAllowed(evt.message, entry.event) && (
-										message.editedAt === null ||
-											message.editedAt.getTime() < entry.event.edit.timestamp.getTime()
-									)
-								) {
-									message = {
-										...message,
-										content: entry.event.edit.content,
-										editedAt: entry.event.edit.timestamp,
-									};
-								}
-							}
-							else if(entry.type === "messageReactionsChange") {
-								const key = entry.event.from.jid.toString() + "/" + (
-									typeof entry.event.from.occupantID === "undefined" ?
-										"" :
-										encodeURIComponent(entry.event.from.occupantID)
-								);
-								const reactionsEntry = message.reactions.get(key);
-
-								if(
-									typeof reactionsEntry === "undefined" ||
-										reactionsEntry.timestamp.getTime() < entry.event.reactions.timestamp.getTime()
-								) {
-									const newReactions = new Map(message.reactions);
-									newReactions.set(key, entry.event.reactions);
-
-									message = {
-										...message,
-										reactions: newReactions,
-									};
-								}
-							}
-						});
-						unresolvedFastensRef.current.delete(id.toString());
-					}
-				});
-
-				const newMap = new Map(current.messageMap);
-				evt.message.ids.forEach(id => {
-					newMap.set(id.toString(), message);
-				});
-
-				const newMessages = current.messages.slice();
-				pushAtSortPosition(
-					newMessages,
-					message,
-					(a, b) => (a.timestamp - b.timestamp) as (0 | 1 | -1), // it's not but should be fine
-					0,
-				);
-
-				return {
-					messages: newMessages,
-					messageMap: newMap,
-				};
-			});
-		}
-	});
-
-	useEventHandler(conn, "message", onMessage);
-
-	const onMessageRemove = useLatestCallback((evt: MessageRemovalEvent) => {
-		if(evt.room === null || !evt.room.equals(props.roomJID)) return;
-
-		setMessagesData(current => {
-			const newMessageMap = new Map(current.messageMap);
-
-			let anyHit = false;
-
-			const newMessages = current.messages.map(message => {
-				if(message.ids.some(x => x.equals(evt.target))) {
-					if(messageRemovalIsAllowed(message, evt)) {
-						const newValue: Message = {
-							...message,
-							removal: evt.removal,
-						};
-
-						message.ids.forEach(id => {
-							newMessageMap.set(id.toString(), newValue);
-						});
-
-						anyHit = true;
-
-						return newValue;
-					}
-				}
-
-				return message;
-			});
-
-			if(anyHit) {
-				return {messages: newMessages, messageMap: newMessageMap};
-			}
-			else {
-				console.log("got unresolved removal", evt);
-
-				let list = unresolvedFastensRef.current.get(evt.target.toString());
-				if(typeof list === "undefined") {
-					list = [];
-					unresolvedFastensRef.current.set(evt.target.toString(), list);
-				}
-				list.push({type: "messageRemove", event: evt});
-
-				return current;
-			}
-		});
-	});
-	useEventHandler(conn, "messageRemove", onMessageRemove);
-
-	const onMessageEdit = useLatestCallback((evt: MessageEditEvent) => {
-		if(evt.room === null || !evt.room.equals(props.roomJID)) return;
-
-		setMessagesData(current => {
-			const newMessageMap = new Map(current.messageMap);
-
-			let anyHit = false;
-
-			const newMessages = current.messages.map(message => {
-				if(message.ids.some(x => x.equals(evt.target))) {
-					if(messageEditIsAllowed(message, evt) && (
-						message.editedAt === null ||
-							message.editedAt.getTime() < evt.edit.timestamp.getTime()
-					)) {
-						const newValue: Message = {
-							...message,
-							content: evt.edit.content,
-							editedAt: evt.edit.timestamp,
-						};
-
-						message.ids.forEach(id => {
-							newMessageMap.set(id.toString(), newValue);
-						});
-
-						anyHit = true;
-
-						return newValue;
-					}
-				}
-
-				return message;
-			});
-
-			if(anyHit) {
-				return {messages: newMessages, messageMap: newMessageMap};
-			}
-			else {
-				console.log("got unresolved edit", evt);
-
-				let list = unresolvedFastensRef.current.get(evt.target.toString());
-				if(typeof list === "undefined") {
-					list = [];
-					unresolvedFastensRef.current.set(evt.target.toString(), list);
-				}
-				list.push({type: "messageEdit", event: evt});
-
-				return current;
-			}
-		});
-	});
-	useEventHandler(conn, "messageEdit", onMessageEdit);
-
-	const onMessageReactionsChange = useLatestCallback((evt: MessageReactionsChangeEvent) => {
-		if(evt.room === null || !evt.room.equals(props.roomJID)) return;
-
-		setMessagesData(current => {
-			const newMessageMap = new Map(current.messageMap);
-
-			let anyHit = false;
-
-			const newMessages = current.messages.map(message => {
-				if(message.ids.some(x => x.equals(evt.target))) {
-					const key = evt.from.jid.toString() + "/" +
-						(typeof evt.from.occupantID === "undefined" ? "" : encodeURIComponent(evt.from.occupantID));
-					const entry = message.reactions.get(key);
-
-					if(typeof entry === "undefined" || entry.timestamp.getTime() < evt.reactions.timestamp.getTime()) {
-						const newReactions = new Map(message.reactions);
-						newReactions.set(key, evt.reactions);
-
-						const newValue: Message = {
-							...message,
-							reactions: newReactions,
-						};
-
-						message.ids.forEach(id => {
-							newMessageMap.set(id.toString(), newValue);
-						});
-
-						anyHit = true;
-
-						return newValue;
-					}
-				}
-
-				return message;
-			});
-
-			if(anyHit) {
-				return {messages: newMessages, messageMap: newMessageMap};
-			}
-			else {
-				let list = unresolvedFastensRef.current.get(evt.target.toString());
-				if(typeof list === "undefined") {
-					list = [];
-					unresolvedFastensRef.current.set(evt.target.toString(), list);
-				}
-				list.push({type: "messageReactionsChange", event: evt});
-
-				return current;
-			}
-		});
-	});
-	useEventHandler(conn, "messageReactionsChange", onMessageReactionsChange);
+	const msgCache = useCreateMessageCache(useMemo(() => ({type: "room", jid: props.roomJID}), [props.roomJID]));
 
 	const [pageState, setPageState] = useState<LoadState<ResultSetInfo | null> | null>(null);
 
@@ -414,15 +165,17 @@ function ChatRoomPageInner(props: {roomJID: JID}) {
 		}
 	}, [room?.connected, pageState, loadMore]);
 
+	const messages = msgCache.getMessages();
+
 	useEffect(() => {
 		// TODO skip marking when scrolled up
 		if(
 			pageState !== null &&
 				pageState.state === "done" &&
-				messagesData.messages.length > 0 &&
+				messages.length > 0 &&
 				typeof counterpart !== "undefined"
 		) {
-			const lastMessage = messagesData.messages[messagesData.messages.length - 1];
+			const lastMessage = messages[messages.length - 1];
 			const lastMessageID = lastMessage.ids.find(x => {
 				return x.type === StanzaIDType.Stanza && x.by !== null && x.by.equals(counterpart.jid);
 			});
@@ -430,7 +183,7 @@ function ChatRoomPageInner(props: {roomJID: JID}) {
 				conn.markCounterpartAsRead.call(undefined, accountJID, counterpart.jid, lastMessageID.id, false);
 			}
 		}
-	}, [accountJID, conn.markCounterpartAsRead, counterpart, messagesData.messages, pageState]);
+	}, [accountJID, conn.markCounterpartAsRead, counterpart, messages, pageState]);
 
 	const submitMessage = useLatestCallback(async (newMessage: string, options?: {replaces?: string}) => {
 		await conn.sendMessageToRoom(accountJID, room!.jid, {body: newMessage}, options);
@@ -555,13 +308,13 @@ function ChatRoomPageInner(props: {roomJID: JID}) {
 	const renderReply = useCallback((message: Message) => {
 		if(message.replyingTo === null) return null;
 
-		const target = messagesData.messageMap.get(message.replyingTo.id.toString());
+		const target = msgCache.getMessage(message.replyingTo.id);
 		if(typeof target === "undefined") return null;
 
 		return <blockquote class={styles.replyQuote}>
 			<MessageReplyQuoteContent message={target} />
 		</blockquote>;
-	}, [messagesData.messageMap]);
+	}, [msgCache]);
 
 	const renderMenu = useCallback((message: Message, setMenuOpen: (value: boolean) => void) => {
 		const items = [];
@@ -695,7 +448,7 @@ function ChatRoomPageInner(props: {roomJID: JID}) {
 					</div> :
 					<>
 						<MessageList
-							messages={messagesData.messages}
+							messages={messages}
 							loaderContent={loaderContent}
 							renderReply={renderReply}
 							renderMenu={renderMenu}
