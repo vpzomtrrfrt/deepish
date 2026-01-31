@@ -13,6 +13,7 @@ import useLatestCallback from "use-latest-callback";
 
 import { Message, MessageContent, useAccountSig } from "../util/connection";
 import { parseMarkdown, renderMarkdownToXHTML } from "../util/markdown";
+import { MessageCache } from "../util/messageCache";
 import { maybeGetNickForCounterpart } from "../util/profileUtil";
 import { themeVars } from "../util/theme";
 import { StanzaIDType } from "../util/xmpp/StanzaID";
@@ -133,18 +134,30 @@ const styles = {
 			cursor: "not-allowed",
 		},
 	}),
+	replyQuote: css({
+		margin: 0,
+		marginBlockEnd: ".5rem",
+
+		padding: ".25rem",
+
+		borderWidth: "1px",
+		borderStyle: "solid",
+		borderColor: themeVars.outline1,
+		borderRadius: ".5rem",
+
+		backgroundColor: themeVars.bg1,
+	}),
 };
 
 export default function MessageList(props: {
-	messages: Message[];
+	msgCache: MessageCache;
 	loaderContent: VNode;
 	renderMenu(message: Message, setMenuOpen: (value: boolean) => void): ComponentChildren;
-	renderReply?(message: Message): ComponentChildren;
 	submitEdit?: (text: string, replaces: string) => Promise<void>;
 	canEdit?: (message: Message) => boolean;
 	submitReactions?: (reactions: string[], message: Message) => Promise<void>;
 }) {
-	const messages = props.messages;
+	const messages = props.msgCache.getMessages();
 
 	const listRef = useRef<HTMLDivElement>(null);
 	const listMainRef = useRef<HTMLDivElement>(null);
@@ -234,10 +247,9 @@ export default function MessageList(props: {
 		<div class={styles.messageListMain} ref={listMainRef}>
 			{messages.map((message, index) => {
 				return <MessageRow
-					messages={messages}
+					msgCache={props.msgCache}
 					index={index}
 					renderMenu={props.renderMenu}
-					renderReply={props.renderReply}
 					submitEdit={props.submitEdit}
 					canEdit={props.canEdit}
 					submitReactions={props.submitReactions}
@@ -249,22 +261,22 @@ export default function MessageList(props: {
 }
 
 function MessageRow(props: {
-	messages: Message[];
+	msgCache: MessageCache;
 	index: number;
 
 	renderMenu(message: Message, setMenuOpen: (value: boolean) => void): ComponentChildren;
-	renderReply?(message: Message): ComponentChildren;
 	submitEdit?: (text: string, replaces: string) => Promise<void>;
 	canEdit?: (message: Message) => boolean;
 	submitReactions?: (reactions: string[], message: Message) => Promise<void>;
 }) {
 	const index = props.index;
 
-	const message = props.messages[index];
+	const messages = props.msgCache.getMessages();
+	const message = messages[index];
 
 	let isMerged = false;
 	if(index > 0) {
-		const prevMessage = props.messages[index - 1];
+		const prevMessage = messages[index - 1];
 
 		if(
 			message.timestamp.getTime() - prevMessage.timestamp.getTime() < MESSAGE_MERGE_TIME &&
@@ -288,12 +300,12 @@ function MessageRow(props: {
 }
 
 function RealMessageRow(props: {
+	msgCache: MessageCache;
 	message: Message;
 	isMerged: boolean;
 
 	renderMenu(message: Message, setMenuOpen: (value: boolean) => void): ComponentChildren;
 
-	renderReply?(message: Message): ComponentChildren;
 	submitEdit?: (text: string, replaces: string) => Promise<void>;
 	canEdit?: (message: Message) => boolean;
 	submitReactions?: (reactions: string[], message: Message) => Promise<void>;
@@ -393,10 +405,19 @@ function RealMessageRow(props: {
 
 	const myReactions = myReactionsSig.value;
 
-	let replyContent = props.renderReply?.(message);
-	if(typeof replyContent === "undefined" || replyContent === null) {
-		if(message.replyingTo !== null) {
+	let replyContent;
+	if(message.replyingTo === null) {
+		replyContent = null;
+	}
+	else {
+		const target = props.msgCache.getMessage(message.replyingTo.id);
+		if(typeof target === "undefined") {
 			replyContent = <MessageContentView content={message.replyingTo.fallbackContent} />;
+		}
+		else {
+			replyContent = <blockquote class={styles.replyQuote}>
+				<MessageReplyQuoteContent message={target} />
+			</blockquote>;
 		}
 	}
 

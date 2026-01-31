@@ -28,7 +28,7 @@ export function useCreateMessageCache(container: MessageContainer) {
 	return msgCache;
 }
 
-class MessageCache {
+export class MessageCache {
 	private messages: Signal<Message[]> = signal([]);
 	private messageMap = new SignalMap<string, Message>();
 

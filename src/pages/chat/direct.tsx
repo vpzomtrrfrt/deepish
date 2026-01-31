@@ -10,13 +10,12 @@ import ConfirmTaskDialog from "../../components/ConfirmTaskDialog";
 import { DataNonDoneView } from "../../components/DataView";
 import Menu, { MenuItem } from "../../components/Menu";
 import MessageInput from "../../components/MessageInput";
-import MessageList, { LoadMoreTriggerer, MessageReplyQuoteContent } from "../../components/MessageList";
+import MessageList, { LoadMoreTriggerer } from "../../components/MessageList";
 import TypingIndicator from "../../components/TypingIndicator";
 import { Message, ResultSetInfo, useAccountSig, useConnectionContext } from "../../util/connection";
 import { msgActionDelete } from "../../util/langCommon";
 import { useCreateMessageCache } from "../../util/messageCache";
 import { getNickForCounterpart } from "../../util/profileUtil";
-import { themeVars } from "../../util/theme";
 import { LoadState } from "../../util/useData";
 import { StanzaIDType } from "../../util/xmpp/StanzaID";
 
@@ -36,19 +35,6 @@ const styles = {
 		"> h1": {
 			margin: 0,
 		},
-	}),
-	replyQuote: css({
-		margin: 0,
-		marginBlockEnd: ".5rem",
-
-		padding: ".25rem",
-
-		borderWidth: "1px",
-		borderStyle: "solid",
-		borderColor: themeVars.outline1,
-		borderRadius: ".5rem",
-
-		backgroundColor: themeVars.bg1,
 	}),
 };
 
@@ -174,18 +160,6 @@ function DirectChatPageInner(props: {counterpartJID: JID}) {
 		);
 	}, [$t, accountSig.value.jid, appCtx.showDialog, conn.retractMessageToCounterpart, props.counterpartJID]);
 
-	const renderReply = useCallback((message: Message) => {
-		if(message.replyingTo === null) return null;
-
-		// TODO react to changes
-		const target = msgCache.getMessage(message.replyingTo.id);
-		if(typeof target === "undefined") return null;
-
-		return <blockquote class={styles.replyQuote}>
-			<MessageReplyQuoteContent message={target} />
-		</blockquote>;
-	}, [msgCache]);
-
 	const renderMenu = useCallback((message: Message, setMenuOpen: (value: boolean) => void) => {
 		const items = [];
 
@@ -241,10 +215,9 @@ function DirectChatPageInner(props: {counterpartJID: JID}) {
 			<div>{props.counterpartJID.toString()}</div>
 		</div>
 		<MessageList
-			messages={messages}
+			msgCache={msgCache}
 			loaderContent={loaderContent}
 			renderMenu={renderMenu}
-			renderReply={renderReply}
 			submitEdit={submitEdit}
 			canEdit={canEdit}
 			submitReactions={submitReactions}
