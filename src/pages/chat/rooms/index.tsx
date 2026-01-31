@@ -17,7 +17,7 @@ import EditRoomDialog from "../../../components/EditRoomDialog";
 import For from "../../../components/For";
 import Menu, { MenuGroupLabel, MenuItem, MenuRadioGroup, MenuRadioItem } from "../../../components/Menu";
 import MessageInput from "../../../components/MessageInput";
-import MessageList, { LoadMoreTriggerer } from "../../../components/MessageList";
+import MessageList, { LoadMoreTriggerer, MessageReplyQuoteContent } from "../../../components/MessageList";
 import TaskDialog from "../../../components/TaskDialog";
 import TypingIndicator from "../../../components/TypingIndicator";
 import { Message, MessageEditEvent, messageEditIsAllowed, MessageEvent, MessageReactionsChangeEvent, MessageRemovalEvent, messageRemovalIsAllowed, NotificationLevel, ResultSetInfo, useAccountSig, useConnectionContext } from "../../../util/connection";
@@ -89,6 +89,19 @@ const styles = {
 	}),
 	messageInputArea: css({
 		marginInlineStart: "250px",
+	}),
+	replyQuote: css({
+		margin: 0,
+		marginBlockEnd: ".5rem",
+
+		padding: ".25rem",
+
+		borderWidth: "1px",
+		borderStyle: "solid",
+		borderColor: themeVars.outline1,
+		borderRadius: ".5rem",
+
+		backgroundColor: themeVars.bg1,
 	}),
 };
 
@@ -539,6 +552,17 @@ function ChatRoomPageInner(props: {roomJID: JID}) {
 		);
 	}, [$t, accountJID, appCtx.showDialog, conn.moderateMessageToRoom, props.roomJID]);
 
+	const renderReply = useCallback((message: Message) => {
+		if(message.replyingTo === null) return null;
+
+		const target = messagesData.messageMap.get(message.replyingTo.id.toString());
+		if(typeof target === "undefined") return null;
+
+		return <blockquote class={styles.replyQuote}>
+			<MessageReplyQuoteContent message={target} />
+		</blockquote>;
+	}, [messagesData.messageMap]);
+
 	const renderMenu = useCallback((message: Message, setMenuOpen: (value: boolean) => void) => {
 		const items = [];
 
@@ -673,6 +697,7 @@ function ChatRoomPageInner(props: {roomJID: JID}) {
 						<MessageList
 							messages={messagesData.messages}
 							loaderContent={loaderContent}
+							renderReply={renderReply}
 							renderMenu={renderMenu}
 							submitEdit={submitEdit}
 							canEdit={canEdit}

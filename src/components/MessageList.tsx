@@ -50,13 +50,14 @@ const styles = {
 			paddingBlockStart: 0,
 		},
 	}),
-	message: css({
+	messageCommon: css({
 		display: "flex",
 		gap: ".5rem",
 		paddingBlock: ".125rem",
 
 		position: "relative",
-
+	}),
+	messageRow: css({
 		"&:hover": {
 			backgroundColor: "rgba(127, 127, 127, 0.2)",
 
@@ -137,6 +138,7 @@ export default function MessageList(props: {
 	messages: Message[];
 	loaderContent: VNode;
 	renderMenu(message: Message, setMenuOpen: (value: boolean) => void): ComponentChildren;
+	renderReply?(message: Message): ComponentChildren;
 	submitEdit?: (text: string, replaces: string) => Promise<void>;
 	canEdit?: (message: Message) => boolean;
 	submitReactions?: (reactions: string[], message: Message) => Promise<void>;
@@ -234,6 +236,7 @@ export default function MessageList(props: {
 					messages={messages}
 					index={index}
 					renderMenu={props.renderMenu}
+					renderReply={props.renderReply}
 					submitEdit={props.submitEdit}
 					canEdit={props.canEdit}
 					submitReactions={props.submitReactions}
@@ -249,6 +252,7 @@ function MessageRow(props: {
 	index: number;
 
 	renderMenu(message: Message, setMenuOpen: (value: boolean) => void): ComponentChildren;
+	renderReply?(message: Message): ComponentChildren;
 	submitEdit?: (text: string, replaces: string) => Promise<void>;
 	canEdit?: (message: Message) => boolean;
 	submitReactions?: (reactions: string[], message: Message) => Promise<void>;
@@ -288,6 +292,7 @@ function RealMessageRow(props: {
 
 	renderMenu(message: Message, setMenuOpen: (value: boolean) => void): ComponentChildren;
 
+	renderReply?(message: Message): ComponentChildren;
 	submitEdit?: (text: string, replaces: string) => Promise<void>;
 	canEdit?: (message: Message) => boolean;
 	submitReactions?: (reactions: string[], message: Message) => Promise<void>;
@@ -387,8 +392,15 @@ function RealMessageRow(props: {
 
 	const myReactions = myReactionsSig.value;
 
+	let replyContent = props.renderReply?.(message);
+	if(typeof replyContent === "undefined" || replyContent === null) {
+		if(message.replyingTo !== null) {
+			replyContent = <MessageContentView content={message.replyingTo.fallbackContent} />;
+		}
+	}
+
 	return <div class={cx(styles.messageWrapper, props.isMerged && "merged")} data-key={"message-" + props.message.localID}>
-		<div class={styles.message}>
+		<div class={cx(styles.messageCommon, styles.messageRow)}>
 			<div class={styles.avatarSegment}>
 				{!props.isMerged &&
 					<Avatar size="md" jid={fromSig} />
@@ -405,6 +417,7 @@ function RealMessageRow(props: {
 					</div>
 				}
 				<div>
+					{replyContent}
 					{
 						editing ?
 							<MessageEditArea message={message} submitEdit={submitEdit} cancel={cancelEdit} /> :
@@ -486,7 +499,7 @@ export function LoadMoreTriggerer(props: {loadMore: () => void}) {
 
 const MESSAGE_CONTENT_TYPE_PRIORITY: Array<MessageContent["type"]> = ["plain", "0393", "markdown", "xhtml"];
 
-function MessageContentView(props: {content: MessageContent[] | MessageContent}) {
+export function MessageContentView(props: {content: MessageContent[] | MessageContent}) {
 	const content = useMemo(() => {
 		if(Array.isArray(props.content)) {
 			let best = props.content[0];
@@ -727,5 +740,46 @@ function ReactionsArea(props: {
 				</WithTooltip>;
 			})
 		}
+	</div>;
+}
+
+export function MessageReplyQuoteContent(props: {message: Message}) {
+	const message = props.message;
+	const messageSig = useLiveSignal(message);
+
+	const { $t } = useIntl();
+
+	const accountSig = useAccountSig();
+
+	const fromSig = useComputed(() => messageSig.value.room === null ? messageSig.value.from.bare() : messageSig.value.from);
+	const counterpartSig = useComputed(() => accountSig.value.counterparts.getSignal(fromSig.value.toString())).value;
+	const nickSig = useComputed(() => maybeGetNickForCounterpart(fromSig.value, counterpartSig.value));
+
+	return <div class={styles.messageCommon}>
+		<div class={styles.avatarSegment}>
+			<Avatar size="md" jid={fromSig} />
+		</div>
+		<div class={styles.messageContentArea}>
+			<div>
+				<span>{nickSig}</span>
+				<span class={styles.messageTimestamp}>
+					{message.timestamp.toLocaleString()}
+					{message.editedAt !== null && <>{" "}{$t({defaultMessage: "(edited)"})}</>}
+				</span>
+			</div>
+			<div>
+				{
+					message.removal === null ?
+						<MessageContentView content={message.content} /> :
+						(
+							message.removal.type === "moderate" ?
+								<em>
+									{$t({defaultMessage: "This message has been removed by a moderator"})}
+								</em> :
+								<em>{$t({defaultMessage: "This message has been deleted"})}</em>
+						)
+				}
+			</div>
+		</div>
 	</div>;
 }

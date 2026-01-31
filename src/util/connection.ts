@@ -156,6 +156,7 @@ export interface Message {
 	ids: StanzaID[];
 	localID: string;
 	timestamp: Date;
+	replyingTo: null | {from: JID; id: StanzaID; fallbackContent: MessageContent[]};
 
 	removal: null | MessageRemoval;
 	editedAt: Date | null;
@@ -1172,7 +1173,26 @@ function createBaseConnection(
 					}
 				}
 
-				const content = getContentFromMessageElement(elem);
+				const {content, replyFallback} = getContentFromMessageElementAdv(elem);
+
+				let replyingTo: Message["replyingTo"] = null;
+				const replyElem = elem.getChild("reply", "urn:xmpp:reply:0");
+				if(typeof replyElem !== "undefined") {
+					const sender = replyElem.getAttr("to");
+					const targetID = replyElem.getAttr("id");
+
+					if(typeof sender === "string" && typeof targetID === "string") {
+						replyingTo = {
+							from: parseJID(sender),
+							id: new StanzaID(
+								StanzaIDType.Stanza,
+								from.bare(),
+								targetID,
+							),
+							fallbackContent: replyFallback,
+						};
+					}
+				}
 
 				if(content.length > 0 && !ignore) {
 					const ids = [];
@@ -1210,6 +1230,7 @@ function createBaseConnection(
 								ids,
 								localID: ids.length > 0 ? ids[0].toString() : xid(),
 								timestamp,
+								replyingTo,
 
 								removal: null,
 								editedAt: null,
@@ -1377,7 +1398,28 @@ function createBaseConnection(
 				}
 			}
 
-			const content = getContentFromMessageElement(elem);
+			const {content, replyFallback} = getContentFromMessageElementAdv(elem);
+
+			let replyingTo: Message["replyingTo"] = null;
+			const replyElem = elem.getChild("reply", "urn:xmpp:reply:0");
+			if(typeof replyElem !== "undefined") {
+				const sender = replyElem.getAttr("to");
+				const targetID = replyElem.getAttr("id");
+
+				if(typeof sender === "string" && typeof targetID === "string") {
+					const parsedSender = parseJID(sender);
+
+					replyingTo = {
+						from: parsedSender,
+						id: new StanzaID(
+							StanzaIDType.Element,
+							parsedSender.bare(),
+							targetID,
+						),
+						fallbackContent: replyFallback,
+					};
+				}
+			}
 
 			if(content.length > 0 && typeof from !== "undefined" && typeof to !== "undefined" && !ignore) {
 				const replaceElem = elem.getChild("replace", "urn:xmpp:message-correct:0");
@@ -1453,6 +1495,7 @@ function createBaseConnection(
 							ids,
 							localID: ids.length > 0 ? ids[0].toString() : xid(),
 							timestamp,
+							replyingTo,
 
 							removal: null,
 							editedAt: null,
@@ -2291,6 +2334,7 @@ function createBaseConnection(
 					],
 					localID,
 					timestamp: new Date(),
+					replyingTo: null,
 
 					removal: null,
 					editedAt: null,
@@ -3576,7 +3620,7 @@ function convertMarkdownForSend(src: string): {content: MessageContent[]; elemen
 	}
 }
 
-function getContentFromMessageElement(elem: Element): MessageContent[] {
+function getContentFromMessageElementAdv(elem: Element): {content: MessageContent[]; replyFallback: MessageContent[]} {
 	const content: MessageContent[] = [];
 
 	const htmlElem = elem.getChild("html", "http://jabber.org/protocol/xhtml-im");
@@ -3592,11 +3636,57 @@ function getContentFromMessageElement(elem: Element): MessageContent[] {
 
 	const contentElems = elem.getChildren("content", "urn:xmpp:content");
 
-	const body = elem.getChildText("body");
+	const replyFallback: MessageContent[] = [];
+
+	let body = elem.getChildText("body");
 	if(body !== null) {
 		const unstyledElem = elem.getChild("unstyled", "urn:xmpp:styling:0");
 
 		const typeHint = contentElems.find(x => x.children.length === 0);
+
+		const skippedSpans: Array<{start: number; end: number}> = [];
+
+		// XEP-0461 seems to use the wrong namespace, so check both
+		[
+			...elem.getChildren("fallback", "urn:xmpp:feature-fallback:0"),
+			...elem.getChildren("fallback", "urn:xmpp:fallback:0"),
+		].forEach(fallbackElem => {
+			const skipElem = fallbackElem.getChild("body");
+			const start = Number(skipElem?.getAttr("start"));
+			const end = Number(skipElem?.getAttr("end"));
+
+			if(!isNaN(start) && !isNaN(end) && start < end && start >= 0 && end <= body!.length) {
+				if(fallbackElem.getAttr("for") === "urn:xmpp:reply:0" && start === 0) {
+					skippedSpans.push({start, end});
+
+					replyFallback.push({
+						type: typeHint?.getAttr("type") === "text/markdown" ?
+							"markdown" :
+							(typeof unstyledElem === "undefined" ? "0393" : "plain"),
+						content: body!.substring(start, end),
+					});
+				}
+			}
+		});
+
+		if(skippedSpans.length > 0) {
+			const srcBody = body;
+			body = "";
+
+			skippedSpans.sort((a, b) => a.start - b.start);
+
+			let bi = 0;
+			let si = 0;
+			while(si < skippedSpans.length) {
+				if(skippedSpans[si].start > bi) {
+					body += srcBody.substring(bi, skippedSpans[si].start);
+				}
+
+				bi = skippedSpans[si].end;
+				si++;
+			}
+			if(bi < srcBody.length) body += srcBody.substring(bi);
+		}
 
 		content.push({
 			type: typeHint?.getAttr("type") === "text/markdown" ?
@@ -3618,7 +3708,7 @@ function getContentFromMessageElement(elem: Element): MessageContent[] {
 		}
 	});
 
-	return content;
+	return {content, replyFallback};
 }
 
 function parseDataFormsBoolean(src: string) {
