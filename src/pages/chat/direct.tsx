@@ -10,7 +10,7 @@ import ConfirmTaskDialog from "../../components/ConfirmTaskDialog";
 import { DataNonDoneView } from "../../components/DataView";
 import Menu, { MenuItem } from "../../components/Menu";
 import MessageInput from "../../components/MessageInput";
-import MessageList, { LoadMoreTriggerer } from "../../components/MessageList";
+import MessageList, { LoadMoreTriggerer, MessageSourceDialog } from "../../components/MessageList";
 import TypingIndicator from "../../components/TypingIndicator";
 import { Message, ResultSetInfo, useAccountSig, useConnectionContext } from "../../util/connection";
 import { msgActionDelete } from "../../util/langCommon";
@@ -160,6 +160,10 @@ function DirectChatPageInner(props: {counterpartJID: JID}) {
 		);
 	}, [$t, accountSig.value.jid, appCtx.showDialog, conn.retractMessageToCounterpart, props.counterpartJID]);
 
+	const showSourceDialog = useCallback((message: Message) => {
+		appCtx.showDialog.call(undefined, <MessageSourceDialog message={message} />);
+	}, [appCtx.showDialog]);
+
 	const renderMenu = useCallback((message: Message, setMenuOpen: (value: boolean) => void) => {
 		const items = [];
 
@@ -174,11 +178,17 @@ function DirectChatPageInner(props: {counterpartJID: JID}) {
 			}
 		}
 
+		items.push(
+			<MenuItem onClick={showSourceDialog.bind(undefined, message)}>
+				{$t({defaultMessage: "View Source"})}
+			</MenuItem>,
+		);
+
 		if(items.length < 1) return null;
 		else {
 			return <Menu onOpenChange={setMenuOpen}>{items}</Menu>;
 		}
-	}, [$t, accountSig.value.jid, retractMessage]);
+	}, [$t, accountSig.value.jid, retractMessage, showSourceDialog]);
 
 	const canEdit = useCallback((message: Message) => {
 		if(message.from.bare().equals(accountSig.value.jid)) {

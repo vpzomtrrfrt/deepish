@@ -157,6 +157,7 @@ export interface Message {
 	localID: string;
 	timestamp: Date;
 	replyingTo: null | {from: JID; id: StanzaID; fallbackContent: MessageContent[]};
+	raw: Element;
 
 	removal: null | MessageRemoval;
 	editedAt: Date | null;
@@ -1231,6 +1232,7 @@ function createBaseConnection(
 								localID: ids.length > 0 ? ids[0].toString() : xid(),
 								timestamp,
 								replyingTo,
+								raw: elem,
 
 								removal: null,
 								editedAt: null,
@@ -1496,6 +1498,7 @@ function createBaseConnection(
 							localID: ids.length > 0 ? ids[0].toString() : xid(),
 							timestamp,
 							replyingTo,
+							raw: elem,
 
 							removal: null,
 							editedAt: null,
@@ -2304,21 +2307,21 @@ function createBaseConnection(
 
 		const contentResult = convertMarkdownForSend(message.body);
 
-		await account.client.send(
-			xml(
-				"message",
-				{id: localID, to: targetJID.toString(), type: "chat"},
-				...contentResult.elements,
-				...(
-					typeof options.replaces === "undefined" ?
-						[] :
-						[xml(
-							"replace",
-							{xmlns: "urn:xmpp:message-correct:0", id: options.replaces},
-						)]
-				),
+		const elem = xml(
+			"message",
+			{id: localID, to: targetJID.toString(), type: "chat"},
+			...contentResult.elements,
+			...(
+				typeof options.replaces === "undefined" ?
+					[] :
+					[xml(
+						"replace",
+						{xmlns: "urn:xmpp:message-correct:0", id: options.replaces},
+					)]
 			),
 		);
+
+		await account.client.send(elem);
 
 		if(typeof options.replaces === "undefined") {
 			handleMessage({
@@ -2335,6 +2338,7 @@ function createBaseConnection(
 					localID,
 					timestamp: new Date(),
 					replyingTo: null,
+					raw: elem,
 
 					removal: null,
 					editedAt: null,

@@ -16,7 +16,7 @@ import EditRoomDialog from "../../../components/EditRoomDialog";
 import For from "../../../components/For";
 import Menu, { MenuGroupLabel, MenuItem, MenuRadioGroup, MenuRadioItem } from "../../../components/Menu";
 import MessageInput from "../../../components/MessageInput";
-import MessageList, { LoadMoreTriggerer } from "../../../components/MessageList";
+import MessageList, { LoadMoreTriggerer, MessageSourceDialog } from "../../../components/MessageList";
 import TaskDialog from "../../../components/TaskDialog";
 import TypingIndicator from "../../../components/TypingIndicator";
 import { Message, messageEditIsAllowed, messageRemovalIsAllowed, NotificationLevel, ResultSetInfo, useAccountSig, useConnectionContext } from "../../../util/connection";
@@ -292,6 +292,10 @@ function ChatRoomPageInner(props: {roomJID: JID}) {
 		);
 	}, [$t, accountJID, appCtx.showDialog, conn.moderateMessageToRoom, props.roomJID]);
 
+	const showSourceDialog = useCallback((message: Message) => {
+		appCtx.showDialog.call(undefined, <MessageSourceDialog message={message} />);
+	}, [appCtx.showDialog]);
+
 	const renderMenu = useCallback((message: Message, setMenuOpen: (value: boolean) => void) => {
 		const items = [];
 
@@ -337,11 +341,17 @@ function ChatRoomPageInner(props: {roomJID: JID}) {
 			}
 		}
 
+		items.push(
+			<MenuItem onClick={showSourceDialog.bind(undefined, message)}>
+				{$t({defaultMessage: "View Source"})}
+			</MenuItem>,
+		);
+
 		if(items.length < 1) return null;
 		else {
 			return <Menu onOpenChange={setMenuOpen}>{items}</Menu>;
 		}
-	}, [$t, moderateMessage, retractMessage, room, selfCounterpartInRoom]);
+	}, [$t, moderateMessage, retractMessage, room, selfCounterpartInRoom, showSourceDialog]);
 
 	const canEdit = useCallback((message: Message) => {
 		if(canSend !== true) return false;

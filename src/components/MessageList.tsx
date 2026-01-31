@@ -6,6 +6,7 @@ import { JID, parse as parseJID } from "@xmpp/jid";
 import * as xml from "@xmpp/xml";
 import { EmojiClickEvent } from "emoji-picker-element/shared";
 import inlineStyleParser from "inline-style-parser";
+import { stringify as stringifyXML } from "ltx";
 import { ComponentChildren, h, JSX, VNode } from "preact";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { FormattedList, useIntl } from "react-intl";
@@ -19,7 +20,9 @@ import { themeVars } from "../util/theme";
 import { StanzaIDType } from "../util/xmpp/StanzaID";
 import { parse0393, StylingBlock0393, StylingSpan0393 } from "../util/xmpp/styling";
 import Avatar from "./Avatar";
+import Block from "./Block";
 import { ErrorAlert } from "./DataView";
+import Dialog from "./Dialog";
 import EmojiPicker from "./EmojiPicker";
 import Icon from "./Icon";
 import IconButton from "./IconButton";
@@ -804,4 +807,18 @@ export function MessageReplyQuoteContent(props: {message: Message}) {
 			</div>
 		</div>
 	</div>;
+}
+
+export function MessageSourceDialog(props: {message: Message}) {
+	const content = useMemo(() => {
+		return stringifyXML(props.message.raw, 2);
+	}, [props.message.raw]);
+
+	return <Dialog size="md">
+		<Block>
+			<pre style={{overflowX: "auto"}}>
+				<code>{content}</code>
+			</pre>
+		</Block>
+	</Dialog>;
 }

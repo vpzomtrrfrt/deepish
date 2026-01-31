@@ -8,7 +8,7 @@ import unsignal from "../util/unsignal";
 import Icon from "./Icon";
 import IconButton from "./IconButton";
 
-export type DialogSize = "sm";
+export type DialogSize = "sm" | "md";
 
 export interface DialogContext {
 	close(): void;
@@ -42,6 +42,7 @@ const styles = {
 
 const sizeStyles: Record<DialogSize, string> = {
 	sm: css({width: "24rem"}),
+	md: css({width: "36rem"}),
 };
 
 export default function Dialog(props: {children: ComponentChildren; size?: DialogSize}) {
