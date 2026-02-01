@@ -77,6 +77,9 @@ function renderMarkdownToXHTMLInner(src: Token[]): Element {
 			else if(token.type === "text") {
 				stack[stack.length - 1].children.push(token.content);
 			}
+			else if(token.type === "fence") {
+				stack[stack.length - 1].children.push(xml("pre", {}, xml("code", {}, token.content)));
+			}
 			else {
 				if(token.tag === "") {
 					/* v8 ignore next -- @preserve */

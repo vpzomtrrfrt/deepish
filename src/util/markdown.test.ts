@@ -119,4 +119,22 @@ describe("renderMarkdownToXHTML", () => {
 			),
 		);
 	});
+
+	test("code", () => {
+		expect(renderMarkdownToXHTML(parseMarkdown("```\ncode\n```"))).toEqual(
+			xml(
+				"body",
+				"http://www.w3.org/1999/xhtml",
+				xml(
+					"pre",
+					{},
+					xml(
+						"code",
+						{},
+						"code\n",
+					),
+				),
+			),
+		);
+	});
 });
