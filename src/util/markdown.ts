@@ -69,16 +69,19 @@ function renderMarkdownToXHTMLInner(src: Token[]): Element {
 			stack[stack.length - 1].children.push(child);
 		}
 		else {
-			if(token.type === "inline") {
+			if(token.type === "code_inline") {
+				stack[stack.length - 1].children.push(xml("code", {}, token.content));
+			}
+			else if(token.type === "fence") {
+				stack[stack.length - 1].children.push(xml("pre", {}, xml("code", {}, token.content)));
+			}
+			else if(token.type === "inline") {
 				if(token.children !== null) {
 					stack[stack.length - 1].children.push(...renderMarkdownToXHTMLInner(token.children).children);
 				}
 			}
 			else if(token.type === "text") {
 				stack[stack.length - 1].children.push(token.content);
-			}
-			else if(token.type === "fence") {
-				stack[stack.length - 1].children.push(xml("pre", {}, xml("code", {}, token.content)));
 			}
 			else {
 				if(token.tag === "") {

@@ -90,6 +90,20 @@ describe("renderMarkdownToXHTML", () => {
 		);
 	});
 
+	test("inline code", () => {
+		expect(renderMarkdownToXHTML(parseMarkdown("`var`"))).toEqual(
+			xml(
+				"body",
+				"http://www.w3.org/1999/xhtml",
+				xml(
+					"code",
+					{},
+					"var",
+				),
+			),
+		);
+	});
+
 	test("newline", () => {
 		expect(renderMarkdownToXHTML(parseMarkdown("a\nb"))).toEqual(
 			xml(
