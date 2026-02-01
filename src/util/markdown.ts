@@ -119,7 +119,7 @@ function renderMarkdownTo0393Inner(src: Token[]) {
 
 	for(let i = 0; i < src.length; i++) {
 		const token = src[i];
-		if(token.type === "paragraph_open") {
+		if(token.type === "paragraph_open" || token.type === "list_item_close") {
 			// do nothing
 		}
 		else if(token.type === "blockquote_open") {
