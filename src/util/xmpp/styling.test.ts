@@ -47,3 +47,34 @@ test("pre block with ignored info", () => {
 		text: "(println 'Hello, world!')",
 	}]);
 });
+
+test("pre block terminated by root", () => {
+	expect(
+		parse0393("```\ncontent"),
+	).toEqual([{
+		type: "pre",
+		text: "content",
+	}]);
+});
+
+test("pre block terminated by parent", () => {
+	expect(
+		parse0393("> ```\n> content\n\noutside"),
+	).toEqual([
+		{
+			type: "quote",
+			children: [{
+				type: "pre",
+				text: "content\n",
+			}],
+		},
+		{
+			type: "plain",
+			children: [],
+		},
+		{
+			type: "plain",
+			children: [{type: "plain", text: "outside"}],
+		},
+	]);
+});

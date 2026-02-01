@@ -39,17 +39,38 @@ export function parse0393(src: string): StylingBlock0393[] {
 
 	while(index < src.length) {
 		if(src.startsWith("```", index)) {
-			const startLineEnd = src.indexOf("\n", index + 3);
-			const end = startLineEnd === -1 ? -1 : src.indexOf("\n```", startLineEnd);
-			if(end !== -1 && (src.length === end + 4 || src[end + 4] === "\n")) {
-				blocks.push({
-					type: "pre",
-					text: src.substring(startLineEnd + 1, end),
-				});
+			let startLineEnd = src.indexOf("\n", index + 3);
+			let end;
 
-				index = end + 5;
-				continue;
+			if(startLineEnd === -1) {
+				startLineEnd = src.length;
+				end = src.length;
 			}
+			else {
+				let searchStart = startLineEnd;
+
+				while(true) {
+					end = src.indexOf("\n```", searchStart);
+					if(end === -1) {
+						end = src.length;
+						break;
+					}
+					else if(src.length === end + 4 || src[end + 4] === "\n") {
+						break;
+					}
+					else {
+						searchStart = end + 4;
+					}
+				}
+			}
+
+			blocks.push({
+				type: "pre",
+				text: src.substring(startLineEnd + 1, end),
+			});
+
+			index = end + 5;
+			continue;
 		}
 
 		if(src.startsWith(">", index)) {
