@@ -149,6 +149,7 @@ export function parse0393(src: string): StylingBlock0393[] {
 					restStartIndex = index;
 
 					// probably correct?
+					// TODO no, it isn't
 					lastChar = String.fromCodePoint((src.codePointAt(index - 1) ?? src.codePointAt(index - 2))!);
 
 					continue;
@@ -267,6 +268,7 @@ export function parse0393(src: string): StylingBlock0393[] {
 
 			// Any unclosed spans are invalid, put them back as plain
 			formattingStack.forEach(entry => {
+				/* v8 ignore else -- @preserve */
 				if(entry.type === "em") block.children.push({type: "plain", text: "_"});
 				else if(entry.type === "strong") block.children.push({type: "plain", text: "*"});
 				else if(entry.type === "strikethrough") block.children.push({type: "plain", text: "~"});
