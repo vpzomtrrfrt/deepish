@@ -130,6 +130,7 @@ function renderMarkdownTo0393Inner(src: Token[]) {
 				}
 			}
 
+			/* v8 ignore else -- @preserve */
 			if(i < src.length) {
 				const content = renderMarkdownTo0393Inner(src.slice(startIndex + 1, i - 1)).trimEnd();
 				result += "> " + content.replaceAll("\n", "\n> ") + "\n";
@@ -155,6 +156,7 @@ function renderMarkdownTo0393Inner(src: Token[]) {
 			if(token.children !== null) result += renderMarkdownTo0393Inner(token.children);
 		}
 		else if(token.type === "list_item_open") {
+			/* v8 ignore if -- @preserve */
 			if(listStack.length < 1) {
 				console.warn("list item outside of list");
 				continue;
@@ -168,6 +170,7 @@ function renderMarkdownTo0393Inner(src: Token[]) {
 				result += token.info + ". ";
 			}
 			else {
+				/* v8 ignore next -- @preserve */
 				const _: never = list.type;
 			}
 		}
