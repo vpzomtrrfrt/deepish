@@ -239,6 +239,8 @@ export function parse0393(src: string): StylingBlock0393[] {
 					if(lastChar === null || IS_WHITESPACE_CHAR.test(lastChar) || parentEntry?.index === index - 1) {
 						// pre can't have styling inside, so just look for end
 
+						// TODO handle whitespace rules here too
+
 						const endIndex = src.indexOf("`", index + 1);
 						if(endIndex !== -1 && endIndex < lineEnd) {
 							if(restStartIndex < index) {
