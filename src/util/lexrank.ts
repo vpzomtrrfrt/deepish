@@ -13,10 +13,10 @@ export function compareRanks(a: string, b: string) {
 
 		if(aResult.done === true) {
 			if(bResult.done === true) return 0;
-			else return 1;
+			else return -1;
 		}
 		else if(bResult.done === true) {
-			return -1;
+			return 1;
 		}
 		else {
 			const result = aResult.value.codePointAt(0)! - bResult.value.codePointAt(0)!;
