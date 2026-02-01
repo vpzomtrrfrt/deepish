@@ -79,6 +79,7 @@ function renderMarkdownToXHTMLInner(src: Token[]): Element {
 			}
 			else {
 				if(token.tag === "") {
+					/* v8 ignore next -- @preserve */
 					console.warn("Unknown token type", token);
 				}
 				else {
