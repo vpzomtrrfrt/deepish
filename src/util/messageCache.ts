@@ -41,7 +41,7 @@ export class MessageCache {
 		>
 	>;
 
-	public constructor(private container: MessageContainer, private conn: ReadonlySignal<ConnectionContext>) {
+	public constructor(public readonly container: MessageContainer, private conn: ReadonlySignal<ConnectionContext>) {
 		this.conn.value.addEventListener("message", this.onMessage);
 		this.conn.value.addEventListener("messageRemove", this.onMessageRemove);
 		this.conn.value.addEventListener("messageEdit", this.onMessageEdit);

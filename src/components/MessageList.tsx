@@ -12,7 +12,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { FormattedList, useIntl } from "react-intl";
 import useLatestCallback from "use-latest-callback";
 
-import { Message, MessageContent, useAccountSig } from "../util/connection";
+import { Message, MessageContent, Room, useAccountSig } from "../util/connection";
 import { parseMarkdown, renderMarkdownToXHTML } from "../util/markdown";
 import { MessageCache } from "../util/messageCache";
 import { maybeGetNickForCounterpart } from "../util/profileUtil";
@@ -69,6 +69,9 @@ const styles = {
 				display: "flex",
 			},
 		},
+	}),
+	pendingMessage: css({
+		opacity: 0.5,
 	}),
 	messageContentArea: css({
 		flexGrow: 1,
@@ -155,11 +158,15 @@ const styles = {
 export default function MessageList(props: {
 	msgCache: MessageCache;
 	loaderContent: VNode;
+	pendingMessages?: Array<Pick<Message, "localID" | "content" | "timestamp">>;
+
 	renderMenu(message: Message, setMenuOpen: (value: boolean) => void): ComponentChildren;
 	submitEdit?: (text: string, replaces: string) => Promise<void>;
 	canEdit?: (message: Message) => boolean;
 	submitReactions?: (reactions: string[], message: Message) => Promise<void>;
 }) {
+	const accountSig = useAccountSig();
+
 	const messages = props.msgCache.getMessages();
 
 	const listRef = useRef<HTMLDivElement>(null);
@@ -244,6 +251,35 @@ export default function MessageList(props: {
 		}
 	}, []);
 
+	const accountJIDSig = useComputed(() => accountSig.value.jid);
+
+	const roomSig = useComputed((): {value: Room | undefined} => {
+		if(props.msgCache.container.type === "room") {
+			return accountSig.value.rooms.getSignal(props.msgCache.container.jid.toString());
+		}
+		else {
+			return {value: undefined};
+		}
+	}).value;
+
+	const selfJIDInRoomSig = useComputed(() => {
+		const room = roomSig.value;
+		if(typeof room === "undefined") return undefined;
+
+		return new JID(room.jid.local, room.jid.domain, room.nick ?? accountJIDSig.value.local);
+	});
+
+	const selfJIDHereSig = props.msgCache.container.type === "room" ? selfJIDInRoomSig : accountJIDSig;
+	const counterpartSig = useComputed(() => {
+		if(typeof selfJIDHereSig.value === "undefined") return {value: undefined};
+		return accountSig.value.counterparts.getSignal(selfJIDHereSig.value.toString());
+	}).value;
+	const nickSig = useComputed(() => {
+		if(typeof selfJIDHereSig.value === "undefined") return accountJIDSig.value.local;
+
+		return maybeGetNickForCounterpart(selfJIDHereSig.value, counterpartSig.value);
+	});
+
 	return <div class={styles.messageList} ref={listRef} onScroll={onScroll}>
 		<div style={{margin: "auto"}} />
 		{props.loaderContent}
@@ -259,6 +295,55 @@ export default function MessageList(props: {
 				/>;
 			})}
 		</div>
+		{props.pendingMessages?.map((message, index) => {
+			let isMerged;
+			if(index === 0) {
+				const prevMessage = messages[messages.length - 1];
+
+				if(message.timestamp.getTime() - prevMessage.timestamp.getTime() < MESSAGE_MERGE_TIME) {
+					if(props.msgCache.container.type === "direct") {
+						if(prevMessage.from.bare().equals(accountJIDSig.value)) {
+							isMerged = true;
+						}
+					}
+					else if(props.msgCache.container.type === "room") {
+						if(typeof selfJIDInRoomSig.value !== "undefined" && prevMessage.from.equals(selfJIDInRoomSig.value)) {
+							isMerged = true;
+						}
+					}
+					else {
+						const _: never = props.msgCache.container;
+						isMerged = false;
+					}
+				}
+			}
+			else {
+				isMerged = true;
+			}
+
+			return <div class={cx(styles.messageWrapper, isMerged && "merged")} key={message.localID}>
+				<div class={cx(styles.messageCommon, styles.messageRow, styles.pendingMessage)}>
+					<div class={styles.avatarSegment}>
+						{!isMerged && typeof selfJIDHereSig.value !== "undefined" &&
+							<Avatar size="md" jid={selfJIDHereSig.value} />
+						}
+					</div>
+					<div class={styles.messageContentArea}>
+						{!isMerged &&
+							<div>
+								<span>{nickSig}</span>
+								<span class={styles.messageTimestamp}>
+									{message.timestamp.toLocaleString()}
+								</span>
+							</div>
+						}
+						<div>
+							<MessageContentView content={message.content} />
+						</div>
+					</div>
+				</div>
+			</div>
+		})}
 		<div class={styles.typingIndicatorPlaceholder} />
 	</div>;
 }

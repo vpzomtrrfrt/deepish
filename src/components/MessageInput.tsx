@@ -53,7 +53,7 @@ const styles = {
 const emojiDatabase = new EmojiDatabase({dataSource: emojiDataSource});
 
 export default function MessageInput(props: {
-	submitMessage: (text: string) => Promise<void>;
+	submitMessage: (text: string) => (Promise<void> | void);
 	autofocus: boolean;
 
 	initValue?: string;

@@ -1,5 +1,6 @@
 import { css } from "@emotion/css";
 import { useComputed } from "@preact/signals";
+import xid from "@xmpp/id";
 import { JID, parse as parseJID } from "@xmpp/jid";
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { Fragment } from "preact/jsx-runtime";
@@ -172,8 +173,28 @@ function ChatRoomPageInner(props: {roomJID: JID}) {
 		}
 	}, [accountJID, conn.markCounterpartAsRead, counterpart, messages, pageState]);
 
-	const submitMessage = useLatestCallback(async (newMessage: string, options?: {replaces?: string}) => {
-		await conn.sendMessageToRoom(accountJID, room!.jid, {body: newMessage}, options);
+	const [pendingMessages, setPendingMessages] = useState<Array<
+		Pick<Message, "content" | "timestamp" | "localID">
+	>>([]);
+
+	const submitMessage = useLatestCallback((newMessage: string, options?: {replaces?: string}) => {
+		const tmpID = xid();
+
+		setPendingMessages(current => {
+			return [
+				...current,
+				{localID: tmpID, timestamp: new Date(), content: [{type: "markdown", content: newMessage}]},
+			];
+		});
+
+		(async () => {
+			try {
+				await conn.sendMessageToRoom(accountJID, room!.jid, {body: newMessage}, options);
+			}
+			finally {
+				setPendingMessages(current => current.filter(x => x.localID !== tmpID));
+			}
+		})();
 	});
 
 	const submitEdit = useLatestCallback(async (newMessage: string, replaces: string) => {
@@ -435,6 +456,7 @@ function ChatRoomPageInner(props: {roomJID: JID}) {
 					<>
 						<MessageList
 							msgCache={msgCache}
+							pendingMessages={pendingMessages}
 							loaderContent={loaderContent}
 							renderMenu={renderMenu}
 							submitEdit={submitEdit}
