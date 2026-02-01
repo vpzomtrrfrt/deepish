@@ -1,0 +1,12 @@
+stages:
+  - test
+
+default:
+  image: alpine:3.23
+
+test:
+  stage: test
+  script:
+    - apk add nodejs npm
+    - npm install
+    - npm run test
