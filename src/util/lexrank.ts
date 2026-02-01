@@ -60,7 +60,7 @@ export function genRankBetween(a: string | null, b: string | null): string {
 		}
 	}
 	else if(b === null) {
-		if(compareRanks(a, DEFAULT_RANK) > 0) {
+		if(compareRanks(a, DEFAULT_RANK) < 0) {
 			return genRankBetween(a, DEFAULT_RANK);
 		}
 		else if(compareRanks(a, MAX_NORMAL_RANK_CHAR) < 0) {
@@ -98,6 +98,7 @@ export function genRankBetween(a: string | null, b: string | null): string {
 
 		if(aResult.done === true) {
 			if(bResult.done === true) {
+				/* v8 ignore next -- @preserve */
 				throw new Error("somehow got identical values after check");
 			}
 			else {
@@ -111,8 +112,6 @@ export function genRankBetween(a: string | null, b: string | null): string {
 						Math.floor((bResult.value.codePointAt(0)! + MIN_NORMAL_RANK_CHAR.codePointAt(0)!) / 2)
 					);
 				}
-
-				len += bResult.value!.length;
 			}
 		}
 		else if(bResult.done === true) {
