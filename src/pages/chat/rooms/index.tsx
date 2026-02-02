@@ -173,6 +173,16 @@ function ChatRoomPageInner(props: {roomJID: JID}) {
 		}
 	}, [accountJID, conn.markCounterpartAsRead, counterpart, messages, pageState]);
 
+	const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+
+	const inputRef = useRef<HTMLTextAreaElement>(null);
+
+	const startReply = useLatestCallback((message: Message) => {
+		setReplyingTo(message);
+
+		inputRef.current!.focus();
+	});
+
 	const [pendingMessages, setPendingMessages] = useState<Array<
 		Pick<Message, "content" | "timestamp" | "localID">
 	>>([]);
@@ -189,12 +199,19 @@ function ChatRoomPageInner(props: {roomJID: JID}) {
 
 		(async () => {
 			try {
-				await conn.sendMessageToRoom(accountJID, room!.jid, {body: newMessage}, options);
+				await conn.sendMessageToRoom(
+					accountJID,
+					room!.jid,
+					{body: newMessage},
+					{replyingTo: replyingTo ?? undefined, ...options},
+				);
 			}
 			finally {
 				setPendingMessages(current => current.filter(x => x.localID !== tmpID));
 			}
 		})();
+
+		setReplyingTo(null);
 	});
 
 	const submitEdit = useLatestCallback(async (newMessage: string, replaces: string) => {
@@ -462,6 +479,7 @@ function ChatRoomPageInner(props: {roomJID: JID}) {
 							submitEdit={submitEdit}
 							canEdit={canEdit}
 							submitReactions={submitReactions}
+							startReply={startReply}
 						/>
 						<div class={styles.messageInputArea}>
 							<TypingIndicator usersTyping={usersTypingSig} inRoom={true} />
@@ -478,6 +496,7 @@ function ChatRoomPageInner(props: {roomJID: JID}) {
 												submitMessage={submitMessage}
 												autofocus
 												onChangeComposing={onChangeComposing}
+												ref={inputRef}
 											/> :
 											<p>
 												{$t({

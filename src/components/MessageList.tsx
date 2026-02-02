@@ -1,5 +1,5 @@
 import { css, cx } from "@emotion/css";
-import { mdiEmoticonPlus, mdiPencil } from "@mdi/js";
+import { mdiEmoticonPlus, mdiPencil, mdiReply } from "@mdi/js";
 import { useComputed } from "@preact/signals";
 import { useLiveSignal } from "@preact/signals/utils";
 import { JID, parse as parseJID } from "@xmpp/jid";
@@ -161,6 +161,7 @@ export default function MessageList(props: {
 	pendingMessages?: Array<Pick<Message, "localID" | "content" | "timestamp">>;
 
 	renderMenu(message: Message, setMenuOpen: (value: boolean) => void): ComponentChildren;
+	startReply?: (message: Message) => void;
 	submitEdit?: (text: string, replaces: string) => Promise<void>;
 	canEdit?: (message: Message) => boolean;
 	submitReactions?: (reactions: string[], message: Message) => Promise<void>;
@@ -289,6 +290,7 @@ export default function MessageList(props: {
 					msgCache={props.msgCache}
 					index={index}
 					renderMenu={props.renderMenu}
+					startReply={props.startReply}
 					submitEdit={props.submitEdit}
 					canEdit={props.canEdit}
 					submitReactions={props.submitReactions}
@@ -353,6 +355,7 @@ function MessageRow(props: {
 	index: number;
 
 	renderMenu(message: Message, setMenuOpen: (value: boolean) => void): ComponentChildren;
+	startReply?: (message: Message) => void;
 	submitEdit?: (text: string, replaces: string) => Promise<void>;
 	canEdit?: (message: Message) => boolean;
 	submitReactions?: (reactions: string[], message: Message) => Promise<void>;
@@ -394,6 +397,7 @@ function RealMessageRow(props: {
 
 	renderMenu(message: Message, setMenuOpen: (value: boolean) => void): ComponentChildren;
 
+	startReply?: (message: Message) => void;
 	submitEdit?: (text: string, replaces: string) => Promise<void>;
 	canEdit?: (message: Message) => boolean;
 	submitReactions?: (reactions: string[], message: Message) => Promise<void>;
@@ -419,6 +423,22 @@ function RealMessageRow(props: {
 		await props.submitEdit!.call(undefined, text, replaces);
 		setEditing(false);
 	}, [props.submitEdit]);
+
+	const startReply = useMemo(() => {
+		if(props.msgCache.container.type === "room") {
+			if(!message.ids.some(x => x.type === StanzaIDType.Stanza && x.by?.equals(props.msgCache.container.jid))) {
+				return undefined;
+			}
+		}
+		else if(props.msgCache.container.type === "direct") {
+			if(!message.ids.some(x => x.type === StanzaIDType.Element)) return undefined;
+		}
+		else {
+			const _: never = props.msgCache.container;
+		}
+
+		return props.startReply?.bind(undefined, message);
+	}, [message, props.msgCache.container, props.startReply]);
 
 	const cancelEdit = useCallback(() => {
 		setEditing(false);
@@ -563,6 +583,11 @@ function RealMessageRow(props: {
 						>
 							<EmojiPicker onEmojiClick={onEmojiClick} />
 						</Popover>
+					}
+					{typeof startReply !== "undefined" &&
+						<IconButton onClick={startReply}>
+							<Icon path={mdiReply} />
+						</IconButton>
 					}
 					{(
 						typeof props.submitEdit !== "undefined" &&

@@ -240,6 +240,11 @@ interface ImageInfo {
 	height: number;
 }
 
+interface SendMessageOptions {
+	replaces?: string;
+	replyingTo?: Message;
+}
+
 export interface BaseConnectionContext {
 	accountsSig: Signal<Account[]>;
 
@@ -254,7 +259,7 @@ export interface BaseConnectionContext {
 		listener: (evt: AppEventMap[K]) => void,
 	): void;
 	requestArchive(account: JID, entity: JID, params: {with?: JID}, before?: string): Promise<ResultSetInfo | null>;
-	sendMessageToRoom(account: JID, room: JID, message: {body: string}, options?: {replaces?: string}): Promise<void>;
+	sendMessageToRoom(account: JID, room: JID, message: {body: string}, options?: SendMessageOptions): Promise<void>;
 	sendMessageToCounterpart(account: JID, target: JID, message: {body: string}, options?: {replaces?: string}): Promise<void>;
 	retractMessageToRoom(account: JID, room: JID, messageID: string): Promise<void>;
 	moderateMessageToRoom(account: JID, room: JID, messageID: string): Promise<void>;
@@ -2369,7 +2374,7 @@ function createBaseConnection(
 		accountJID: JID,
 		roomJID: JID,
 		message: {body: string},
-		options: {replaces?: string} = {},
+		options: SendMessageOptions = {},
 	) {
 		const id = xid();
 
@@ -2379,7 +2384,7 @@ function createBaseConnection(
 
 		outgoingMessages.set(id, reflectDefer);
 
-		const contentResult = convertMarkdownForSend(message.body);
+		const contentResult = convertMarkdownForSend(message.body, options.replyingTo);
 
 		await account.client.send(
 			xml(
@@ -2392,6 +2397,20 @@ function createBaseConnection(
 						[xml(
 							"replace",
 							{xmlns: "urn:xmpp:message-correct:0", id: options.replaces},
+						)]
+				),
+				...(
+					typeof options.replyingTo === "undefined" ?
+						[] :
+						[xml(
+							"reply",
+							{
+								xmlns: "urn:xmpp:reply:0",
+								to: options.replyingTo.from.toString(),
+								id: options.replyingTo.ids.find(x => {
+									return x.type === StanzaIDType.Stanza && x.by?.equals(roomJID);
+								})!.id,
+							},
 						)]
 				),
 			),
@@ -3579,12 +3598,35 @@ async function publishRoomBookmarkExtension(client: xmppClient.Client, room: Roo
 	);
 }
 
-function convertMarkdownForSend(src: string): {content: MessageContent[]; elements: Element[]} {
+const REPLY_QUOTE_CONTENT_TYPE_PRIORITY: Array<MessageContent["type"]> = ["xhtml", "markdown", "plain", "0393"];
+
+function convertMarkdownForSend(src: string, replyingTo?: Message): {content: MessageContent[]; elements: Element[]} {
 	const tokens = parseMarkdown(src);
 
-	if(markdownHasAnyFormatting(tokens)) {
+	if(markdownHasAnyFormatting(tokens) || typeof replyingTo !== "undefined") {
 		const body = renderMarkdownTo0393(tokens);
 		const xhtml = renderMarkdownToXHTML(tokens);
+
+		let replyBody = "";
+		if(typeof replyingTo !== "undefined") {
+			// Add original message as quote in 0393 text only, as other formats don't have a way to mark fallback text
+
+			let bestContent = replyingTo.content[0];
+			for(let i = 1; i < replyingTo.content.length; i++) {
+				const current = replyingTo.content[i];
+
+				if(
+					REPLY_QUOTE_CONTENT_TYPE_PRIORITY.indexOf(current.type) >
+						REPLY_QUOTE_CONTENT_TYPE_PRIORITY.indexOf(bestContent.type)
+				) {
+					bestContent = current;
+				}
+			}
+
+			if(bestContent.type !== "xhtml") {
+				replyBody = "> " + bestContent.content.split("\n").join("\n> ") + "\n\n";
+			}
+		}
 
 		return {
 			content: [
@@ -3596,7 +3638,7 @@ function convertMarkdownForSend(src: string): {content: MessageContent[]; elemen
 				xml(
 					"body",
 					{},
-					renderMarkdownTo0393(tokens),
+					replyBody + renderMarkdownTo0393(tokens),
 				),
 				xml(
 					"html",
@@ -3607,6 +3649,15 @@ function convertMarkdownForSend(src: string): {content: MessageContent[]; elemen
 					"content",
 					{xmlns: "urn:xmpp:content", type: "text/markdown"},
 					src,
+				),
+				...(
+					replyBody === "" ?
+						[] :
+						[xml(
+							"fallback",
+							{xmlns: "urn:xmpp:feature-fallback:0", for: "urn:xmpp:reply:0"},
+							xml("body", {start: 0, end: stringLength(replyBody)}),
+						)]
 				),
 			],
 		};
@@ -3720,4 +3771,14 @@ function parseDataFormsBoolean(src: string) {
 	else if(src === "0" || src === "false") return false;
 
 	throw new Error("Invalid boolean value");
+}
+
+function stringLength(src: string) {
+	let result = 0;
+
+	for(const char of src) {
+		result += char.length;
+	}
+
+	return result;
 }
