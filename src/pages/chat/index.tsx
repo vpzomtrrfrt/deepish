@@ -4,7 +4,7 @@ import { attachInstruction, extractInstruction, Instruction } from "@atlaskit/pr
 import { DropIndicator } from "@atlaskit/pragmatic-drag-and-drop-react-drop-indicator/list-item";
 import { css, cx } from "@emotion/css";
 import { mdiAccountMultiple, mdiConnection, mdiHome, mdiPlus } from "@mdi/js";
-import { useComputed, useSignalEffect } from "@preact/signals";
+import { useComputed, useSignal, useSignalEffect } from "@preact/signals";
 import { useLiveSignal } from "@preact/signals/utils";
 import { JID } from "@xmpp/jid";
 import { JSX } from "preact";
@@ -279,17 +279,12 @@ function ChatView() {
 
 	const addMatch = useRoute("/rooms:add");
 
-	const [pendingReorders, setPendingReorders] =
-		useState<Set<PendingReorder>>(new Set());
+	const pendingReordersSig = useSignal<Set<PendingReorder>>(new Set());
 
 	const reorderRoom = useLatestCallback((movingRoom: JID, to: {after: JID | null; before: JID | null}) => {
 		(async () => {
 			const entry = {movingRoom, to};
-			setPendingReorders(current => {
-				const result = new Set(current);
-				result.add(entry);
-				return result;
-			});
+			pendingReordersSig.value = withAddedToSet(pendingReordersSig.value, entry);
 			try {
 				await conn.reorderRoom(accountSig.value.jid, movingRoom, to);
 			}
@@ -297,42 +292,69 @@ function ChatView() {
 				alert(err);
 			}
 			finally {
-				setPendingReorders(current => {
-					const result = new Set(current);
-					result.delete(entry);
-					return result;
-				});
+				pendingReordersSig.value = withDeletedFromSet(pendingReordersSig.value, entry);
 			}
 		})();
 	});
 
+	const roomsSrcSig = useComputed(() => accountSig.value.rooms);
+
+	const roomsSig = useComputed(() => {
+		const rooms = Array.from(roomsSrcSig.value.values());
+		rooms.sort((a, b) => compareRanks(a.rank, b.rank));
+		applyPendingReorders(rooms, pendingReordersSig.value);
+		return rooms;
+	});
+
 	const onGlobalKeyDown = useLatestCallback((evt: KeyboardEvent) => {
-		if(evt.code === "Home" && evt.ctrlKey && evt.altKey) {
-			navigate("~/");
-			evt.preventDefault();
+		if(evt.ctrlKey && evt.altKey) {
+			if(evt.code === "Home") {
+				navigate("~/");
+				evt.preventDefault();
+			}
+			else if(evt.code === "ArrowUp" || evt.code === "ArrowDown") {
+				const currentIndex = currentRoom === null ?
+					(addMatch[0] ? roomsSig.value.length : -1) :
+					roomsSig.value.findIndex(x => x.jid.toString() === currentRoom);
+
+				let targetIndex;
+				if(evt.code === "ArrowUp") {
+					targetIndex = currentIndex - 1;
+					if(targetIndex < -1) targetIndex = roomsSig.value.length;
+				}
+				else {
+					targetIndex = currentIndex + 1;
+					if(targetIndex > roomsSig.value.length) targetIndex = -1;
+				}
+
+				console.log("from", currentIndex, "to", targetIndex);
+
+				navigate(
+					targetIndex === -1 ?
+						"~/" :
+						(
+							targetIndex === roomsSig.value.length ?
+								"~/chat/rooms:add" : 
+								("~/chat/rooms/" + encodeURIComponent(roomsSig.value[targetIndex].jid.toString()))
+						)
+				);
+			}
 		}
 	});
 	useEventHandler(window, "keydown", onGlobalKeyDown);
 
-	const roomsSig = useComputed(() => accountSig.value.rooms);
-
-	const rooms = Array.from(roomsSig.value.values());
-	rooms.sort((a, b) => compareRanks(a.rank, b.rank));
-	applyPendingReorders(rooms, pendingReorders);
-
 	return <div class={cx(styles.sidebarSegment, styles.roomList)}>
 		<HomeLink active={currentRoom === null && !addMatch[0]} />
-		{
-			rooms.map(info => {
+		<For each={roomsSig}>
+			{info => {
 				return <RoomLink
 					key={info.jid.toString()}
 					room={info}
 					isCurrent={currentRoom === info.jid.toString()}
 					reorderRoom={reorderRoom}
-					pendingReorders={pendingReorders}
 				/>;
-			})
-		}
+			}}
+		</For>
 		<div>
 			<Link to="~/chat/rooms:add">
 				<div class={cx(styles.roomLink, addMatch[0] && styles.currentRoomLink, styles.homeAvatar)}>
@@ -373,7 +395,6 @@ function RoomLink(props: {
 	room: Room;
 	isCurrent: boolean;
 	reorderRoom(movingRoom: JID, to: {before: JID | null; after: JID | null}): void;
-	pendingReorders: Set<PendingReorder>;
 }) {
 	const conn = useConnectionContext();
 	const accountSig = useAccountSig();
@@ -501,6 +522,8 @@ function RoomLink(props: {
 function ChatHomePage() {
 	const { $t } = useIntl();
 
+	const [, navigate] = useLocation();
+
 	const accountSig = useAccountSig();
 
 	const possibleConversationsKeysSig = useSignalMapKeysWhereValueMatches(accountSig.value.counterparts, counterpart => {
@@ -517,6 +540,38 @@ function ChatHomePage() {
 		});
 		return list.map(x => x.jid);
 	});
+
+	const conversationMatch = useRoute("/direct/:jid");
+	const currentConversation = conversationMatch[0] ? decodeURIComponent(conversationMatch[1].jid) : null;
+
+	const onGlobalKeyDown = useLatestCallback((evt: KeyboardEvent) => {
+		if(evt.altKey && !evt.ctrlKey) {
+			if(evt.code === "ArrowUp" || evt.code === "ArrowDown") {
+				const currentIndex = currentConversation === null ?
+					-1 :
+					conversationsSig.value.findIndex(x => x.toString() === currentConversation);
+
+				let targetIndex;
+				if(evt.code === "ArrowUp") {
+					targetIndex = currentIndex - 1;
+					if(targetIndex < -1) targetIndex = conversationsSig.value.length - 1;
+				}
+				else {
+					targetIndex = currentIndex + 1;
+					if(targetIndex > conversationsSig.value.length - 1) targetIndex = -1;
+				}
+
+				console.log("from", currentIndex, "to", targetIndex);
+
+				navigate(
+					targetIndex === -1 ?
+						"~/" :
+						("~/chat/direct/" + encodeURIComponent(conversationsSig.value[targetIndex].toString()))
+				);
+			}
+		}
+	});
+	useEventHandler(window, "keydown", onGlobalKeyDown);
 
 	return <div style={{display: "flex", flexGrow: 1}}>
 		<SpaceItemsList>
@@ -682,4 +737,16 @@ function applyPendingReorders(rooms: Room[], pendingReorders: Set<PendingReorder
 		const [room] = rooms.splice(currentIndex, 1);
 		rooms.splice(currentIndex < targetIndex ? (targetIndex - 1) : targetIndex, 0, room);
 	});
+}
+
+function withAddedToSet<T>(current: Set<T>, newItem: T): Set<T> {
+	const result = new Set(current);
+	result.add(newItem);
+	return result;
+}
+
+function withDeletedFromSet<T>(current: Set<T>, newItem: T): Set<T> {
+	const result = new Set(current);
+	result.delete(newItem);
+	return result;
 }
