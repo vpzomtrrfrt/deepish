@@ -350,6 +350,7 @@ export default function MessageList(props: {
 		<div class={styles.messageListMain} ref={listMainRef}>
 			{messages.map((message, index) => {
 				return <MessageRow
+					key={message.localID}
 					msgCache={props.msgCache}
 					index={index}
 					scrollToMessage={scrollToMessage}
