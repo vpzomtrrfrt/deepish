@@ -5,12 +5,13 @@ import { DropIndicator } from "@atlaskit/pragmatic-drag-and-drop-react-drop-indi
 import { css, cx } from "@emotion/css";
 import { mdiAccountMultiple, mdiCheck, mdiClose, mdiConnection, mdiHome, mdiPlus } from "@mdi/js";
 import { useComputed, useSignal, useSignalEffect } from "@preact/signals";
+import { useLiveSignal } from "@preact/signals/utils";
 import { JID, parse as parseJID } from "@xmpp/jid";
 import useLinkState from "linkstate/hook";
 import { JSX } from "preact";
 import { memo } from "preact/compat";
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
-import { useIntl } from "react-intl";
+import { IntlShape, useIntl } from "react-intl";
 import useLatestCallback from "use-latest-callback";
 import { Link, Route, Switch, useLocation, useRoute } from "wouter-preact";
 
@@ -121,9 +122,16 @@ const styles = {
 		gap: ".5rem",
 		boxSizing: "border-box",
 
+		".friendEntryJID": {
+			display: "none",
+		},
+
 		"&:hover": {
 			".friendEntryJID": {
-				visibility: "visible",
+				display: "initial",
+			},
+			".statusText": {
+				display: "none",
 			},
 		},
 	}),
@@ -193,6 +201,10 @@ const styles = {
 		textDecoration: "none",
 		color: "inherit",
 
+		".friendEntryJID": {
+			visibility: "hidden",
+		},
+
 		"&:hover": {
 			".friendEntryJID": {
 				visibility: "visible",
@@ -217,7 +229,6 @@ const styles = {
 	friendEntryJID: cx("friendEntryJID", css({
 		display: "inline-block",
 		fontSize: "80%",
-		visibility: "hidden",
 		overflowX: "hidden",
 		textOverflow: "ellipsis",
 	})),
@@ -226,10 +237,14 @@ const styles = {
 		flexDirection: "column",
 		flexGrow: 1,
 	}),
-	statusText: css({
+	statusText: cx("statusText", css({
 		opacity: 0.65,
 		fontSize: "80%",
-	}),
+
+		whiteSpace: "nowrap",
+		overflowX: "hidden",
+		textOverflow: "ellipsis",
+	})),
 	counterpartUnreadIndicator: css({
 		display: "inline-block",
 		width: "1rem",
@@ -738,15 +753,14 @@ function ContactsPage() {
 }
 
 function FriendEntry(props: {jid: string}) {
-	const { $t } = useIntl();
+	const intl = useIntl();
+	const { $t } = intl;
 
 	const appCtx = useAppContext();
 	const conn = useConnectionContext();
 	const accountSig = useAccountSig();
 
 	const info = useComputed(() => accountSig.value.counterparts.get(props.jid)).value!;
-
-	const showType = getShowTypeForCounterpart(info);
 
 	const onClickFriendButtons = useCallback((evt: Event) => {
 		evt.stopPropagation();
@@ -772,23 +786,7 @@ function FriendEntry(props: {jid: string}) {
 		);
 	});
 
-	let statusContent = null;
-	if(info.currentTune !== null && typeof info.currentTune.artist !== "undefined") {
-		statusContent = $t({
-			defaultMessage: "Listening to {name}",
-		}, {
-			name: <span>
-				<em>{info.currentTune.artist}</em>
-				{
-					typeof info.currentTune.title !== "undefined" &&
-						<>{" - "}<em>{info.currentTune.title}</em></>
-				}
-			</span>,
-		});
-	}
-	else if(showType !== null) {
-		statusContent = $t(presenceShowTypeNames[showType]);
-	}
+	const statusContent = getCounterpartStatusContent(info, intl);
 
 	return <Link
 		to={"~/chat/direct/" + encodeURIComponent(info.jid.toString())}
@@ -871,7 +869,10 @@ function AddFriendForm() {
 }
 
 function SelfBox() {
-	const { $t } = useIntl();
+	const intl = useIntl();
+	const { $t } = intl;
+	const intlSig = useLiveSignal(intl);
+
 	const [, navigate] = useLocation();
 
 	const appCtx = useAppContext();
@@ -909,14 +910,23 @@ function SelfBox() {
 		navigate("~/logout/" + encodeURIComponent(jid.toString()));
 	});
 
+	const showTypeSig = useLiveSignal(conn.idle.idle ? PresenceShowType.Away : PresenceShowTypeExtended.Available);
+
+	const statusContentSig = useComputed(() => {
+		if(typeof counterpartSig.value === "undefined") return null;
+
+		return getCounterpartStatusContent(counterpartSig.value, intlSig.value, showTypeSig.value);
+	});
+
 	return <div class={styles.selfBox}>
 		<AvatarWithStatusRaw
 			size="md"
 			jid={jid}
-			showType={conn.idle.idle ? PresenceShowType.Away : PresenceShowTypeExtended.Available}
+			showType={showTypeSig.value}
 		/>
 		<div class={styles.selfBoxNameSegment}>
 			{nickSig}
+			<div class={cx(styles.statusText)}>{statusContentSig}</div>
 			<div class={styles.friendEntryJID}>{jid.toString()}</div>
 		</div>
 		<Menu>
@@ -956,4 +966,27 @@ function applyPendingReorders(rooms: Room[], pendingReorders: Set<PendingReorder
 		const [room] = rooms.splice(currentIndex, 1);
 		rooms.splice(currentIndex < targetIndex ? (targetIndex - 1) : targetIndex, 0, room);
 	});
+}
+
+function getCounterpartStatusContent(info: Counterpart, intl: IntlShape, showType?: PresenceShowTypeExtended | null) {
+	showType = typeof showType === "undefined" ? getShowTypeForCounterpart(info) : showType;
+
+	if(info.currentTune !== null && typeof info.currentTune.artist !== "undefined") {
+		return intl.formatMessage({
+			defaultMessage: "Listening to {name}",
+		}, {
+			name: <span>
+				<em>{info.currentTune.artist}</em>
+				{
+					typeof info.currentTune.title !== "undefined" &&
+						<>{" - "}<em>{info.currentTune.title}</em></>
+				}
+			</span>,
+		});
+	}
+	else if(showType !== null) {
+		return intl.formatMessage(presenceShowTypeNames[showType]);
+	}
+	
+	return null;
 }
