@@ -64,6 +64,7 @@ const styles = {
 		display: "flex",
 		flexDirection: "column",
 		overflowY: "auto",
+		overflowX: "hidden",
 
 		borderRightStyle: "solid",
 		borderRightWidth: "1px",
@@ -578,8 +579,13 @@ function MembersListEntry(props: {jid: JID}) {
 
 	return <div key={counterpart.jid.resource} class={styles.membersListEntry}>
 		<AvatarWithStatus size="md" jid={counterpart.jid} inRoom />
-		<div style={{flexGrow: 1}}>
-			<div>{counterpart.jid.resource}</div>
+		<div style={{flexGrow: 1, minWidth: 0}}>
+			<div
+				style={{maxWidth: "100%", overflowX: "hidden", textOverflow: "ellipsis"}}
+				title={counterpart.jid.resource}
+			>
+				{counterpart.jid.resource}
+			</div>
 			{showType !== null &&
 				<div class={styles.statusText}>
 					{$t(presenceShowTypeNames[showType])}
