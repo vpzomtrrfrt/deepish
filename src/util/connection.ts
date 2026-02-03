@@ -260,7 +260,7 @@ export interface BaseConnectionContext {
 	): void;
 	requestArchive(account: JID, entity: JID, params: {with?: JID}, before?: string): Promise<ResultSetInfo | null>;
 	sendMessageToRoom(account: JID, room: JID, message: {body: string}, options?: SendMessageOptions): Promise<void>;
-	sendMessageToCounterpart(account: JID, target: JID, message: {body: string}, options?: {replaces?: string}): Promise<void>;
+	sendMessageToCounterpart(account: JID, target: JID, message: {body: string}, options?: SendMessageOptions): Promise<void>;
 	retractMessageToRoom(account: JID, room: JID, messageID: string): Promise<void>;
 	moderateMessageToRoom(account: JID, room: JID, messageID: string): Promise<void>;
 	retractMessageToCounterpart(account: JID, target: JID, messageID: string): Promise<void>;
@@ -2304,13 +2304,21 @@ function createBaseConnection(
 		accountJID: JID,
 		targetJID: JID,
 		message: {body: string},
-		options: {replaces?: string} = {},
+		options: SendMessageOptions = {},
 	) {
 		const localID = xid();
 
 		const account = getAccount(accountJID);
 
-		const contentResult = convertMarkdownForSend(message.body);
+		const contentResult = convertMarkdownForSend(message.body, options.replyingTo);
+
+		const replyingToID = options.replyingTo?.ids.find(x => {
+			return x.type === StanzaIDType.Element;
+		})?.id;
+
+		if(typeof options.replyingTo !== "undefined" && typeof replyingToID === "undefined") {
+			throw new Error("Couldn't find ID for reply target");
+		}
 
 		const elem = xml(
 			"message",
@@ -2322,6 +2330,18 @@ function createBaseConnection(
 					[xml(
 						"replace",
 						{xmlns: "urn:xmpp:message-correct:0", id: options.replaces},
+					)]
+			),
+			...(
+				typeof options.replyingTo === "undefined" ?
+					[] :
+					[xml(
+						"reply",
+						{
+							xmlns: "urn:xmpp:reply:0",
+							to: options.replyingTo.from.toString(),
+							id: replyingToID,
+						},
 					)]
 			),
 		);
@@ -2342,7 +2362,13 @@ function createBaseConnection(
 					],
 					localID,
 					timestamp: new Date(),
-					replyingTo: null,
+					replyingTo: typeof options.replyingTo === "undefined" ?
+						null :
+						{
+							from: options.replyingTo.from,
+							id: new StanzaID(StanzaIDType.Element, options.replyingTo.from.bare(), replyingToID!),
+							fallbackContent: [],
+						},
 					raw: elem,
 
 					removal: null,

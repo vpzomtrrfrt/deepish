@@ -1,5 +1,5 @@
 import { css, cx } from "@emotion/css";
-import { mdiEmoticonPlus, mdiPencil, mdiReply } from "@mdi/js";
+import { mdiClose, mdiEmoticonPlus, mdiPencil, mdiReply } from "@mdi/js";
 import { useComputed } from "@preact/signals";
 import { useLiveSignal } from "@preact/signals/utils";
 import { JID, parse as parseJID } from "@xmpp/jid";
@@ -152,6 +152,31 @@ const styles = {
 		borderRadius: ".5rem",
 
 		backgroundColor: themeVars.bg1,
+	}),
+	replyingIndicatorWrapper: css({position: "relative"}),
+	replyingIndicator: css({
+		boxSizing: "border-box",
+
+		position: "absolute",
+		bottom: 0,
+		left: ".5rem",
+		width: "calc(100% - 1rem)",
+
+		borderStyle: "solid",
+		borderColor: themeVars.outline1,
+		borderWidth: "1px",
+		borderRadius: ".5rem",
+
+		backgroundColor: themeVars.bg1,
+
+		padding: ".25rem .5rem",
+	}),
+	replyingIndicatorHeading: css({
+		display: "flex",
+		justifyContent: "space-between",
+		alignItems: "center",
+
+		fontWeight: "bold",
 	}),
 };
 
@@ -931,4 +956,18 @@ export function MessageSourceDialog(props: {message: Message}) {
 			</pre>
 		</Block>
 	</Dialog>;
+}
+
+export function ReplyingIndicator(props: {message: Message; cancelReply(): void}) {
+	const { $t } = useIntl();
+
+	return <div class={styles.replyingIndicatorWrapper}>
+		<div class={styles.replyingIndicator}>
+			<div class={styles.replyingIndicatorHeading}>
+				<span>{$t({defaultMessage: "Replying to:"})}</span>
+				<IconButton onClick={props.cancelReply}><Icon path={mdiClose} /></IconButton>
+			</div>
+			<MessageReplyQuoteContent message={props.message} />
+		</div>
+	</div>;
 }

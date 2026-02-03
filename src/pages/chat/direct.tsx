@@ -10,7 +10,7 @@ import ConfirmTaskDialog from "../../components/ConfirmTaskDialog";
 import { DataNonDoneView } from "../../components/DataView";
 import Menu, { MenuItem } from "../../components/Menu";
 import MessageInput from "../../components/MessageInput";
-import MessageList, { LoadMoreTriggerer, MessageSourceDialog } from "../../components/MessageList";
+import MessageList, { LoadMoreTriggerer, MessageSourceDialog, ReplyingIndicator } from "../../components/MessageList";
 import TypingIndicator from "../../components/TypingIndicator";
 import { Message, ResultSetInfo, useAccountSig, useConnectionContext } from "../../util/connection";
 import { msgActionDelete } from "../../util/langCommon";
@@ -116,8 +116,31 @@ function DirectChatPageInner(props: {counterpartJID: JID}) {
 		}
 	}, [accountSig.value.jid, conn.markCounterpartAsRead, counterpart, messages, pageState]);
 
-	const submitMessage = useLatestCallback(async (newMessage: string, options?: {replaces?: string}) => {
-		await conn.sendMessageToCounterpart(accountSig.value.jid, counterpart!.jid, {body: newMessage}, options);
+	const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+
+	const cancelReply = useCallback(() => {
+		setReplyingTo(null);
+
+		inputRef.current!.focus();
+	}, []);
+
+	const inputRef = useRef<HTMLTextAreaElement>(null);
+
+	const startReply = useLatestCallback((message: Message) => {
+		setReplyingTo(message);
+
+		inputRef.current!.focus();
+	});
+
+	const submitMessage = useLatestCallback((newMessage: string, options?: {replaces?: string}) => {
+		conn.sendMessageToCounterpart(
+			accountSig.value.jid,
+			counterpart!.jid,
+			{body: newMessage},
+			{replyingTo: replyingTo ?? undefined, ...options},
+		);
+
+		setReplyingTo(null);
 	});
 
 	const submitEdit = useLatestCallback(async (newMessage: string, replaces: string) => {
@@ -203,6 +226,15 @@ function DirectChatPageInner(props: {counterpartJID: JID}) {
 		return false;
 	}, [accountSig.value.jid]);
 
+	const onInputKeyDown = useLatestCallback((evt: KeyboardEvent) => {
+		if(evt.code === "Escape") {
+			if(replyingTo !== null) {
+				evt.preventDefault();
+				cancelReply();
+			}
+		}
+	});
+
 	useEffect(() => {
 		return () => onChangeComposing(false);
 	}, [onChangeComposing]);
@@ -231,11 +263,15 @@ function DirectChatPageInner(props: {counterpartJID: JID}) {
 			submitEdit={submitEdit}
 			canEdit={canEdit}
 			submitReactions={submitReactions}
+			startReply={startReply}
 		/>
-		<TypingIndicator
-			usersTyping={(typeof counterpart !== "undefined" && counterpart.composingFrom) ? [counterpart.jid] : []}
-			inRoom={false}
-		/>
-		<MessageInput submitMessage={submitMessage} autofocus onChangeComposing={onChangeComposing} />
+		<div onKeyDown={onInputKeyDown}>
+			<TypingIndicator
+				usersTyping={(typeof counterpart !== "undefined" && counterpart.composingFrom) ? [counterpart.jid] : []}
+				inRoom={false}
+			/>
+			{replyingTo !== null && <ReplyingIndicator message={replyingTo} cancelReply={cancelReply} />}
+			<MessageInput submitMessage={submitMessage} autofocus onChangeComposing={onChangeComposing} ref={inputRef} />
+		</div>
 	</div>;
 }

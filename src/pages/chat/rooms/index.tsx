@@ -1,5 +1,4 @@
 import { css } from "@emotion/css";
-import { mdiClose } from "@mdi/js";
 import { useComputed } from "@preact/signals";
 import xid from "@xmpp/id";
 import { JID, parse as parseJID } from "@xmpp/jid";
@@ -16,11 +15,9 @@ import ConfirmTaskDialog from "../../../components/ConfirmTaskDialog";
 import { DataNonDoneView, ErrorAlert, Loading } from "../../../components/DataView";
 import EditRoomDialog from "../../../components/EditRoomDialog";
 import For from "../../../components/For";
-import Icon from "../../../components/Icon";
-import IconButton from "../../../components/IconButton";
 import Menu, { MenuGroupLabel, MenuItem, MenuRadioGroup, MenuRadioItem } from "../../../components/Menu";
 import MessageInput from "../../../components/MessageInput";
-import MessageList, { LoadMoreTriggerer, MessageReplyQuoteContent, MessageSourceDialog } from "../../../components/MessageList";
+import MessageList, { LoadMoreTriggerer, MessageSourceDialog, ReplyingIndicator } from "../../../components/MessageList";
 import TaskDialog from "../../../components/TaskDialog";
 import TypingIndicator from "../../../components/TypingIndicator";
 import { Message, messageEditIsAllowed, messageRemovalIsAllowed, NotificationLevel, ResultSetInfo, useAccountSig, useConnectionContext } from "../../../util/connection";
@@ -92,31 +89,6 @@ const styles = {
 	}),
 	messageInputArea: css({
 		marginInlineStart: "250px",
-	}),
-	replyingIndicatorWrapper: css({position: "relative"}),
-	replyingIndicator: css({
-		boxSizing: "border-box",
-
-		position: "absolute",
-		bottom: 0,
-		left: ".5rem",
-		width: "calc(100% - 1rem)",
-
-		borderStyle: "solid",
-		borderColor: themeVars.outline1,
-		borderWidth: "1px",
-		borderRadius: ".5rem",
-
-		backgroundColor: themeVars.bg1,
-
-		padding: ".25rem .5rem",
-	}),
-	replyingIndicatorHeading: css({
-		display: "flex",
-		justifyContent: "space-between",
-		alignItems: "center",
-
-		fontWeight: "bold",
 	}),
 };
 
@@ -597,20 +569,6 @@ function MembersListEntry(props: {jid: JID}) {
 					{$t(presenceShowTypeNames[showType])}
 				</div>
 			}
-		</div>
-	</div>;
-}
-
-function ReplyingIndicator(props: {message: Message; cancelReply(): void}) {
-	const { $t } = useIntl();
-
-	return <div class={styles.replyingIndicatorWrapper}>
-		<div class={styles.replyingIndicator}>
-			<div class={styles.replyingIndicatorHeading}>
-				<span>{$t({defaultMessage: "Replying to:"})}</span>
-				<IconButton onClick={props.cancelReply}><Icon path={mdiClose} /></IconButton>
-			</div>
-			<MessageReplyQuoteContent message={props.message} />
 		</div>
 	</div>;
 }
