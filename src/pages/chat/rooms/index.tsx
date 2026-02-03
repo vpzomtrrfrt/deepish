@@ -1,5 +1,5 @@
 import { css } from "@emotion/css";
-import { useComputed } from "@preact/signals";
+import { useComputed, useSignal, useSignalEffect } from "@preact/signals";
 import xid from "@xmpp/id";
 import { JID, parse as parseJID } from "@xmpp/jid";
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
@@ -126,40 +126,39 @@ function ChatRoomPageInner(props: {roomJID: JID}) {
 	const accountJID = accountJIDSig.value;
 	const room = roomSig.value;
 
-	const counterpart = useComputed(() => accountSig.value.counterparts.getSignal(props.roomJID.toString())).value.value;
+	const counterpartSig = useComputed(() => accountSig.value.counterparts.getSignal(props.roomJID.toString())).value;
 
 	const msgCache = useCreateMessageCache(useMemo(() => ({type: "room", jid: props.roomJID}), [props.roomJID]));
 
-	const [pageState, setPageState] = useState<LoadState<ResultSetInfo | null> | null>(null);
+	const pageStateSig = useSignal<null | LoadState<ResultSetInfo | null>>(null);
 
 	const nextPageRef = useRef<string | null>(null);
 
 	const loadMore = useLatestCallback(() => {
-		setPageState(LoadState.loading);
+		pageStateSig.value = LoadState.loading;
 
 		conn.requestArchive(accountJID, room!.jid, {}, nextPageRef.current ?? undefined)
 			.then(value => {
 				nextPageRef.current = value === null ? null : value.firstItem;
-				setPageState(LoadState.wrapValue(value));
+				pageStateSig.value = LoadState.wrapValue(value);
 			})
 			.catch(err => {
-				setPageState(LoadState.wrapError(err));
+				pageStateSig.value = LoadState.wrapError(err);
 			});
 	});
 
-	useEffect(() => {
-		if(room?.connected === true && pageState === null) {
-			loadMore();
-		}
-	}, [room?.connected, pageState, loadMore]);
+	useSignalEffect(() => {
+		if(roomSig.value?.connected === true && pageStateSig.value === null) loadMore();
+	});
 
-	const messages = msgCache.getMessages();
+	useSignalEffect(() => {
+		const messages = msgCache.getMessages();
+		const counterpart = counterpartSig.value;
 
-	useEffect(() => {
 		// TODO skip marking when scrolled up
 		if(
-			pageState !== null &&
-				pageState.state === "done" &&
+			pageStateSig.value !== null &&
+				pageStateSig.value.state === "done" &&
 				messages.length > 0 &&
 				typeof counterpart !== "undefined"
 		) {
@@ -168,10 +167,10 @@ function ChatRoomPageInner(props: {roomJID: JID}) {
 				return x.type === StanzaIDType.Stanza && x.by !== null && x.by.equals(counterpart.jid);
 			});
 			if(typeof lastMessageID !== "undefined" && counterpart.lastReadMessageID !== lastMessageID.id) {
-				conn.markCounterpartAsRead.call(undefined, accountJID, counterpart.jid, lastMessageID.id, false);
+				conn.markCounterpartAsRead(accountJIDSig.value, counterpart.jid, lastMessageID.id, false);
 			}
 		}
-	}, [accountJID, conn.markCounterpartAsRead, counterpart, messages, pageState]);
+	});
 
 	const [replyingTo, setReplyingTo] = useState<Message | null>(null);
 
@@ -437,15 +436,17 @@ function ChatRoomPageInner(props: {roomJID: JID}) {
 		}
 	});
 
-	const loaderContent = pageState === null ?
-		<p>{$t({defaultMessage: "Connecting…"})}</p> :
-		LoadState.ifDone(
-			pageState,
-			info => info === null ?
-				<p>{$t({defaultMessage: "No more messages known."})}</p> :
-				<LoadMoreTriggerer loadMore={loadMore} />,
-			pageState => <DataNonDoneView state={pageState} />,
-		);
+	const loaderContentSig = useComputed(() => {
+		return pageStateSig.value === null ?
+			<p>{$t({defaultMessage: "Connecting…"})}</p> :
+			LoadState.ifDone(
+				pageStateSig.value,
+				info => info === null ?
+					<p>{$t({defaultMessage: "No more messages known."})}</p> :
+					<LoadMoreTriggerer loadMore={loadMore} />,
+				pageState => <DataNonDoneView state={pageState} />,
+			);
+	});
 
 	return <Fragment>
 		<div class={styles.page}>
@@ -489,7 +490,7 @@ function ChatRoomPageInner(props: {roomJID: JID}) {
 						<MessageList
 							msgCache={msgCache}
 							pendingMessages={pendingMessages}
-							loaderContent={loaderContent}
+							loaderContent={loaderContentSig}
 							renderMenu={renderMenu}
 							submitEdit={submitEdit}
 							canEdit={canEdit}

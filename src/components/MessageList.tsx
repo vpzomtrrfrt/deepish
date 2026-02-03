@@ -7,7 +7,7 @@ import * as xml from "@xmpp/xml";
 import { EmojiClickEvent } from "emoji-picker-element/shared";
 import inlineStyleParser from "inline-style-parser";
 import { stringify as stringifyXML } from "ltx";
-import { ComponentChildren, h, JSX, VNode } from "preact";
+import { ComponentChildren, h, JSX, Signalish, VNode } from "preact";
 import { memo } from "preact/compat";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { FormattedList, useIntl } from "react-intl";
@@ -200,7 +200,7 @@ const styles = {
 
 export default function MessageList(props: {
 	msgCache: MessageCache;
-	loaderContent: VNode;
+	loaderContent: Signalish<VNode>;
 	pendingMessages?: Array<Pick<Message, "localID" | "content" | "timestamp">>;
 
 	renderMenu(message: Message, setMenuOpen: (value: boolean) => void): ComponentChildren;
