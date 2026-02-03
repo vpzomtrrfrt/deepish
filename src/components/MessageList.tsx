@@ -1,4 +1,4 @@
-import { css, cx } from "@emotion/css";
+import { css, cx, keyframes } from "@emotion/css";
 import { mdiClose, mdiEmoticonPlus, mdiPencil, mdiReply } from "@mdi/js";
 import { useComputed } from "@preact/signals";
 import { useLiveSignal } from "@preact/signals/utils";
@@ -12,12 +12,13 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { FormattedList, useIntl } from "react-intl";
 import useLatestCallback from "use-latest-callback";
 
+import * as commonStyles from "../util/commonStyles";
 import { Message, MessageContent, Room, useAccountSig } from "../util/connection";
 import { parseMarkdown, renderMarkdownToXHTML } from "../util/markdown";
 import { MessageCache } from "../util/messageCache";
 import { maybeGetNickForCounterpart } from "../util/profileUtil";
 import { themeVars } from "../util/theme";
-import { StanzaIDType } from "../util/xmpp/StanzaID";
+import StanzaID, { StanzaIDType } from "../util/xmpp/StanzaID";
 import { parse0393, StylingBlock0393, StylingSpan0393 } from "../util/xmpp/styling";
 import Avatar from "./Avatar";
 import Block from "./Block";
@@ -34,6 +35,16 @@ import WithTooltip from "./WithTooltip";
 const BOTTOM_TOLERANCE = 5;
 
 const MESSAGE_MERGE_TIME = 1000 * 60;
+
+const flashHighlightAnimation = keyframes({
+	"from, to": {
+		backgroundColor: themeVars.bg0,
+	},
+
+	"12.5%": {
+		backgroundColor: themeVars.active,
+	},
+});
 
 const styles = {
 	messageList: css({
@@ -53,14 +64,18 @@ const styles = {
 		"&.merged": {
 			paddingBlockStart: 0,
 		},
+
+		"&[data-flash-highlight=true] > .message": {
+			animation: flashHighlightAnimation + " 2s",
+		},
 	}),
-	messageCommon: css({
+	messageCommon: cx("message", css({
 		display: "flex",
 		gap: ".5rem",
 		paddingBlock: ".125rem",
 
 		position: "relative",
-	}),
+	})),
 	messageRow: css({
 		"&:hover": {
 			backgroundColor: "rgba(127, 127, 127, 0.2)",
@@ -140,7 +155,7 @@ const styles = {
 			cursor: "not-allowed",
 		},
 	}),
-	replyQuote: css({
+	replyQuote: cx(commonStyles.hoverOverlay, css({
 		margin: 0,
 		marginBlockEnd: ".5rem",
 
@@ -152,7 +167,9 @@ const styles = {
 		borderRadius: ".5rem",
 
 		backgroundColor: themeVars.bg1,
-	}),
+
+		cursor: "pointer",
+	})),
 	replyingIndicatorWrapper: css({position: "relative"}),
 	replyingIndicator: css({
 		boxSizing: "border-box",
@@ -277,6 +294,27 @@ export default function MessageList(props: {
 		}
 	}, []);
 
+	const scrollToMessage = useLatestCallback((id: StanzaID) => {
+		const message = props.msgCache.getMessage(id);
+
+		if(typeof message === "undefined") {
+			console.warn("Attempted to scroll to unknown message");
+			return;
+		}
+
+		const elemID = "message-" + message.localID;
+		const elem = document.getElementById(elemID);
+		if(elem === null) {
+			console.warn("Couldn't find message in list", elemID);
+			return;
+		}
+
+		console.log("highlighting?");
+
+		elem.scrollIntoView({behavior: "smooth", block: "center"});
+		elem.dataset.flashHighlight = "true";
+	});
+
 	const accountJIDSig = useComputed(() => accountSig.value.jid);
 
 	const roomSig = useComputed((): {value: Room | undefined} => {
@@ -314,6 +352,7 @@ export default function MessageList(props: {
 				return <MessageRow
 					msgCache={props.msgCache}
 					index={index}
+					scrollToMessage={scrollToMessage}
 					renderMenu={props.renderMenu}
 					startReply={props.startReply}
 					submitEdit={props.submitEdit}
@@ -378,6 +417,7 @@ export default function MessageList(props: {
 function MessageRow(props: {
 	msgCache: MessageCache;
 	index: number;
+	scrollToMessage(id: StanzaID): void;
 
 	renderMenu(message: Message, setMenuOpen: (value: boolean) => void): ComponentChildren;
 	startReply?: (message: Message) => void;
@@ -419,6 +459,8 @@ function RealMessageRow(props: {
 	msgCache: MessageCache;
 	message: Message;
 	isMerged: boolean;
+
+	scrollToMessage(id: StanzaID): void;
 
 	renderMenu(message: Message, setMenuOpen: (value: boolean) => void): ComponentChildren;
 
@@ -538,6 +580,12 @@ function RealMessageRow(props: {
 
 	const myReactions = myReactionsSig.value;
 
+	const scrollToReplyTarget = useLatestCallback(() => {
+		if(message.replyingTo === null) return;
+
+		props.scrollToMessage(message.replyingTo.id);
+	});
+
 	let replyContent;
 	if(message.replyingTo === null) {
 		replyContent = null;
@@ -548,14 +596,18 @@ function RealMessageRow(props: {
 			replyContent = <MessageContentView content={message.replyingTo.fallbackContent} />;
 		}
 		else {
-			replyContent = <blockquote class={styles.replyQuote}>
+			replyContent = <blockquote class={styles.replyQuote} onClick={scrollToReplyTarget}>
 				<MessageReplyQuoteContent message={target} />
 			</blockquote>;
 		}
 	}
 
-	return <div class={cx(styles.messageWrapper, props.isMerged && "merged")} data-key={"message-" + props.message.localID}>
-		<div class={cx(styles.messageCommon, styles.messageRow)}>
+	const onAnimationEnd = useCallback((evt: JSX.TargetedEvent<HTMLDivElement>) => {
+		evt.currentTarget.parentElement!.dataset.flashHighlight = undefined;
+	}, []);
+
+	return <div class={cx(styles.messageWrapper, props.isMerged && "merged")} id={"message-" + props.message.localID}>
+		<div class={cx(styles.messageCommon, styles.messageRow)} onAnimationEnd={onAnimationEnd}>
 			<div class={styles.avatarSegment}>
 				{!props.isMerged &&
 					<Avatar size="md" jid={fromSig} />
