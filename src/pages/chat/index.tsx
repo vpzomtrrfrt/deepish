@@ -16,7 +16,7 @@ import { Link, Route, Switch, useLocation, useRoute } from "wouter-preact";
 
 import { useAppContext } from "../..";
 import Avatar from "../../components/Avatar";
-import AvatarWithStatus from "../../components/AvatarWithStatus";
+import AvatarWithStatus, { AvatarWithStatusRaw } from "../../components/AvatarWithStatus";
 import Block from "../../components/Block";
 import Button from "../../components/Button";
 import ConfirmDialog from "../../components/ConfirmDialog";
@@ -39,7 +39,7 @@ import { getNickForCounterpart } from "../../util/profileUtil";
 import { useSignalMapKeysWhereValueMatches } from "../../util/SignalMap";
 import { getShowTypeForCounterpart } from "../../util/statusUtil";
 import { themeVars } from "../../util/theme";
-import { Counterpart } from "../../util/types";
+import { Counterpart, PresenceShowType, PresenceShowTypeExtended } from "../../util/types";
 import unsignal from "../../util/unsignal";
 import { LoadState } from "../../util/useData";
 import useSubmitting from "../../util/useSubmitting";
@@ -875,6 +875,7 @@ function SelfBox() {
 	const [, navigate] = useLocation();
 
 	const appCtx = useAppContext();
+	const conn = useConnectionContext();
 	const accountSig = useAccountSig();
 
 	const jid = useComputed(() => {
@@ -909,7 +910,11 @@ function SelfBox() {
 	});
 
 	return <div class={styles.selfBox}>
-		<Avatar jid={jid} size="md" />
+		<AvatarWithStatusRaw
+			size="md"
+			jid={jid}
+			showType={conn.idle.idle ? PresenceShowType.Away : PresenceShowTypeExtended.Available}
+		/>
 		<div class={styles.selfBoxNameSegment}>
 			{nickSig}
 			<div class={styles.friendEntryJID}>{jid.toString()}</div>

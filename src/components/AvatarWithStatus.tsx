@@ -6,6 +6,7 @@ import { useMemo } from "preact/hooks";
 
 import { useAccountSig } from "../util/connection";
 import { getShowTypeForCounterpart } from "../util/statusUtil";
+import { PresenceShowTypeExtended } from "../util/types";
 import Avatar, { AvatarSize } from "./Avatar";
 import StatusIndicator from "./StatusIndicator";
 
@@ -36,8 +37,16 @@ export default function AvatarWithStatus(props: {
 	const counterpart = useComputed(() => accountSig.value.counterparts.getSignal(jidSig.value.toString())).value.value;
 	const showType = typeof counterpart === "undefined" ? null : getShowTypeForCounterpart(counterpart, props.inRoom);
 
+	return <AvatarWithStatusRaw size={props.size} jid={jid} showType={showType} />;
+}
+
+export function AvatarWithStatusRaw(props: {
+	size: AvatarSize;
+	jid: JID;
+	showType: PresenceShowTypeExtended | null;
+}) {
 	return <div class={cx("avatar", styles.avatarWithStatus)}>
 		<Avatar size={props.size} jid={props.jid} />
-		{showType !== null && <StatusIndicator showType={showType} class={styles.statusIndicator} />}
+		{props.showType !== null && <StatusIndicator showType={props.showType} class={styles.statusIndicator} />}
 	</div>;
 }
