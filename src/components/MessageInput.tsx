@@ -4,6 +4,7 @@ import { Database as EmojiDatabase } from "emoji-picker-element";
 import { EmojiClickEvent, NativeEmoji } from "emoji-picker-element/shared";
 import useLinkState from "linkstate/hook";
 import { JSX } from "preact";
+import { ForwardedRef, forwardRef } from "preact/compat";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { useIntl } from "react-intl";
 import useLatestCallback from "use-latest-callback";
@@ -52,7 +53,7 @@ const styles = {
 
 const emojiDatabase = new EmojiDatabase({dataSource: emojiDataSource});
 
-export default function MessageInput(props: {
+export default forwardRef(function MessageInput(props: {
 	submitMessage: (text: string) => (Promise<void> | void);
 	autofocus: boolean;
 
@@ -61,7 +62,7 @@ export default function MessageInput(props: {
 
 	onChangeComposing?(composing: boolean): void;
 	cancel?(): void;
-}) {
+}, ref: ForwardedRef<HTMLTextAreaElement>) {
 	const { $t } = useIntl();
 
 	const [newMessage, linkNewMessage, setNewMessage] = useLinkState(props.initValue ?? "");
@@ -259,6 +260,15 @@ export default function MessageInput(props: {
 		props.onChangeComposing?.call(undefined, composing);
 	}, [composing, props.onChangeComposing]);
 
+	const setInputRef = useCallback((value: HTMLTextAreaElement | null) => {
+		inputRef.current = value;
+		if(typeof ref === "function") ref(value);
+		else if(ref !== null) ref.current = value;
+		else {
+			const _: null = ref;
+		}
+	}, [ref]);
+
 	return <form onSubmit={submitMessage} class={styles.messageInput}>
 		<div class={styles.mainRow}>
 			<Textarea
@@ -268,7 +278,7 @@ export default function MessageInput(props: {
 				onKeyDown={onKeyDown}
 				style={{flexGrow: 1, resize: "none", boxSizing: "border-box"}}
 				autofocus={props.autofocus}
-				ref={inputRef}
+				ref={setInputRef}
 				rows={1}
 			/>
 			<Popover icon={<Icon path={mdiEmoticon} />} actionsRef={emojiPopoverActionsRef}>
@@ -309,7 +319,7 @@ export default function MessageInput(props: {
 			</div>
 		}
 	</form>;
-}
+});
 
 function scrollIntoViewIfNeeded(elem: HTMLElement) {
 	const parent = elem.offsetParent;

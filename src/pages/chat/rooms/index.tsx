@@ -17,7 +17,7 @@ import EditRoomDialog from "../../../components/EditRoomDialog";
 import For from "../../../components/For";
 import Menu, { MenuGroupLabel, MenuItem, MenuRadioGroup, MenuRadioItem } from "../../../components/Menu";
 import MessageInput from "../../../components/MessageInput";
-import MessageList, { LoadMoreTriggerer, MessageSourceDialog } from "../../../components/MessageList";
+import MessageList, { LoadMoreTriggerer, MessageSourceDialog, ReplyingIndicator } from "../../../components/MessageList";
 import TaskDialog from "../../../components/TaskDialog";
 import TypingIndicator from "../../../components/TypingIndicator";
 import { Message, messageEditIsAllowed, messageRemovalIsAllowed, NotificationLevel, ResultSetInfo, useAccountSig, useConnectionContext } from "../../../util/connection";
@@ -173,6 +173,22 @@ function ChatRoomPageInner(props: {roomJID: JID}) {
 		}
 	}, [accountJID, conn.markCounterpartAsRead, counterpart, messages, pageState]);
 
+	const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+
+	const cancelReply = useCallback(() => {
+		setReplyingTo(null);
+
+		inputRef.current!.focus();
+	}, []);
+
+	const inputRef = useRef<HTMLTextAreaElement>(null);
+
+	const startReply = useLatestCallback((message: Message) => {
+		setReplyingTo(message);
+
+		inputRef.current!.focus();
+	});
+
 	const [pendingMessages, setPendingMessages] = useState<Array<
 		Pick<Message, "content" | "timestamp" | "localID">
 	>>([]);
@@ -189,12 +205,19 @@ function ChatRoomPageInner(props: {roomJID: JID}) {
 
 		(async () => {
 			try {
-				await conn.sendMessageToRoom(accountJID, room!.jid, {body: newMessage}, options);
+				await conn.sendMessageToRoom(
+					accountJID,
+					room!.jid,
+					{body: newMessage},
+					{replyingTo: replyingTo ?? undefined, ...options},
+				);
 			}
 			finally {
 				setPendingMessages(current => current.filter(x => x.localID !== tmpID));
 			}
 		})();
+
+		setReplyingTo(null);
 	});
 
 	const submitEdit = useLatestCallback(async (newMessage: string, replaces: string) => {
@@ -405,6 +428,15 @@ function ChatRoomPageInner(props: {roomJID: JID}) {
 		conn.setRoomNotificationLevel.call(undefined, accountJID, props.roomJID, newValue);
 	}, [accountJID, conn.setRoomNotificationLevel, props.roomJID]);
 
+	const onInputKeyDown = useLatestCallback((evt: KeyboardEvent) => {
+		if(evt.code === "Escape") {
+			if(replyingTo !== null) {
+				evt.preventDefault();
+				cancelReply();
+			}
+		}
+	});
+
 	const loaderContent = pageState === null ?
 		<p>{$t({defaultMessage: "Connecting…"})}</p> :
 		LoadState.ifDone(
@@ -462,9 +494,11 @@ function ChatRoomPageInner(props: {roomJID: JID}) {
 							submitEdit={submitEdit}
 							canEdit={canEdit}
 							submitReactions={submitReactions}
+							startReply={startReply}
 						/>
-						<div class={styles.messageInputArea}>
+						<div class={styles.messageInputArea} onKeyDown={onInputKeyDown}>
 							<TypingIndicator usersTyping={usersTypingSig} inRoom={true} />
+							{replyingTo !== null && <ReplyingIndicator message={replyingTo} cancelReply={cancelReply} />}
 							{
 								canSend === null ?
 									(
@@ -478,6 +512,7 @@ function ChatRoomPageInner(props: {roomJID: JID}) {
 												submitMessage={submitMessage}
 												autofocus
 												onChangeComposing={onChangeComposing}
+												ref={inputRef}
 											/> :
 											<p>
 												{$t({

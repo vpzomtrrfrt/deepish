@@ -1,5 +1,5 @@
 import { css, cx } from "@emotion/css";
-import { mdiEmoticonPlus, mdiPencil } from "@mdi/js";
+import { mdiClose, mdiEmoticonPlus, mdiPencil, mdiReply } from "@mdi/js";
 import { useComputed } from "@preact/signals";
 import { useLiveSignal } from "@preact/signals/utils";
 import { JID, parse as parseJID } from "@xmpp/jid";
@@ -153,6 +153,31 @@ const styles = {
 
 		backgroundColor: themeVars.bg1,
 	}),
+	replyingIndicatorWrapper: css({position: "relative"}),
+	replyingIndicator: css({
+		boxSizing: "border-box",
+
+		position: "absolute",
+		bottom: 0,
+		left: ".5rem",
+		width: "calc(100% - 1rem)",
+
+		borderStyle: "solid",
+		borderColor: themeVars.outline1,
+		borderWidth: "1px",
+		borderRadius: ".5rem",
+
+		backgroundColor: themeVars.bg1,
+
+		padding: ".25rem .5rem",
+	}),
+	replyingIndicatorHeading: css({
+		display: "flex",
+		justifyContent: "space-between",
+		alignItems: "center",
+
+		fontWeight: "bold",
+	}),
 };
 
 export default function MessageList(props: {
@@ -161,6 +186,7 @@ export default function MessageList(props: {
 	pendingMessages?: Array<Pick<Message, "localID" | "content" | "timestamp">>;
 
 	renderMenu(message: Message, setMenuOpen: (value: boolean) => void): ComponentChildren;
+	startReply?: (message: Message) => void;
 	submitEdit?: (text: string, replaces: string) => Promise<void>;
 	canEdit?: (message: Message) => boolean;
 	submitReactions?: (reactions: string[], message: Message) => Promise<void>;
@@ -289,6 +315,7 @@ export default function MessageList(props: {
 					msgCache={props.msgCache}
 					index={index}
 					renderMenu={props.renderMenu}
+					startReply={props.startReply}
 					submitEdit={props.submitEdit}
 					canEdit={props.canEdit}
 					submitReactions={props.submitReactions}
@@ -353,6 +380,7 @@ function MessageRow(props: {
 	index: number;
 
 	renderMenu(message: Message, setMenuOpen: (value: boolean) => void): ComponentChildren;
+	startReply?: (message: Message) => void;
 	submitEdit?: (text: string, replaces: string) => Promise<void>;
 	canEdit?: (message: Message) => boolean;
 	submitReactions?: (reactions: string[], message: Message) => Promise<void>;
@@ -394,6 +422,7 @@ function RealMessageRow(props: {
 
 	renderMenu(message: Message, setMenuOpen: (value: boolean) => void): ComponentChildren;
 
+	startReply?: (message: Message) => void;
 	submitEdit?: (text: string, replaces: string) => Promise<void>;
 	canEdit?: (message: Message) => boolean;
 	submitReactions?: (reactions: string[], message: Message) => Promise<void>;
@@ -419,6 +448,22 @@ function RealMessageRow(props: {
 		await props.submitEdit!.call(undefined, text, replaces);
 		setEditing(false);
 	}, [props.submitEdit]);
+
+	const startReply = useMemo(() => {
+		if(props.msgCache.container.type === "room") {
+			if(!message.ids.some(x => x.type === StanzaIDType.Stanza && x.by?.equals(props.msgCache.container.jid))) {
+				return undefined;
+			}
+		}
+		else if(props.msgCache.container.type === "direct") {
+			if(!message.ids.some(x => x.type === StanzaIDType.Element)) return undefined;
+		}
+		else {
+			const _: never = props.msgCache.container;
+		}
+
+		return props.startReply?.bind(undefined, message);
+	}, [message, props.msgCache.container, props.startReply]);
 
 	const cancelEdit = useCallback(() => {
 		setEditing(false);
@@ -563,6 +608,11 @@ function RealMessageRow(props: {
 						>
 							<EmojiPicker onEmojiClick={onEmojiClick} />
 						</Popover>
+					}
+					{typeof startReply !== "undefined" &&
+						<IconButton onClick={startReply}>
+							<Icon path={mdiReply} />
+						</IconButton>
 					}
 					{(
 						typeof props.submitEdit !== "undefined" &&
@@ -906,4 +956,18 @@ export function MessageSourceDialog(props: {message: Message}) {
 			</pre>
 		</Block>
 	</Dialog>;
+}
+
+export function ReplyingIndicator(props: {message: Message; cancelReply(): void}) {
+	const { $t } = useIntl();
+
+	return <div class={styles.replyingIndicatorWrapper}>
+		<div class={styles.replyingIndicator}>
+			<div class={styles.replyingIndicatorHeading}>
+				<span>{$t({defaultMessage: "Replying to:"})}</span>
+				<IconButton onClick={props.cancelReply}><Icon path={mdiClose} /></IconButton>
+			</div>
+			<MessageReplyQuoteContent message={props.message} />
+		</div>
+	</div>;
 }
