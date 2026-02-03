@@ -3653,11 +3653,21 @@ function convertMarkdownForSend(src: string, replyingTo?: Message): {content: Me
 				...(
 					replyBody === "" ?
 						[] :
-						[xml(
-							"fallback",
-							{xmlns: "urn:xmpp:feature-fallback:0", for: "urn:xmpp:reply:0"},
-							xml("body", {start: 0, end: stringLength(replyBody)}),
-						)]
+						[
+							// The spec says to use this, but nowhere else references that
+							xml(
+								"fallback",
+								{xmlns: "urn:xmpp:feature-fallback:0", for: "urn:xmpp:reply:0"},
+								xml("body", {start: 0, end: stringLength(replyBody)}),
+							),
+
+							// and other clients seem to expect this instead
+							xml(
+								"fallback",
+								{xmlns: "urn:xmpp:fallback:0", for: "urn:xmpp:reply:0"},
+								xml("body", {start: 0, end: stringLength(replyBody)}),
+							),
+						]
 				),
 			],
 		};
