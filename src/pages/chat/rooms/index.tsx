@@ -20,7 +20,7 @@ import MessageInput from "../../../components/MessageInput";
 import MessageList, { LoadMoreTriggerer, MessageSourceDialog, ReplyingIndicator } from "../../../components/MessageList";
 import TaskDialog from "../../../components/TaskDialog";
 import TypingIndicator from "../../../components/TypingIndicator";
-import { Message, messageEditIsAllowed, messageRemovalIsAllowed, NotificationLevel, ResultSetInfo, useAccountSig, useConnectionContext } from "../../../util/connection";
+import { Message, messageEditIsAllowed, MessageRemovalEvent, messageRemovalIsAllowed, NotificationLevel, ResultSetInfo, useAccountSig, useConnectionContext } from "../../../util/connection";
 import { msgActionDelete, presenceShowTypeNames } from "../../../util/langCommon";
 import { useCreateMessageCache } from "../../../util/messageCache";
 import { useSignalMapKeysWhereValueMatches } from "../../../util/SignalMap";
@@ -290,13 +290,14 @@ function ChatRoomPageInner(props: {roomJID: JID}) {
 		return allUsersTypingSig.value.map(parseJID).filter(x => !x.equals(selfJIDInRoomSig.value!));
 	});
 
-	const selfCounterpartInRoom = useComputed(() => {
+	const selfCounterpartInRoomSig = useComputed(() => {
 		const selfJIDInRoom = selfJIDInRoomSig.value;
 
 		return typeof selfJIDInRoom === "undefined" ?
 			undefined :
 			accountSig.value.counterparts.get(selfJIDInRoom.toString());
-	}).value;
+	});
+	const selfCounterpartInRoom = selfCounterpartInRoomSig.value;
 
 	const canSend = (
 		typeof room === "undefined" ||
@@ -339,27 +340,47 @@ function ChatRoomPageInner(props: {roomJID: JID}) {
 		appCtx.showDialog.call(undefined, <MessageSourceDialog message={message} />);
 	}, [appCtx.showDialog]);
 
+	const selfOccupantIDSig = useComputed(() => {
+		const selfCounterpartInRoom = selfCounterpartInRoomSig.value;
+
+		return selfCounterpartInRoom?.occupantID ?? undefined;
+	});
+
+	const actionFrom = useComputed(() => {
+		if(typeof selfJIDInRoomSig.value === "undefined") return undefined;
+
+		return {
+			jid: selfJIDInRoomSig.value,
+			occupantID: selfOccupantIDSig.value,
+		} satisfies MessageRemovalEvent["from"];
+	}).value;
+
+	const canModerate = useComputed(() => {
+		const room = roomSig.value;
+		const selfCounterpartInRoom = selfCounterpartInRoomSig.value;
+
+		return typeof room !== "undefined" &&
+			LoadState.ifDone(room.infoState, info => info.features.has("urn:xmpp:message-moderate:1")) &&
+			typeof selfCounterpartInRoom?.role === "string" &&
+			checkPrivilegeForRole(MUCPrivilege.ModerateMessages, selfCounterpartInRoom.role);
+	}).value;
+
 	const renderMenu = useCallback((message: Message, setMenuOpen: (value: boolean) => void) => {
 		const items = [];
 
 		{
 			const id = message.ids.find(x => {
-				return x.type === StanzaIDType.Stanza && x.by !== null && x.by.equals(room!.jid);
+				return x.type === StanzaIDType.Stanza && x.by !== null && x.by.equals(props.roomJID);
 			});
 
 			if(typeof id !== "undefined") {
 				if(
-					typeof selfCounterpartInRoom !== "undefined" && messageRemovalIsAllowed(
+					typeof actionFrom !== "undefined" && messageRemovalIsAllowed(
 						message,
 						{
-							from: {
-								jid: selfCounterpartInRoom.jid,
-								occupantID: selfCounterpartInRoom.occupantID === null ?
-									undefined :
-									selfCounterpartInRoom.occupantID,
-							},
+							from: actionFrom,
 							removal: {type: "retract"},
-							room: room!.jid,
+							room: props.roomJID,
 						},
 					)
 				) {
@@ -369,12 +390,7 @@ function ChatRoomPageInner(props: {roomJID: JID}) {
 						</MenuItem>
 					);
 				}
-				else if(
-					typeof room !== "undefined" &&
-						LoadState.ifDone(room.infoState, info => info.features.has("urn:xmpp:message-moderate:1")) &&
-						typeof selfCounterpartInRoom !== "undefined" &&
-						checkPrivilegeForRole(MUCPrivilege.ModerateMessages, selfCounterpartInRoom.role!)
-				) {
+				else if(canModerate) {
 					items.push(
 						<MenuItem onClick={moderateMessage.bind(undefined, id.id)}>
 							{$t({defaultMessage: "Delete Message"})}
@@ -394,32 +410,31 @@ function ChatRoomPageInner(props: {roomJID: JID}) {
 		else {
 			return <Menu onOpenChange={setMenuOpen}>{items}</Menu>;
 		}
-	}, [$t, moderateMessage, retractMessage, room, selfCounterpartInRoom, showSourceDialog]);
+	}, [$t, canModerate, actionFrom, moderateMessage, props.roomJID, retractMessage, showSourceDialog]);
 
-	const canEdit = useCallback((message: Message) => {
-		if(canSend !== true) return false;
+	const canEdit = useMemo(() => {
+		console.log("canEdit changed");
 
-		if(typeof selfCounterpartInRoom !== "undefined") {
-			if(
-				messageEditIsAllowed(
-					message,
-					{
-						from: {
-							jid: selfCounterpartInRoom.jid,
-							occupantID: selfCounterpartInRoom.occupantID === null ?
-								undefined :
-								selfCounterpartInRoom.occupantID,
+		return (message: Message) => {
+			if(canSend !== true) return false;
+
+			if(typeof actionFrom !== "undefined") {
+				if(
+					messageEditIsAllowed(
+						message,
+						{
+							from: actionFrom,
+							room: props.roomJID,
 						},
-						room: room!.jid,
-					},
-				)
-			) {
-				return true;
+					)
+				) {
+					return true;
+				}
 			}
-		}
 
-		return false;
-	}, [canSend, room, selfCounterpartInRoom]);
+			return false;
+		};
+	}, [canSend, actionFrom, props.roomJID]);
 
 	const onChangeNotificationLevel = useCallback((newValue: NotificationLevel) => {
 		console.log("onChangeNotificationLevel");

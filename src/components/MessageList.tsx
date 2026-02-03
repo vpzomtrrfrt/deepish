@@ -198,7 +198,7 @@ const styles = {
 	}),
 };
 
-export default function MessageList(props: {
+export default memo(function MessageList(props: {
 	msgCache: MessageCache;
 	loaderContent: Signalish<VNode>;
 	pendingMessages?: Array<Pick<Message, "localID" | "content" | "timestamp">>;
@@ -414,7 +414,7 @@ export default function MessageList(props: {
 		})}
 		<div class={styles.typingIndicatorPlaceholder} />
 	</div>;
-}
+});
 
 function MessageRow(props: {
 	msgCache: MessageCache;
