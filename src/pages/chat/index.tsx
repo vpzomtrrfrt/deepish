@@ -43,6 +43,7 @@ import { themeVars } from "../../util/theme";
 import { Counterpart, PresenceShowType, PresenceShowTypeExtended } from "../../util/types";
 import unsignal from "../../util/unsignal";
 import { LoadState } from "../../util/useData";
+import useEventHandler from "../../util/useEventHandler";
 import useSubmitting from "../../util/useSubmitting";
 import DirectChatPage from "./direct";
 import ChatRoomPage from "./rooms";
@@ -316,6 +317,8 @@ export function SpaceItemsList(props: JSX.HTMLAttributes<HTMLDivElement>) {
 type PendingReorder = {movingRoom: JID; to: {after: JID | null; before: JID | null}};
 
 function ChatView() {
+	const [, navigate] = useLocation();
+
 	const conn = useConnectionContext();
 	const accountSig = useAccountSig();
 
@@ -350,6 +353,14 @@ function ChatView() {
 			}
 		})();
 	});
+
+	const onGlobalKeyDown = useLatestCallback((evt: KeyboardEvent) => {
+		if(evt.code === "Home" && evt.ctrlKey && evt.altKey) {
+			navigate("~/");
+			evt.preventDefault();
+		}
+	});
+	useEventHandler(window, "keydown", onGlobalKeyDown);
 
 	const roomsSig = useComputed(() => accountSig.value.rooms);
 
