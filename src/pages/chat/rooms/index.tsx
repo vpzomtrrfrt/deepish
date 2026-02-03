@@ -456,6 +456,15 @@ function ChatRoomPageInner(props: {roomJID: JID}) {
 		conn.setRoomNotificationLevel.call(undefined, accountJID, props.roomJID, newValue);
 	}, [accountJID, conn.setRoomNotificationLevel, props.roomJID]);
 
+	const onInputKeyDown = useLatestCallback((evt: KeyboardEvent) => {
+		if(evt.code === "Escape") {
+			if(replyingTo !== null) {
+				evt.preventDefault();
+				cancelReply();
+			}
+		}
+	});
+
 	const loaderContent = pageState === null ?
 		<p>{$t({defaultMessage: "Connecting…"})}</p> :
 		LoadState.ifDone(
@@ -515,7 +524,7 @@ function ChatRoomPageInner(props: {roomJID: JID}) {
 							submitReactions={submitReactions}
 							startReply={startReply}
 						/>
-						<div class={styles.messageInputArea}>
+						<div class={styles.messageInputArea} onKeyDown={onInputKeyDown}>
 							<TypingIndicator usersTyping={usersTypingSig} inRoom={true} />
 							{replyingTo !== null && <ReplyingIndicator message={replyingTo} cancelReply={cancelReply} />}
 							{
