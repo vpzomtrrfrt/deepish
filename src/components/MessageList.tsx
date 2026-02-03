@@ -8,6 +8,7 @@ import { EmojiClickEvent } from "emoji-picker-element/shared";
 import inlineStyleParser from "inline-style-parser";
 import { stringify as stringifyXML } from "ltx";
 import { ComponentChildren, h, JSX, VNode } from "preact";
+import { memo } from "preact/compat";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { FormattedList, useIntl } from "react-intl";
 import useLatestCallback from "use-latest-callback";
@@ -453,10 +454,21 @@ function MessageRow(props: {
 		}
 	}
 
-	return <RealMessageRow {...props} message={message} key={message.ids[0].toString()} isMerged={isMerged} />;
+	return <RealMessageRow
+		message={message}
+		isMerged={isMerged}
+
+		msgCache={props.msgCache}
+		scrollToMessage={props.scrollToMessage}
+		renderMenu={props.renderMenu}
+		startReply={props.startReply}
+		submitEdit={props.submitEdit}
+		canEdit={props.canEdit}
+		submitReactions={props.submitReactions}
+	/>;
 }
 
-function RealMessageRow(props: {
+const RealMessageRow = memo(function RealMessageRow(props: {
 	msgCache: MessageCache;
 	message: Message;
 	isMerged: boolean;
@@ -682,7 +694,7 @@ function RealMessageRow(props: {
 			}
 		</div>
 	</div>;
-}
+});
 
 const LOAD_MORE_THRESHOLD = 0.5;
 
