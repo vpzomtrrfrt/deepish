@@ -170,68 +170,35 @@ export default function ContactsPage() {
 				</TabLink>
 			</TabsList>
 
-			{
-				(tabSig.value === FriendsTab.All || tabSig.value === FriendsTab.Online) && <div>
-					<For each={visibleFriendsSig} static>
-						{item => <FriendEntry jid={item} />}
-					</For>
-				</div>
-			}
-			{
-				tabSig.value === FriendsTab.Requests && <div>
-					<Block>
-						<h1>{$t({defaultMessage: "Add Friend"})}</h1>
-						<AddFriendForm />
-					</Block>
-					{outgoingRequestCounterpartsCount > 0 &&
+			<div style={{overflowY: "auto"}}>
+				{
+					(tabSig.value === FriendsTab.All || tabSig.value === FriendsTab.Online) && <div>
+						<For each={visibleFriendsSig} static>
+							{item => <FriendEntry jid={item} />}
+						</For>
+					</div>
+				}
+				{
+					tabSig.value === FriendsTab.Requests && <div>
 						<Block>
-							<h1>
-								{$t({defaultMessage: "Outgoing", description: "Heading for outgoing friend requests"})}
-							</h1>
-							<div>
-								<For each={outgoingRequestCounterpartsSig}>
-									{info => {
-										return <div class={styles.friendEntry} key={info.jid.toString()}>
-											<div style={{flexGrow: 1}}>
-												{info.jid.toString()}
-											</div>
-											<div class={styles.friendButtons}>
-												<WithTooltip tooltip={$t({defaultMessage: "Cancel Request"})}>
-													<IconButton onClick={removeFriend.bind(undefined, info.jid)}>
-														<Icon path={mdiClose} />
-													</IconButton>
-												</WithTooltip>
-											</div>
-										</div>;
-									}}
-								</For>
-							</div>
+							<h1>{$t({defaultMessage: "Add Friend"})}</h1>
+							<AddFriendForm />
 						</Block>
-					}
-					{
-						incomingRequestCounterpartsCount > 0 &&
+						{outgoingRequestCounterpartsCount > 0 &&
 							<Block>
 								<h1>
-									{$t({
-										defaultMessage: "Incoming",
-										description: "Heading for incoming friend requests",
-									})}
+									{$t({defaultMessage: "Outgoing", description: "Heading for outgoing friend requests"})}
 								</h1>
 								<div>
-									<For each={incomingRequestCounterpartsSig}>
+									<For each={outgoingRequestCounterpartsSig}>
 										{info => {
 											return <div class={styles.friendEntry} key={info.jid.toString()}>
 												<div style={{flexGrow: 1}}>
 													{info.jid.toString()}
 												</div>
 												<div class={styles.friendButtons}>
-													<WithTooltip tooltip={$t({defaultMessage: "Accept Request"})}>
-														<IconButton onClick={acceptFriendRequest.bind(undefined, info.jid)}>
-															<Icon path={mdiCheck} />
-														</IconButton>
-													</WithTooltip>
-													<WithTooltip tooltip={$t({defaultMessage: "Reject Request"})}>
-														<IconButton onClick={rejectFriendRequest.bind(undefined, info.jid)}>
+													<WithTooltip tooltip={$t({defaultMessage: "Cancel Request"})}>
+														<IconButton onClick={removeFriend.bind(undefined, info.jid)}>
 															<Icon path={mdiClose} />
 														</IconButton>
 													</WithTooltip>
@@ -241,9 +208,44 @@ export default function ContactsPage() {
 									</For>
 								</div>
 							</Block>
-					}
-				</div>
-			}
+						}
+						{
+							incomingRequestCounterpartsCount > 0 &&
+								<Block>
+									<h1>
+										{$t({
+											defaultMessage: "Incoming",
+											description: "Heading for incoming friend requests",
+										})}
+									</h1>
+									<div>
+										<For each={incomingRequestCounterpartsSig}>
+											{info => {
+												return <div class={styles.friendEntry} key={info.jid.toString()}>
+													<div style={{flexGrow: 1}}>
+														{info.jid.toString()}
+													</div>
+													<div class={styles.friendButtons}>
+														<WithTooltip tooltip={$t({defaultMessage: "Accept Request"})}>
+															<IconButton onClick={acceptFriendRequest.bind(undefined, info.jid)}>
+																<Icon path={mdiCheck} />
+															</IconButton>
+														</WithTooltip>
+														<WithTooltip tooltip={$t({defaultMessage: "Reject Request"})}>
+															<IconButton onClick={rejectFriendRequest.bind(undefined, info.jid)}>
+																<Icon path={mdiClose} />
+															</IconButton>
+														</WithTooltip>
+													</div>
+												</div>;
+											}}
+										</For>
+									</div>
+								</Block>
+						}
+					</div>
+				}
+			</div>
 		</ManualTabsContainer>
 	</div>;
 }
