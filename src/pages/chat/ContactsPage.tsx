@@ -137,7 +137,7 @@ export default function ContactsPage() {
 		if(!info.rosterEntry.subscriptionTo) return false;
 
 		return true;
-	});
+	}, true);
 
 	const visibleFriendsSig = useComputed(() => {
 		if(tabSig.value === FriendsTab.All) return friendsSig.value;

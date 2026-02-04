@@ -528,7 +528,7 @@ function ChatHomePage() {
 
 	const possibleConversationsKeysSig = useSignalMapKeysWhereValueMatches(accountSig.value.counterparts, counterpart => {
 		return (counterpart.lastMessageTimestamp !== null || counterpart.overrideVisibleTimestamp !== null);
-	});
+	}, true);
 
 	// TODO somehow avoid re-sorting so often?
 	const conversationsSig = useComputed(() => {

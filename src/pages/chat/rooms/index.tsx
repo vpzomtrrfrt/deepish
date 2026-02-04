@@ -2,9 +2,10 @@ import { css } from "@emotion/css";
 import { useComputed, useSignal, useSignalEffect } from "@preact/signals";
 import xid from "@xmpp/id";
 import { JID, parse as parseJID } from "@xmpp/jid";
+import { memo } from "preact/compat";
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { Fragment } from "preact/jsx-runtime";
-import { useIntl } from "react-intl";
+import { defineMessage, MessageDescriptor, useIntl } from "react-intl";
 import useLatestCallback from "use-latest-callback";
 import { useLocation } from "wouter-preact";
 
@@ -14,7 +15,6 @@ import ConfirmDialog from "../../../components/ConfirmDialog";
 import ConfirmTaskDialog from "../../../components/ConfirmTaskDialog";
 import { DataNonDoneView, ErrorAlert, Loading } from "../../../components/DataView";
 import EditRoomDialog from "../../../components/EditRoomDialog";
-import For from "../../../components/For";
 import Menu, { MenuGroupLabel, MenuItem, MenuRadioGroup, MenuRadioItem } from "../../../components/Menu";
 import MessageInput from "../../../components/MessageInput";
 import MessageList, { LoadMoreTriggerer, MessageSourceDialog, ReplyingIndicator } from "../../../components/MessageList";
@@ -70,6 +70,9 @@ const styles = {
 		borderRightWidth: "1px",
 		borderRightColor: themeVars.outline1,
 		backgroundColor: themeVars.bg1,
+
+		gap: ".25rem",
+		paddingBlock: ".25rem",
 	}),
 	membersListEntry: css({
 		padding: ".5rem",
@@ -90,6 +93,9 @@ const styles = {
 	}),
 	messageInputArea: css({
 		marginInlineStart: "250px",
+	}),
+	memberGroupLabel: css({
+		fontWeight: "bold",
 	}),
 };
 
@@ -279,9 +285,9 @@ function ChatRoomPageInner(props: {roomJID: JID}) {
 		return new JID(room.jid.local, room.jid.domain, room.nick ?? accountJIDSig.value.local);
 	});
 
-	const allUsersTypingSig = useSignalMapKeysWhereValueMatches(accountSig.value.counterparts, value => {
+	const allUsersTypingSig = useSignalMapKeysWhereValueMatches(accountSig.value.counterparts, useCallback(value => {
 		return value.jid.bare().equals(props.roomJID) && value.composingFrom === true;
-	});
+	}, [props.roomJID]), false);
 
 	const usersTypingSig = useComputed(() => {
 		const room = roomSig.value;
@@ -547,28 +553,70 @@ function ChatRoomPageInner(props: {roomJID: JID}) {
 	</Fragment>;
 }
 
+type MemberGroup = "owner" | "admin" | "other";
+
+const MEMBER_GROUP_NAMES: Record<MemberGroup, MessageDescriptor> = {
+	owner: defineMessage({defaultMessage: "Owner", description: "Room affiliation"}),
+	admin: defineMessage({defaultMessage: "Admin", description: "Room affiliation"}),
+	other: defineMessage({defaultMessage: "Other", description: "Room affiliation"}),
+};
+
 function MembersList(props: {roomJID: JID}) {
+	const { $t } = useIntl();
+
 	const accountSig = useAccountSig();
 
 	const room = useComputed(() => accountSig.value.rooms.getSignal(props.roomJID.toString())).value.value;
 
-	const membersSig = useSignalMapKeysWhereValueMatches(accountSig.value.counterparts, x => {
+	const memberKeysSig = useSignalMapKeysWhereValueMatches(accountSig.value.counterparts, useCallback(x => {
 		return x.jid.bare().equals(props.roomJID) &&
 			x.jid.resource !== "" &&
 			x.presences !== null &&
 			x.presences.size > 0;
+	}, [props.roomJID]), false);
+
+	const membersByGroupSig = useComputed(() => {
+		const result = new Map<MemberGroup, JID[]>();
+
+		memberKeysSig.value.forEach(key => {
+			const counterpart = accountSig.value.counterparts.get(key)!;
+
+			let group: MemberGroup;
+			if(counterpart.affiliation === "owner") group = "owner";
+			else if(counterpart.affiliation === "admin") group = "admin";
+			else group = "other";
+
+			let list = result.get(group);
+			if(typeof list === "undefined") {
+				list = [];
+				result.set(group, list);
+			}
+
+			list.push(counterpart.jid);
+		});
+
+		result.forEach(list => list.sort((a, b) => a.toString().localeCompare(b.toString())));
+
+		return result;
 	});
 
 	if(typeof room === "undefined" || !room.connected) return null;
 
 	return <SidebarSegment class={styles.membersList}>
-		<For each={membersSig} static>
-			{jid => <MembersListEntry jid={parseJID(jid)} />}
-		</For>
+		{Object.keys(MEMBER_GROUP_NAMES).map(group_ => {
+			const group = group_ as keyof typeof MEMBER_GROUP_NAMES;
+
+			if(membersByGroupSig.value.has(group)) {
+				return <div key={group}>
+					<div class={styles.memberGroupLabel}>{$t(MEMBER_GROUP_NAMES[group])}</div>
+					{membersByGroupSig.value.get(group)!.map(jid => <MembersListEntry key={jid.toString()} jid={jid} />)}
+				</div>;
+			}
+		})}
 	</SidebarSegment>;
 }
 
-function MembersListEntry(props: {jid: JID}) {
+const MembersListEntry = memo(function MembersListEntry(props: {jid: JID}) {
 	const { $t } = useIntl();
 
 	const accountSig = useAccountSig();
@@ -593,4 +641,4 @@ function MembersListEntry(props: {jid: JID}) {
 			}
 		</div>
 	</div>;
-}
+});

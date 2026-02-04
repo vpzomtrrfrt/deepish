@@ -156,8 +156,12 @@ export type SignalMapChangeEvent<K, V> = {
 
 export function useSignalMapKeysWhereValueMatches<K, V>(
 	map: SignalMap<K, V>,
-	predicate: (value: V, key: K) => boolean,
+	predicate_: (value: V, key: K) => boolean,
+	predicateIsStatic: boolean,
 ) {
+	// eslint-disable-next-line react-hooks/exhaustive-deps
+	const predicate = useMemo(() => predicate_, predicateIsStatic ? [] : [predicate_]);
+
 	// I expect all these dep lists to actually always trigger together
 
 	const [dest, kill] = useMemo(() => {
