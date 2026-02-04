@@ -1,5 +1,6 @@
 import { css } from "@emotion/css";
 import { useComputed, useSignal, useSignalEffect } from "@preact/signals";
+import { Show } from "@preact/signals/utils";
 import xid from "@xmpp/id";
 import { JID, parse as parseJID } from "@xmpp/jid";
 import { memo } from "preact/compat";
@@ -471,6 +472,13 @@ function ChatRoomPageInner(props: {roomJID: JID}) {
 			);
 	});
 
+	// We want to avoid rendering some components initially to make navigation feel faster
+	const initedSig = useSignal(false);
+
+	useEffect(() => {
+		initedSig.value = true;
+	}, [initedSig]);
+
 	return <Fragment>
 		<div class={styles.page}>
 			<div class={styles.header}>
@@ -550,7 +558,9 @@ function ChatRoomPageInner(props: {roomJID: JID}) {
 					</>
 			}
 		</div>
-		<MembersList roomJID={props.roomJID} />
+		<Show when={initedSig} fallback={<SidebarSegment class={styles.membersList} />}>
+			<MembersList roomJID={props.roomJID} />
+		</Show>
 	</Fragment>;
 }
 
