@@ -21,6 +21,7 @@ import MessageList, { LoadMoreTriggerer, MessageSourceDialog, ReplyingIndicator 
 import TaskDialog from "../../../components/TaskDialog";
 import TypingIndicator from "../../../components/TypingIndicator";
 import { Message, messageEditIsAllowed, MessageRemovalEvent, messageRemovalIsAllowed, NotificationLevel, ResultSetInfo, useAccountSig, useConnectionContext } from "../../../util/connection";
+import getRoomUserColor from "../../../util/getRoomUserColor";
 import { msgActionDelete, presenceShowTypeNames } from "../../../util/langCommon";
 import { useCreateMessageCache } from "../../../util/messageCache";
 import { useSignalMapKeysWhereValueMatches } from "../../../util/SignalMap";
@@ -629,7 +630,12 @@ const MembersListEntry = memo(function MembersListEntry(props: {jid: JID}) {
 		<AvatarWithStatus size="md" jid={counterpart.jid} inRoom />
 		<div style={{flexGrow: 1, minWidth: 0}}>
 			<div
-				style={{maxWidth: "100%", overflowX: "hidden", textOverflow: "ellipsis"}}
+				style={{
+					maxWidth: "100%",
+					overflowX: "hidden",
+					textOverflow: "ellipsis",
+					color: getRoomUserColor(counterpart),
+				}}
 				title={counterpart.jid.resource}
 			>
 				{counterpart.jid.resource}

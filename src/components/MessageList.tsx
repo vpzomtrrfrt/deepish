@@ -13,6 +13,7 @@ import useLatestCallback from "use-latest-callback";
 
 import * as commonStyles from "../util/commonStyles";
 import { Message, MessageContent, Room, useAccountSig } from "../util/connection";
+import getRoomUserColor from "../util/getRoomUserColor";
 import { MessageCache } from "../util/messageCache";
 import { maybeGetNickForCounterpart } from "../util/profileUtil";
 import { themeVars } from "../util/theme";
@@ -488,6 +489,13 @@ const RealMessageRow = memo(function RealMessageRow(props: {
 	const fromSig = useComputed(() => messageSig.value.room === null ? messageSig.value.from.bare() : messageSig.value.from);
 	const counterpartSig = useComputed(() => accountSig.value.counterparts.getSignal(fromSig.value.toString())).value;
 	const nickSig = useComputed(() => maybeGetNickForCounterpart(fromSig.value, counterpartSig.value));
+	const colorSig = useComputed(() => {
+		if(props.msgCache.container.type !== "room") return null;
+
+		const counterpart = counterpartSig.value;
+
+		return typeof counterpart === "undefined" ? null : getRoomUserColor(counterpart);
+	});
 
 	const [editing, setEditing] = useState(false);
 
@@ -625,7 +633,7 @@ const RealMessageRow = memo(function RealMessageRow(props: {
 			<div class={styles.messageContentArea}>
 				{!props.isMerged &&
 					<div>
-						<span>{nickSig}</span>
+						<span style={{color: colorSig.value}}>{nickSig}</span>
 						<span class={styles.messageTimestamp}>
 							{message.timestamp.toLocaleString()}
 							{message.editedAt !== null && <>{" "}{$t({defaultMessage: "(edited)"})}</>}
