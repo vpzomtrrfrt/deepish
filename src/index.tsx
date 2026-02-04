@@ -3,7 +3,7 @@ import "./global.css";
 import { Tooltip } from "@base-ui/react/tooltip";
 import { css } from "@emotion/css";
 import { IDBCache } from "@instructure/idb-cache";
-import { Signal, signal, useComputed } from "@preact/signals";
+import { Signal, signal, useComputed, useSignalEffect } from "@preact/signals";
 import { useMediaQuery } from "@react-hook/media-query";
 import { parse as parseJID } from "@xmpp/jid";
 import { createContext, RefObject, render, VNode } from "preact";
@@ -16,9 +16,10 @@ import DataView from "./components/DataView";
 import DialogContainer, { DialogContainerRef } from "./components/DialogContainer";
 import ChatPage from "./pages/chat";
 import LoginPage from "./pages/login";
-import { ConnectionContext, MessageContent, MessageEvent, NotificationLevel, useConnectionContext, useCreateConnection } from "./util/connection";
+import { ConnectionContext, MessageContent, MessageEvent, NotificationLevel, useAccountSig, useConnectionContext, useCreateConnection } from "./util/connection";
 import matchLocale from "./util/matchLocale";
 import { maybeGetNickForCounterpart } from "./util/profileUtil";
+import { useSignalMapKeysWhereValueMatches } from "./util/SignalMap";
 import { themeCSS, themeVars } from "./util/theme";
 import { NotificationCategory } from "./util/types";
 import useData, { LoadState } from "./util/useData";
@@ -217,6 +218,7 @@ function AppContent() {
 	const { $t } = useIntl();
 
 	const connection = useConnectionContext();
+	const accountSig = useAccountSig();
 
 	const directMatch = useRoute("/chat/direct/:counterpartJID");
 	const roomMatch = useRoute("/chat/rooms/:roomJID");
@@ -270,6 +272,21 @@ function AppContent() {
 	});
 
 	useEventHandler(connection, "message", onMessage);
+
+	const unreadConversationsSig = useSignalMapKeysWhereValueMatches(
+		accountSig.value.counterparts,
+		counterpart => {
+			return counterpart.lastMessageIDForUnread !== null &&
+				counterpart.lastReadMessageID !== counterpart.lastMessageIDForUnread &&
+				counterpart.lastReadMessageID !== counterpart.lastMessageID;
+		},
+		true,
+	);
+	const hasUnreadConversationsSig = useComputed(() => unreadConversationsSig.value.length > 0);
+
+	useSignalEffect(() => {
+		document.title = "Deepish" + (hasUnreadConversationsSig.value ? " *" : "");
+	});
 
 	return <>
 		<Route path="/" component={RootPage} />
