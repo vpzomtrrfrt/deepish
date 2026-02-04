@@ -610,6 +610,8 @@ const ConversationLink = memo(function ConversationLink(props: {jid: JID}) {
 });
 
 function ConnectingView() {
+	const { $t } = useIntl();
+
 	const [, navigate] = useLocation();
 
 	const accountSig = useAccountSig();
@@ -629,13 +631,13 @@ function ConnectingView() {
 	return <div class={styles.connectingView}>
 		{!accountSig.value.stopped &&
 			<div>
-				Connecting…
+				{$t({defaultMessage: "Connecting…"})}
 			</div>
 		}
 		{accountSig.value.lastError !== null &&
 			<ErrorAlert error={accountSig.value.lastError} />
 		}
-		<Button tier="secondary" onClick={logout}>Log out</Button>
+		<Button tier="secondary" onClick={logout}>{$t({defaultMessage: "Log out"})}</Button>
 	</div>;
 }
 
