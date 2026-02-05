@@ -1,12 +1,14 @@
 import { css, cx } from "@emotion/css";
 import { useComputed } from "@preact/signals";
-import { useLiveSignal } from "@preact/signals/utils";
+import { Show, useLiveSignal } from "@preact/signals/utils";
 import { JID, parse as parseJID } from "@xmpp/jid";
+import { Signalish } from "preact";
 import { useMemo } from "preact/hooks";
 
 import { useAccountSig } from "../util/connection";
 import { getShowTypeForCounterpart } from "../util/statusUtil";
 import { PresenceShowTypeExtended } from "../util/types";
+import unsignal from "../util/unsignal";
 import Avatar, { AvatarSize } from "./Avatar";
 import StatusIndicator from "./StatusIndicator";
 
@@ -43,10 +45,14 @@ export default function AvatarWithStatus(props: {
 export function AvatarWithStatusRaw(props: {
 	size: AvatarSize;
 	jid: JID;
-	showType: PresenceShowTypeExtended | null;
+	showType: Signalish<PresenceShowTypeExtended | null>;
 }) {
 	return <div class={cx("avatar", styles.avatarWithStatus)}>
 		<Avatar size={props.size} jid={props.jid} />
-		{props.showType !== null && <StatusIndicator showType={props.showType} class={styles.statusIndicator} />}
+		<Show when={() => unsignal(props.showType)}>
+			{(showType: PresenceShowTypeExtended) => {
+				return <StatusIndicator showType={showType} class={styles.statusIndicator} />;
+			}}
+		</Show>
 	</div>;
 }

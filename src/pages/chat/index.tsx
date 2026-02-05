@@ -697,7 +697,7 @@ function SelfBox() {
 		<AvatarWithStatusRaw
 			size="md"
 			jid={jid}
-			showType={showTypeSig.value}
+			showType={showTypeSig}
 		/>
 		<div class={styles.selfBoxNameSegment}>
 			{nickSig}
