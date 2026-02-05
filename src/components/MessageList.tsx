@@ -610,7 +610,8 @@ const RealMessageRow = memo(function RealMessageRow(props: {
 	else {
 		const target = props.msgCache.getMessage(message.replyingTo.id);
 		if(typeof target === "undefined") {
-			replyContent = <MessageContentView content={message.replyingTo.fallbackContent} />;
+			if(message.replyingTo.fallbackContent.length < 1) replyContent = null;
+			else replyContent = <MessageContentView content={message.replyingTo.fallbackContent} />;
 		}
 		else {
 			replyContent = <blockquote class={styles.replyQuote} onClick={scrollToReplyTarget}>
