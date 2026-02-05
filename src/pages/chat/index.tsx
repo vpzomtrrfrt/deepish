@@ -683,7 +683,9 @@ function SelfBox() {
 		navigate("~/logout/" + encodeURIComponent(jid.toString()));
 	});
 
-	const showTypeSig = useLiveSignal(conn.idle.idle ? PresenceShowType.Away : PresenceShowTypeExtended.Available);
+	const showTypeSig = useComputed(() => {
+		return conn.idle.value.idle ? PresenceShowType.Away : PresenceShowTypeExtended.Available;
+	});
 
 	const statusContentSig = useComputed(() => {
 		if(typeof counterpartSig.value === "undefined") return null;

@@ -292,7 +292,7 @@ export interface BaseConnectionContext {
 
 export interface ConnectionContext extends BaseConnectionContext {
 	inited: boolean;
-	idle: IdleState;
+	idle: ReadonlySignal<IdleState>;
 
 	saveToken(jid: JID, token: unknown, userAgent: string, resource: string): void;
 	logout(jid: JID): void;
@@ -320,10 +320,9 @@ export function useCreateConnection(
 	const idle = useIdle();
 
 	const cacheSig = useLiveSignal(cache);
-	const idleSig = useLiveSignal(idle);
 	const conn = useMemo(() => {
-		return createBaseConnection(cacheSig, idleSig, notificationsSettingsSig);
-	}, [cacheSig, idleSig, notificationsSettingsSig]);
+		return createBaseConnection(cacheSig, idle.state, notificationsSettingsSig);
+	}, [cacheSig, idle.state, notificationsSettingsSig]);
 
 	const [inited, setInited] = useState(false);
 
@@ -367,7 +366,7 @@ export function useCreateConnection(
 			...conn,
 
 			inited,
-			idle,
+			idle: idle.state,
 
 			saveToken(jid, token, userAgent, resource) {
 				localStorage.setItem("deepishAccount", JSON.stringify({jid: jid.toString(), token, userAgent, resource}));
