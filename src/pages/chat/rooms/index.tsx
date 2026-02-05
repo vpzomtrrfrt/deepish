@@ -1,14 +1,12 @@
 import { css } from "@emotion/css";
-import { useComputed, useSignal, useSignalEffect } from "@preact/signals";
-import { Show } from "@preact/signals/utils";
+import { computed, effect, signal, useComputed } from "@preact/signals";
+import { Show, useLiveSignal } from "@preact/signals/utils";
 import xid from "@xmpp/id";
 import { JID, parse as parseJID } from "@xmpp/jid";
-import { memo } from "preact/compat";
-import { useCallback, useEffect, useMemo, useRef } from "preact/hooks";
+import { createRef, memo } from "preact/compat";
+import { useCallback, useEffect, useMemo } from "preact/hooks";
 import { Fragment } from "preact/jsx-runtime";
 import { defineMessage, MessageDescriptor, useIntl } from "react-intl";
-import useLatestCallback from "use-latest-callback";
-import { useLocation } from "wouter-preact";
 
 import { NOTIFICATION_LEVEL_NAMES, useAppContext } from "../../..";
 import AvatarWithStatus from "../../../components/AvatarWithStatus";
@@ -22,10 +20,11 @@ import MessageList, { LoadMoreTriggerer, MessageSourceDialog, ReplyingIndicator 
 import TaskDialog from "../../../components/TaskDialog";
 import TypingIndicator from "../../../components/TypingIndicator";
 import { Message, messageEditIsAllowed, MessageRemovalEvent, messageRemovalIsAllowed, NotificationLevel, ResultSetInfo, useAccountSig, useConnectionContext } from "../../../util/connection";
+import createComponent from "../../../util/createComponent";
 import getRoomUserColor from "../../../util/getRoomUserColor";
 import { msgActionDelete, presenceShowTypeNames } from "../../../util/langCommon";
-import { useCreateMessageCache } from "../../../util/messageCache";
-import { useSignalMapKeysWhereValueMatches } from "../../../util/SignalMap";
+import { MessageCache } from "../../../util/messageCache";
+import { signalMapKeysSigWhereValueMatches, useSignalMapKeysWhereValueMatches } from "../../../util/SignalMap";
 import { getShowTypeForCounterpart } from "../../../util/statusUtil";
 import { themeVars } from "../../../util/theme";
 import { LoadState } from "../../../util/useData";
@@ -121,309 +120,225 @@ export default function ChatRoomPage(props: {params: {roomJID: string}}) {
 	return <ChatRoomPageInner roomJID={roomJID} key={roomJID} />;
 }
 
-function ChatRoomPageInner(props: {roomJID: JID}) {
-	const { $t } = useIntl();
-	const [, navigate] = useLocation();
+const ChatRoomPageInner = createComponent(
+	(props: {roomJID: JID}) => {
+		const intlSig = useLiveSignal(useIntl());
 
-	const appCtx = useAppContext();
-	const conn = useConnectionContext();
-	const accountSig = useAccountSig();
+		const appCtxSig = useLiveSignal(useAppContext());
 
-	const accountJIDSig = useComputed(() => accountSig.value.jid);
-	const roomSig = useComputed(() => accountSig.value.rooms.getSignal(props.roomJID.toString())).value;
+		const accountSig = useAccountSig();
+		const accountJID = useComputed(() => accountSig.value.jid).value;
 
-	const accountJID = accountJIDSig.value;
-	const room = roomSig.value;
+		const conn = useConnectionContext();
 
-	const counterpartSig = useComputed(() => accountSig.value.counterparts.getSignal(props.roomJID.toString())).value;
+		return useMemo(() => ({
+			intlSig,
+			appCtxSig,
+			accountSig,
+			accountJID,
+			roomJID: props.roomJID,
+			conn,
+		}), [intlSig, appCtxSig, accountSig, accountJID, props.roomJID, conn]);
+	},
+	({intlSig, appCtxSig, accountSig, accountJID, roomJID, conn}) => {
+		const roomSig = computed(() => accountSig.value.rooms.get(roomJID.toString()));
 
-	const msgCache = useCreateMessageCache(useMemo(() => ({type: "room", jid: props.roomJID}), [props.roomJID]));
+		const inputRef = createRef<HTMLTextAreaElement>();
 
-	const pageStateSig = useSignal<null | LoadState<ResultSetInfo | null>>(null);
+		const replyingToSig = signal<Message | null>(null);
 
-	const nextPageRef = useRef<string | null>(null);
+		function cancelReply() {
+			replyingToSig.value = null;
 
-	const loadMore = useLatestCallback(() => {
-		pageStateSig.value = LoadState.loading;
-
-		conn.requestArchive(accountJID, room!.jid, {}, nextPageRef.current ?? undefined)
-			.then(value => {
-				nextPageRef.current = value === null ? null : value.firstItem;
-				pageStateSig.value = LoadState.wrapValue(value);
-			})
-			.catch(err => {
-				pageStateSig.value = LoadState.wrapError(err);
-			});
-	});
-
-	useSignalEffect(() => {
-		if(roomSig.value?.connected === true && pageStateSig.value === null) loadMore();
-	});
-
-	useSignalEffect(() => {
-		const messages = msgCache.getMessages();
-		const counterpart = counterpartSig.value;
-
-		// TODO skip marking when scrolled up
-		if(
-			pageStateSig.value !== null &&
-				pageStateSig.value.state === "done" &&
-				messages.length > 0 &&
-				typeof counterpart !== "undefined"
-		) {
-			const lastMessage = messages[messages.length - 1];
-			const lastMessageID = lastMessage.ids.find(x => {
-				return x.type === StanzaIDType.Stanza && x.by !== null && x.by.equals(counterpart.jid);
-			});
-			if(typeof lastMessageID !== "undefined" && counterpart.lastReadMessageID !== lastMessageID.id) {
-				conn.markCounterpartAsRead(accountJIDSig.value, counterpart.jid, lastMessageID.id, false);
-			}
+			inputRef.current!.focus();
 		}
-	});
 
-	const replyingToSig = useSignal<Message | null>(null);
+		const pageStateSig = signal<null | LoadState<ResultSetInfo | null>>(null);
 
-	const cancelReply = useCallback(() => {
-		replyingToSig.value = null;
+		let nextPage: string | null = null;
 
-		inputRef.current!.focus();
-	}, [replyingToSig]);
+		function loadMore() {
+			pageStateSig.value = LoadState.loading;
 
-	const inputRef = useRef<HTMLTextAreaElement>(null);
+			conn.requestArchive(accountJID, roomSig.value!.jid, {}, nextPage ?? undefined)
+				.then(value => {
+					nextPage = value === null ? null : value.firstItem;
+					pageStateSig.value = LoadState.wrapValue(value);
+				})
+				.catch(err => {
+					pageStateSig.value = LoadState.wrapError(err);
+				});
+		}
 
-	const startReply = useLatestCallback((message: Message) => {
-		replyingToSig.value = message;
+		effect(() => {
+			if(roomSig.value?.connected === true && pageStateSig.value === null) loadMore();
+		});
 
-		inputRef.current!.focus();
-	});
+		const allUsersTypingSig = signalMapKeysSigWhereValueMatches(accountSig.value.counterparts, value => {
+			return value.jid.bare().equals(roomJID) && value.composingFrom === true;
+		});
 
-	const pendingMessagesSig = useSignal<Array<
-		Pick<Message, "content" | "timestamp" | "localID">
-	>>([]);
+		const counterpartSig = computed(() => accountSig.value.counterparts.get(roomJID.toString()));
 
-	const submitMessage = useLatestCallback((newMessage: string, options?: {replaces?: string}) => {
-		const tmpID = xid();
+		const msgCache = new MessageCache({type: "room", jid: roomJID}, conn);
 
-		pendingMessagesSig.value = [
-			...pendingMessagesSig.value,
-			{localID: tmpID, timestamp: new Date(), content: [{type: "markdown", content: newMessage}]},
-		];
+		const selfJIDInRoomSig = computed(() => {
+			const room = roomSig.value;
+			if(typeof room === "undefined") return undefined;
 
-		(async () => {
-			try {
-				await conn.sendMessageToRoom(
-					accountJID,
-					room!.jid,
-					{body: newMessage},
-					{replyingTo: replyingToSig.value ?? undefined, ...options},
-				);
-			}
-			finally {
-				pendingMessagesSig.value = pendingMessagesSig.value.filter(x => x.localID !== tmpID);
-			}
-		})();
+			return new JID(room.jid.local, room.jid.domain, room.nick ?? accountJID.local);
+		});
 
-		replyingToSig.value = null;
-	});
+		const usersTypingSig = computed(() => {
+			const room = roomSig.value;
 
-	const submitEdit = useLatestCallback(async (newMessage: string, replaces: string) => {
-		return submitMessage(newMessage, {replaces});
-	});
+			if(typeof room === "undefined") return [];
 
-	const submitReactions = useLatestCallback(async (reactions: string[], message: Message) => {
-		const id = message.ids.find(x => x.type === StanzaIDType.Stanza && x.by?.equals(props.roomJID));
-		if(typeof id === "undefined") throw new Error("Cannot react to this message");
+			return allUsersTypingSig.value.map(parseJID).filter(x => !x.equals(selfJIDInRoomSig.value!));
+		});
 
-		await conn.sendMessageReactionsToRoom.call(
-			undefined,
-			accountSig.value.jid,
-			props.roomJID,
-			id.id,
-			reactions,
-		);
-	});
+		const selfCounterpartInRoomSig = computed(() => {
+			const selfJIDInRoom = selfJIDInRoomSig.value;
 
-	const onChangeComposing = useLatestCallback((composing: boolean) => {
-		conn.setComposingToRoom(accountJID, props.roomJID, composing);
-	});
+			return typeof selfJIDInRoom === "undefined" ?
+				undefined :
+				accountSig.value.counterparts.get(selfJIDInRoom.toString());
+		});
 
-	useEffect(() => {
-		return () => onChangeComposing(false);
-	}, [onChangeComposing]);
+		const selfOccupantIDSig = useComputed(() => {
+			const selfCounterpartInRoom = selfCounterpartInRoomSig.value;
 
-	const editRoom = useLatestCallback(() => {
-		appCtx.showDialog(
-			<EditRoomDialog room={props.roomJID} />
-		);
-	});
+			return selfCounterpartInRoom?.occupantID ?? undefined;
+		});
 
-	const leaveRoom = useLatestCallback(() => {
-		appCtx.showDialog(
-			<ConfirmDialog
-				confirmText={$t({defaultMessage: "Leave"})}
-				onConfirm={() => {
-					const task = conn.leaveRoom.call(undefined, accountJID, room!.jid);
+		const actionFromSig = computed(() => {
+			if(typeof selfJIDInRoomSig.value === "undefined") return undefined;
 
-					appCtx.showDialog(<TaskDialog task={task}>{$t({defaultMessage: "Leaving…"})}</TaskDialog>);
+			return {
+				jid: selfJIDInRoomSig.value,
+				occupantID: selfOccupantIDSig.value,
+			} satisfies MessageRemovalEvent["from"];
+		});
 
-					task.then(() => navigate("~/"));
-				}}
-			>
-				<p>
-					{$t({
-						defaultMessage: "Are you sure you want to leave {room}?",
-					}, {room: <em>{room!.jid.toString()}</em>})}
-				</p>
-			</ConfirmDialog>
-		);
-	});
+		const canModerateSig = computed(() => {
+			const room = roomSig.value;
+			const selfCounterpartInRoom = selfCounterpartInRoomSig.value;
 
-	const selfJIDInRoomSig = useComputed(() => {
-		const room = roomSig.value;
-		if(typeof room === "undefined") return undefined;
+			return typeof room !== "undefined" &&
+				LoadState.ifDone(room.infoState, info => info.features.has("urn:xmpp:message-moderate:1")) &&
+				typeof selfCounterpartInRoom?.role === "string" &&
+				checkPrivilegeForRole(MUCPrivilege.ModerateMessages, selfCounterpartInRoom.role);
+		});
 
-		return new JID(room.jid.local, room.jid.domain, room.nick ?? accountJIDSig.value.local);
-	});
+		function retractMessage(messageID: string) {
+			const appCtx = appCtxSig.value;
+			const { $t } = intlSig.value;
 
-	const allUsersTypingSig = useSignalMapKeysWhereValueMatches(accountSig.value.counterparts, useCallback(value => {
-		return value.jid.bare().equals(props.roomJID) && value.composingFrom === true;
-	}, [props.roomJID]), false);
+			appCtx.showDialog.call(
+				undefined,
+				<ConfirmTaskDialog
+					submit={async () => {
+						return conn.retractMessageToRoom.call(undefined, accountJID, roomJID, messageID);
+					}}
+					confirmText={$t(msgActionDelete)}
+				>
+					{$t({defaultMessage: "Are you sure you want to delete this message?"})}
+				</ConfirmTaskDialog>
+			);
+		}
 
-	const usersTypingSig = useComputed(() => {
-		const room = roomSig.value;
+		function moderateMessage(messageID: string) {
+			const appCtx = appCtxSig.value;
+			const { $t } = intlSig.value;
 
-		if(typeof room === "undefined") return [];
+			appCtx.showDialog.call(
+				undefined,
+				<ConfirmTaskDialog
+					submit={async () => {
+						return conn.moderateMessageToRoom.call(undefined, accountJID, roomJID, messageID);
+					}}
+					confirmText={$t(msgActionDelete)}
+				>
+					{$t({defaultMessage: "Are you sure you want to delete this message?"})}
+				</ConfirmTaskDialog>
+			);
+		}
 
-		return allUsersTypingSig.value.map(parseJID).filter(x => !x.equals(selfJIDInRoomSig.value!));
-	});
+		function showSourceDialog(message: Message) {
+			const appCtx = appCtxSig.value;
 
-	const selfCounterpartInRoomSig = useComputed(() => {
-		const selfJIDInRoom = selfJIDInRoomSig.value;
+			appCtx.showDialog.call(undefined, <MessageSourceDialog message={message} />);
+		}
 
-		return typeof selfJIDInRoom === "undefined" ?
-			undefined :
-			accountSig.value.counterparts.get(selfJIDInRoom.toString());
-	});
-	const selfCounterpartInRoom = selfCounterpartInRoomSig.value;
+		function renderMenu(message: Message, setMenuOpen: (value: boolean) => void) {
+			const { $t } = intlSig.value;
 
-	const canSend = (
-		typeof room === "undefined" ||
-			!room.connected ||
-			typeof selfCounterpartInRoom === "undefined" ||
-			selfCounterpartInRoom.role === null
-	) ?
-		null :
-		checkPrivilegeForRole(MUCPrivilege.SendMessagesToAll, selfCounterpartInRoom.role);
+			const actionFrom = actionFromSig.value;
+			const canModerate = canModerateSig.value;
 
-	const retractMessage = useCallback((messageID: string) => {
-		appCtx.showDialog.call(
-			undefined,
-			<ConfirmTaskDialog
-				submit={async () => {
-					return conn.retractMessageToRoom.call(undefined, accountJID, props.roomJID, messageID);
-				}}
-				confirmText={$t(msgActionDelete)}
-			>
-				{$t({defaultMessage: "Are you sure you want to delete this message?"})}
-			</ConfirmTaskDialog>
-		);
-	}, [$t, accountJID, appCtx.showDialog, conn.retractMessageToRoom, props.roomJID]);
+			const items = [];
 
-	const moderateMessage = useCallback((messageID: string) => {
-		appCtx.showDialog.call(
-			undefined,
-			<ConfirmTaskDialog
-				submit={async () => {
-					return conn.moderateMessageToRoom.call(undefined, accountJID, props.roomJID, messageID);
-				}}
-				confirmText={$t(msgActionDelete)}
-			>
-				{$t({defaultMessage: "Are you sure you want to delete this message?"})}
-			</ConfirmTaskDialog>
-		);
-	}, [$t, accountJID, appCtx.showDialog, conn.moderateMessageToRoom, props.roomJID]);
+			{
+				const id = message.ids.find(x => {
+					return x.type === StanzaIDType.Stanza && x.by !== null && x.by.equals(roomJID);
+				});
 
-	const showSourceDialog = useCallback((message: Message) => {
-		appCtx.showDialog.call(undefined, <MessageSourceDialog message={message} />);
-	}, [appCtx.showDialog]);
-
-	const selfOccupantIDSig = useComputed(() => {
-		const selfCounterpartInRoom = selfCounterpartInRoomSig.value;
-
-		return selfCounterpartInRoom?.occupantID ?? undefined;
-	});
-
-	const actionFrom = useComputed(() => {
-		if(typeof selfJIDInRoomSig.value === "undefined") return undefined;
-
-		return {
-			jid: selfJIDInRoomSig.value,
-			occupantID: selfOccupantIDSig.value,
-		} satisfies MessageRemovalEvent["from"];
-	}).value;
-
-	const canModerate = useComputed(() => {
-		const room = roomSig.value;
-		const selfCounterpartInRoom = selfCounterpartInRoomSig.value;
-
-		return typeof room !== "undefined" &&
-			LoadState.ifDone(room.infoState, info => info.features.has("urn:xmpp:message-moderate:1")) &&
-			typeof selfCounterpartInRoom?.role === "string" &&
-			checkPrivilegeForRole(MUCPrivilege.ModerateMessages, selfCounterpartInRoom.role);
-	}).value;
-
-	const renderMenu = useCallback((message: Message, setMenuOpen: (value: boolean) => void) => {
-		const items = [];
-
-		{
-			const id = message.ids.find(x => {
-				return x.type === StanzaIDType.Stanza && x.by !== null && x.by.equals(props.roomJID);
-			});
-
-			if(typeof id !== "undefined") {
-				if(
-					typeof actionFrom !== "undefined" && messageRemovalIsAllowed(
-						message,
-						{
-							from: actionFrom,
-							removal: {type: "retract"},
-							room: props.roomJID,
-						},
-					)
-				) {
-					items.push(
-						<MenuItem onClick={retractMessage.bind(undefined, id.id)}>
-							{$t({defaultMessage: "Delete Message"})}
-						</MenuItem>
-					);
-				}
-				else if(canModerate) {
-					items.push(
-						<MenuItem onClick={moderateMessage.bind(undefined, id.id)}>
-							{$t({defaultMessage: "Delete Message"})}
-						</MenuItem>
-					);
+				if(typeof id !== "undefined") {
+					if(
+						typeof actionFrom !== "undefined" && messageRemovalIsAllowed(
+							message,
+							{
+								from: actionFrom,
+								removal: {type: "retract"},
+								room: roomJID,
+							},
+						)
+					) {
+						items.push(
+							<MenuItem onClick={retractMessage.bind(undefined, id.id)}>
+								{$t({defaultMessage: "Delete Message"})}
+							</MenuItem>
+						);
+					}
+					else if(canModerate) {
+						items.push(
+							<MenuItem onClick={moderateMessage.bind(undefined, id.id)}>
+								{$t({defaultMessage: "Delete Message"})}
+							</MenuItem>
+						);
+					}
 				}
 			}
+
+			items.push(
+				<MenuItem onClick={showSourceDialog.bind(undefined, message)}>
+					{$t({defaultMessage: "View Source"})}
+				</MenuItem>,
+			);
+
+			if(items.length < 1) return null;
+			else {
+				return <Menu onOpenChange={setMenuOpen}>{items}</Menu>;
+			}
 		}
 
-		items.push(
-			<MenuItem onClick={showSourceDialog.bind(undefined, message)}>
-				{$t({defaultMessage: "View Source"})}
-			</MenuItem>,
-		);
+		function canSend() {
+			const room = roomSig.value;
 
-		if(items.length < 1) return null;
-		else {
-			return <Menu onOpenChange={setMenuOpen}>{items}</Menu>;
+			return (
+				typeof room === "undefined" ||
+					!room.connected ||
+					typeof selfCounterpartInRoomSig.value === "undefined" ||
+					selfCounterpartInRoomSig.value.role === null
+			) ?
+				null :
+				checkPrivilegeForRole(MUCPrivilege.SendMessagesToAll, selfCounterpartInRoomSig.value.role);
 		}
-	}, [$t, canModerate, actionFrom, moderateMessage, props.roomJID, retractMessage, showSourceDialog]);
 
-	const canEdit = useMemo(() => {
-		console.log("canEdit changed");
+		function canEdit(message: Message) {
+			const actionFrom = actionFromSig.value;
 
-		return (message: Message) => {
-			if(canSend !== true) return false;
+			if(canSend() !== true) return false;
 
 			if(typeof actionFrom !== "undefined") {
 				if(
@@ -431,7 +346,7 @@ function ChatRoomPageInner(props: {roomJID: JID}) {
 						message,
 						{
 							from: actionFrom,
-							room: props.roomJID,
+							room: roomJID,
 						},
 					)
 				) {
@@ -440,129 +355,248 @@ function ChatRoomPageInner(props: {roomJID: JID}) {
 			}
 
 			return false;
-		};
-	}, [canSend, actionFrom, props.roomJID]);
+		}
 
-	const onChangeNotificationLevel = useCallback((newValue: NotificationLevel) => {
-		console.log("onChangeNotificationLevel");
+		function startReply(message: Message) {
+			replyingToSig.value = message;
 
-		conn.setRoomNotificationLevel.call(undefined, accountJID, props.roomJID, newValue);
-	}, [accountJID, conn.setRoomNotificationLevel, props.roomJID]);
+			inputRef.current!.focus();
+		}
 
-	const onInputKeyDown = useLatestCallback((evt: KeyboardEvent) => {
-		if(evt.code === "Escape") {
-			if(replyingToSig.value !== null) {
-				evt.preventDefault();
-				cancelReply();
+		const pendingMessagesSig = signal<Array<
+			Pick<Message, "content" | "timestamp" | "localID">
+		>>([]);
+
+		function submitMessage(newMessage: string, options?: {replaces?: string}) {
+			const room = roomSig.value;
+
+			const tmpID = xid();
+
+			pendingMessagesSig.value = [
+				...pendingMessagesSig.value,
+				{localID: tmpID, timestamp: new Date(), content: [{type: "markdown", content: newMessage}]},
+			];
+
+			(async () => {
+				try {
+					await conn.sendMessageToRoom(
+						accountJID,
+						room!.jid,
+						{body: newMessage},
+						{replyingTo: replyingToSig.value ?? undefined, ...options},
+					);
+				}
+				finally {
+					pendingMessagesSig.value = pendingMessagesSig.value.filter(x => x.localID !== tmpID);
+				}
+			})();
+
+			replyingToSig.value = null;
+		}
+
+		async function submitEdit(newMessage: string, replaces: string) {
+			return submitMessage(newMessage, {replaces});
+		}
+
+		async function submitReactions(reactions: string[], message: Message) {
+			const id = message.ids.find(x => x.type === StanzaIDType.Stanza && x.by?.equals(roomJID));
+			if(typeof id === "undefined") throw new Error("Cannot react to this message");
+
+			await conn.sendMessageReactionsToRoom.call(
+				undefined,
+				accountJID,
+				roomJID,
+				id.id,
+				reactions,
+			);
+		}
+
+		function onChangeComposing(composing: boolean) {
+			conn.setComposingToRoom(accountJID, roomJID, composing);
+		}
+
+		effect(() => {
+			return () => onChangeComposing(false);
+		});
+
+		function editRoom() {
+			appCtxSig.value.showDialog(
+				<EditRoomDialog room={roomJID} />
+			);
+		}
+
+		function leaveRoom() {
+			const { $t } = intlSig.value;
+
+			appCtxSig.value.showDialog(
+				<ConfirmDialog
+					confirmText={$t({defaultMessage: "Leave"})}
+					onConfirm={() => {
+						const task = conn.leaveRoom.call(undefined, accountJID, roomJID);
+
+						appCtxSig.value.showDialog(<TaskDialog task={task}>{$t({defaultMessage: "Leaving…"})}</TaskDialog>);
+
+						task.then(() => appCtxSig.value.navigate("~/"));
+					}}
+				>
+					<p>
+						{$t({
+							defaultMessage: "Are you sure you want to leave {room}?",
+						}, {room: <em>{roomJID.toString()}</em>})}
+					</p>
+				</ConfirmDialog>
+			);
+		}
+
+		function onChangeNotificationLevel(newValue: NotificationLevel) {
+			console.log("onChangeNotificationLevel");
+
+			conn.setRoomNotificationLevel.call(undefined, accountJID, roomJID, newValue);
+		}
+
+		function onInputKeyDown(evt: KeyboardEvent) {
+			if(evt.code === "Escape") {
+				if(replyingToSig.value !== null) {
+					evt.preventDefault();
+					cancelReply();
+				}
 			}
 		}
-	});
 
-	const loaderContentSig = useComputed(() => {
-		return pageStateSig.value === null ?
-			<p>{$t({defaultMessage: "Connecting…"})}</p> :
-			LoadState.ifDone(
-				pageStateSig.value,
-				info => info === null ?
-					<p>{$t({defaultMessage: "No more messages known."})}</p> :
-					<LoadMoreTriggerer loadMore={loadMore} />,
-				pageState => <DataNonDoneView state={pageState} />,
-			);
-	});
+		effect(() => {
+			const messages = msgCache.getMessages();
+			const counterpart = counterpartSig.value;
 
-	// We want to avoid rendering some components initially to make navigation feel faster
-	const initedSig = useSignal(false);
-
-	useEffect(() => {
-		initedSig.value = true;
-	}, [initedSig]);
-
-	return <Fragment>
-		<div class={styles.page}>
-			<div class={styles.header}>
-				<div class={styles.headerStart}>
-					{
-						typeof room !== "undefined" &&
-							LoadState.ifDone(room.infoState, disco => <h1>{disco.name}</h1>, () => null)
-					}
-					<div style={{textOverflow: "ellipsis", overflowX: "hidden"}}>{props.roomJID.toString()}</div>
-				</div>
-				<div>
-					<Menu>
-						{typeof room !== "undefined" &&
-							<MenuRadioGroup value={room.notificationLevel} onValueChange={onChangeNotificationLevel}>
-								<MenuGroupLabel>{$t({defaultMessage: "Notifications"})}</MenuGroupLabel>
-								<MenuRadioItem value={null}>
-									{$t({defaultMessage: "Default"})}
-								</MenuRadioItem>
-								{Array.from(Object.entries(NOTIFICATION_LEVEL_NAMES), ([key, value]) => {
-									return <MenuRadioItem value={parseInt(key, 10)}>{$t(value)}</MenuRadioItem>;
-								})}
-							</MenuRadioGroup>
-						}
-						{(
-							typeof selfCounterpartInRoom !== "undefined" &&
-								selfCounterpartInRoom.affiliation === "owner"
-						) &&
-							<MenuItem onClick={editRoom}>{$t({defaultMessage: "Channel Settings"})}</MenuItem>
-						}
-						<MenuItem onClick={leaveRoom}>{$t({defaultMessage: "Leave Channel"})}</MenuItem>
-					</Menu>
-				</div>
-			</div>
-			{
-				(typeof room !== "undefined" && !room.connected && room.error !== null) ?
-					<div>
-						<ErrorAlert error={room.error} />
-					</div> :
-					<>
-						<MessageList
-							msgCache={msgCache}
-							pendingMessages={pendingMessagesSig}
-							loaderContent={loaderContentSig}
-							renderMenu={renderMenu}
-							submitEdit={submitEdit}
-							canEdit={canEdit}
-							submitReactions={submitReactions}
-							startReply={startReply}
-						/>
-						<div class={styles.messageInputArea} onKeyDown={onInputKeyDown}>
-							<TypingIndicator usersTyping={usersTypingSig} inRoom={true} />
-							<Show when={replyingToSig}>
-								{replyingTo => <ReplyingIndicator message={replyingTo} cancelReply={cancelReply} />}
-							</Show>
-							{
-								canSend === null ?
-									(
-										room?.connected === false ?
-											<p>{$t({defaultMessage: "Connecting…"})}</p> :
-											<Loading />
-									) :
-									(
-										canSend ?
-											<MessageInput
-												submitMessage={submitMessage}
-												autofocus
-												onChangeComposing={onChangeComposing}
-												ref={inputRef}
-											/> :
-											<p>
-												{$t({
-													defaultMessage:
-														"You don't have permission to send messages in this channel",
-												})}
-											</p>
-									)
-							}
-						</div>
-					</>
+			// TODO skip marking when scrolled up
+			if(
+				pageStateSig.value !== null &&
+					pageStateSig.value.state === "done" &&
+					messages.length > 0 &&
+					typeof counterpart !== "undefined"
+			) {
+				const lastMessage = messages[messages.length - 1];
+				const lastMessageID = lastMessage.ids.find(x => {
+					return x.type === StanzaIDType.Stanza && x.by !== null && x.by.equals(counterpart.jid);
+				});
+				if(typeof lastMessageID !== "undefined" && counterpart.lastReadMessageID !== lastMessageID.id) {
+					conn.markCounterpartAsRead(accountJID, counterpart.jid, lastMessageID.id, false);
+				}
 			}
-		</div>
-		<Show when={initedSig} fallback={<SidebarSegment class={styles.membersList} />}>
-			<MembersList roomJID={props.roomJID} />
-		</Show>
-	</Fragment>;
-}
+		});
+
+		const loaderContentSig = useComputed(() => {
+			const { $t } = intlSig.value;
+
+			return pageStateSig.value === null ?
+				<p>{$t({defaultMessage: "Connecting…"})}</p> :
+				LoadState.ifDone(
+					pageStateSig.value,
+					info => info === null ?
+						<p>{$t({defaultMessage: "No more messages known."})}</p> :
+						<LoadMoreTriggerer loadMore={loadMore} />,
+					pageState => <DataNonDoneView state={pageState} />,
+				);
+		});
+
+		// We want to avoid rendering some components initially to make navigation feel faster
+		const initedSig = signal(false);
+
+		return props => {
+			const { $t } = useIntl();
+
+			const room = roomSig.value;
+
+			console.log("rendering page", room);
+
+			useEffect(() => {
+				initedSig.value = true;
+			}, []);
+
+			return <Fragment>
+				<div class={styles.page}>
+					<div class={styles.header}>
+						<div class={styles.headerStart}>
+							{
+								typeof room !== "undefined" &&
+									LoadState.ifDone(room.infoState, disco => <h1>{disco.name}</h1>, () => null)
+							}
+							<div style={{textOverflow: "ellipsis", overflowX: "hidden"}}>{roomJID.toString()}</div>
+						</div>
+						<div>
+							<Menu>
+								{typeof room !== "undefined" &&
+									<MenuRadioGroup value={room.notificationLevel} onValueChange={onChangeNotificationLevel}>
+										<MenuGroupLabel>{$t({defaultMessage: "Notifications"})}</MenuGroupLabel>
+										<MenuRadioItem value={null}>
+											{$t({defaultMessage: "Default"})}
+										</MenuRadioItem>
+										{Array.from(Object.entries(NOTIFICATION_LEVEL_NAMES), ([key, value]) => {
+											return <MenuRadioItem value={parseInt(key, 10)}>{$t(value)}</MenuRadioItem>;
+										})}
+									</MenuRadioGroup>
+								}
+								<Show when={() => selfCounterpartInRoomSig.value?.affiliation === "owner"}>
+									<MenuItem onClick={editRoom}>{$t({defaultMessage: "Channel Settings"})}</MenuItem>
+								</Show>
+								<MenuItem onClick={leaveRoom}>{$t({defaultMessage: "Leave Channel"})}</MenuItem>
+							</Menu>
+						</div>
+					</div>
+					{
+						(typeof room !== "undefined" && !room.connected && room.error !== null) ?
+							<div>
+								<ErrorAlert error={room.error} />
+							</div> :
+							<>
+								<MessageList
+									msgCache={msgCache}
+									pendingMessages={pendingMessagesSig}
+									loaderContent={loaderContentSig}
+									renderMenu={renderMenu}
+									submitEdit={submitEdit}
+									canEdit={canEdit}
+									submitReactions={submitReactions}
+									startReply={startReply}
+								/>
+								<div class={styles.messageInputArea} onKeyDown={onInputKeyDown}>
+									<TypingIndicator usersTyping={usersTypingSig} inRoom={true} />
+									<Show when={replyingToSig}>
+										{replyingTo => <ReplyingIndicator message={replyingTo} cancelReply={cancelReply} />}
+									</Show>
+									{
+										canSend() === null ?
+											(
+												room?.connected === false ?
+													<p>{$t({defaultMessage: "Connecting…"})}</p> :
+													<Loading />
+											) :
+											(
+												canSend() ?
+													<MessageInput
+														submitMessage={submitMessage}
+														autofocus
+														onChangeComposing={onChangeComposing}
+														ref={inputRef}
+													/> :
+													<p>
+														{$t({
+															defaultMessage:
+																"You don't have permission to send messages in this channel",
+														})}
+													</p>
+											)
+									}
+								</div>
+							</>
+					}
+				</div>
+				<Show when={initedSig} fallback={<SidebarSegment class={styles.membersList} />}>
+					<MembersList roomJID={props.roomJID} />
+				</Show>
+			</Fragment>;
+		};
+	},
+);
 
 type MemberGroup = "owner" | "admin" | "other";
 

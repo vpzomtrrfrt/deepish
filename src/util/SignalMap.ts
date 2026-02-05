@@ -1,4 +1,4 @@
-import { batch, ReadonlySignal, Signal, signal, untracked, useComputed } from "@preact/signals";
+import { batch, computed, effect, ReadonlySignal, Signal, signal, untracked, useComputed } from "@preact/signals";
 import { useCallback, useEffect, useMemo } from "preact/hooks";
 
 export default class SignalMap<K, V> {
@@ -210,6 +210,57 @@ export function useSignalMapKeysWhereValueMatches<K, V>(
 	}, [kill, map, onChange]);
 
 	return useComputed(() => {
+		if(kill.value) throw new Error("This signal is no longer available");
+		return Array.from(dest.value);
+	});
+}
+
+export function signalMapKeysSigWhereValueMatches<K, V>(
+	map: SignalMap<K, V>,
+	predicate: (value: V, key: K) => boolean,
+) {
+	const initial = new Set<K>();
+	untracked(() => {
+		for(const [key, value] of map.entries()) {
+			if(predicate(value, key)) initial.add(key);
+		}
+	});
+
+	const dest = signal(initial);
+	const kill = signal(false);
+
+	function onChange(evt: SignalMapChangeEvent<K, V>) {
+		untracked(() => {
+			const currentSet = dest.value;
+			if(evt.changeType === "set") {
+				if(predicate(evt.value, evt.key)) {
+					if(!currentSet.has(evt.key)) {
+						const newSet = new Set(currentSet);
+						newSet.add(evt.key);
+						dest.value = newSet;
+					}
+				}
+				else {
+					if(currentSet.has(evt.key)) {
+						const newSet = new Set(currentSet);
+						newSet.delete(evt.key);
+						dest.value = newSet;
+					}
+				}
+			}
+		});
+	}
+
+	effect(() => {
+		map.addEventListener("change", onChange);
+
+		return () => {
+			kill.value = true;
+			map.removeEventListener("change", onChange);
+		};
+	});
+
+	return computed(() => {
 		if(kill.value) throw new Error("This signal is no longer available");
 		return Array.from(dest.value);
 	});

@@ -53,6 +53,10 @@ const styles = {
 		flexDirection: "column",
 		overflowY: "auto",
 	}),
+	messageListContent: css({
+		display: "flex",
+		flexDirection: "column",
+	}),
 	messageListMain: css({
 		display: "flex",
 		flexDirection: "column",
@@ -213,6 +217,7 @@ export default memo(function MessageList(props: {
 
 	const listRef = useRef<HTMLDivElement>(null);
 	const listMainRef = useRef<HTMLDivElement>(null);
+	const listContentRef = useRef<HTMLDivElement>(null);
 
 	const lastLastItemKeyRef = useRef<string | null>(null);
 	const lastLastItemYRef = useRef<number | null>(null);
@@ -276,6 +281,28 @@ export default memo(function MessageList(props: {
 		};
 	}, [onResize]);
 
+	const onListResize = useCallback(() => {
+		const elem = listRef.current;
+
+		console.log("resize of scroll", elem?.scrollHeight);
+
+		if(elem !== null) {
+			if(atBottomRef.current) {
+				elem.scrollTop = elem.scrollHeight;
+				lastScrollHeightRef.current = elem.scrollHeight;
+			}
+		}
+	}, []);
+
+	useEffect(() => {
+		const observer = new ResizeObserver(onListResize);
+		observer.observe(listContentRef.current!);
+
+		return () => {
+			observer.disconnect();
+		};
+	}, [onListResize]);
+
 	const onScroll = useCallback((evt: JSX.TargetedEvent<HTMLDivElement>) => {
 		const elem = evt.currentTarget;
 
@@ -287,9 +314,10 @@ export default memo(function MessageList(props: {
 			)
 		) {
 			atBottomRef.current = atBottom;
+			console.log("updating atBottom to", atBottom);
 		}
 		else {
-			console.log("ignoring scroll as height has changed");
+			console.log("ignoring scroll as height has changed", lastScrollHeightRef.current, elem.scrollHeight, lastClientHeightRef.current, elem.clientHeight);
 		}
 	}, []);
 
@@ -347,75 +375,77 @@ export default memo(function MessageList(props: {
 	const pendingMessagesSig = useComputed(() => unsignal(pendingMessagesSrcSig.value) ?? []);
 
 	return <div class={styles.messageList} ref={listRef} onScroll={onScroll}>
-		<div style={{margin: "auto"}} />
-		{props.loaderContent}
-		<div class={styles.messageListMain} ref={listMainRef}>
-			{messages.map((message, index) => {
-				return <MessageRow
-					key={message.localID}
-					msgCache={props.msgCache}
-					index={index}
-					scrollToMessage={scrollToMessage}
-					renderMenu={props.renderMenu}
-					startReply={props.startReply}
-					submitEdit={props.submitEdit}
-					canEdit={props.canEdit}
-					submitReactions={props.submitReactions}
-				/>;
-			})}
-		</div>
-		<For each={pendingMessagesSig}>
-			{(message, index) => {
-				let isMerged;
-				if(index === 0) {
-					const prevMessage = messages[messages.length - 1];
+		<div class={styles.messageListContent} ref={listContentRef}>
+			<div style={{margin: "auto"}} />
+			{props.loaderContent}
+			<div class={styles.messageListMain} ref={listMainRef}>
+				{messages.map((message, index) => {
+					return <MessageRow
+						key={message.localID}
+						msgCache={props.msgCache}
+						index={index}
+						scrollToMessage={scrollToMessage}
+						renderMenu={props.renderMenu}
+						startReply={props.startReply}
+						submitEdit={props.submitEdit}
+						canEdit={props.canEdit}
+						submitReactions={props.submitReactions}
+					/>;
+				})}
+			</div>
+			<For each={pendingMessagesSig}>
+				{(message, index) => {
+					let isMerged;
+					if(index === 0) {
+						const prevMessage = messages[messages.length - 1];
 
-					if(message.timestamp.getTime() - prevMessage.timestamp.getTime() < MESSAGE_MERGE_TIME) {
-						if(props.msgCache.container.type === "direct") {
-							if(prevMessage.from.bare().equals(accountJIDSig.value)) {
-								isMerged = true;
+						if(message.timestamp.getTime() - prevMessage.timestamp.getTime() < MESSAGE_MERGE_TIME) {
+							if(props.msgCache.container.type === "direct") {
+								if(prevMessage.from.bare().equals(accountJIDSig.value)) {
+									isMerged = true;
+								}
 							}
-						}
-						else if(props.msgCache.container.type === "room") {
-							if(typeof selfJIDInRoomSig.value !== "undefined" && prevMessage.from.equals(selfJIDInRoomSig.value)) {
-								isMerged = true;
+							else if(props.msgCache.container.type === "room") {
+								if(typeof selfJIDInRoomSig.value !== "undefined" && prevMessage.from.equals(selfJIDInRoomSig.value)) {
+									isMerged = true;
+								}
 							}
-						}
-						else {
-							const _: never = props.msgCache.container;
-							isMerged = false;
+							else {
+								const _: never = props.msgCache.container;
+								isMerged = false;
+							}
 						}
 					}
-				}
-				else {
-					isMerged = true;
-				}
+					else {
+						isMerged = true;
+					}
 
-				return <div class={cx(styles.messageWrapper, isMerged && "merged")} key={message.localID}>
-					<div class={cx(styles.messageCommon, styles.messageRow, styles.pendingMessage)}>
-						<div class={styles.avatarSegment}>
-							{!isMerged && typeof selfJIDHereSig.value !== "undefined" &&
-								<Avatar size="md" jid={selfJIDHereSig.value} />
-							}
-						</div>
-						<div class={styles.messageContentArea}>
-							{!isMerged &&
+					return <div class={cx(styles.messageWrapper, isMerged && "merged")} key={message.localID}>
+						<div class={cx(styles.messageCommon, styles.messageRow, styles.pendingMessage)}>
+							<div class={styles.avatarSegment}>
+								{!isMerged && typeof selfJIDHereSig.value !== "undefined" &&
+									<Avatar size="md" jid={selfJIDHereSig.value} />
+								}
+							</div>
+							<div class={styles.messageContentArea}>
+								{!isMerged &&
+									<div>
+										<span>{nickSig}</span>
+										<span class={styles.messageTimestamp}>
+											{message.timestamp.toLocaleString()}
+										</span>
+									</div>
+								}
 								<div>
-									<span>{nickSig}</span>
-									<span class={styles.messageTimestamp}>
-										{message.timestamp.toLocaleString()}
-									</span>
+									<MessageContentView content={message.content} />
 								</div>
-							}
-							<div>
-								<MessageContentView content={message.content} />
 							</div>
 						</div>
 					</div>
-				</div>
-			}}
-		</For>
-		<div class={styles.typingIndicatorPlaceholder} />
+				}}
+			</For>
+			<div class={styles.typingIndicatorPlaceholder} />
+		</div>
 	</div>;
 });
 
@@ -719,7 +749,7 @@ export function LoadMoreTriggerer(props: {loadMore: () => void}) {
 				props.loadMore.call(undefined);
 			}
 		}, {
-			root: elemRef.current!.parentNode as Element,
+			root: elemRef.current!.parentNode!.parentNode as Element,
 		});
 
 		observer.observe(elemRef.current!);
