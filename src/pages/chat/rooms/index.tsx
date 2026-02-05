@@ -75,6 +75,7 @@ const styles = {
 
 		gap: ".25rem",
 		paddingBlock: ".25rem",
+		paddingInline: ".25rem",
 	}),
 	membersListEntry: css({
 		padding: ".5rem",
