@@ -197,19 +197,17 @@ function ChatRoomPageInner(props: {roomJID: JID}) {
 		inputRef.current!.focus();
 	});
 
-	const [pendingMessages, setPendingMessages] = useState<Array<
+	const pendingMessagesSig = useSignal<Array<
 		Pick<Message, "content" | "timestamp" | "localID">
 	>>([]);
 
 	const submitMessage = useLatestCallback((newMessage: string, options?: {replaces?: string}) => {
 		const tmpID = xid();
 
-		setPendingMessages(current => {
-			return [
-				...current,
-				{localID: tmpID, timestamp: new Date(), content: [{type: "markdown", content: newMessage}]},
-			];
-		});
+		pendingMessagesSig.value = [
+			...pendingMessagesSig.value,
+			{localID: tmpID, timestamp: new Date(), content: [{type: "markdown", content: newMessage}]},
+		];
 
 		(async () => {
 			try {
@@ -221,7 +219,7 @@ function ChatRoomPageInner(props: {roomJID: JID}) {
 				);
 			}
 			finally {
-				setPendingMessages(current => current.filter(x => x.localID !== tmpID));
+				pendingMessagesSig.value = pendingMessagesSig.value.filter(x => x.localID !== tmpID);
 			}
 		})();
 
@@ -520,7 +518,7 @@ function ChatRoomPageInner(props: {roomJID: JID}) {
 					<>
 						<MessageList
 							msgCache={msgCache}
-							pendingMessages={pendingMessages}
+							pendingMessages={pendingMessagesSig}
 							loaderContent={loaderContentSig}
 							renderMenu={renderMenu}
 							submitEdit={submitEdit}
