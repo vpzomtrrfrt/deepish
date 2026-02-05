@@ -1,7 +1,8 @@
 import { css } from "@emotion/css";
-import { useComputed } from "@preact/signals";
+import { useComputed, useSignal } from "@preact/signals";
 import { JID } from "@xmpp/jid";
 import { JSX } from "preact";
+import { memo } from "preact/compat";
 import { useCallback, useContext, useEffect, useMemo, useState } from "preact/hooks";
 import { useIntl } from "react-intl";
 
@@ -10,7 +11,7 @@ import { AVATAR_MAX_SIZE } from "../util/constants";
 import convertImage, { ConvertImageResult } from "../util/convertImage";
 import { publishingTypeNames } from "../util/langCommon";
 import { RoomPublishing } from "../util/types";
-import useData, { LoadState } from "../util/useData";
+import { LoadState, useDataSig } from "../util/useData";
 import useSubmitting from "../util/useSubmitting";
 import Avatar, { RawAvatar } from "./Avatar";
 import Button from "./Button";
@@ -27,22 +28,22 @@ const styles = {
 	}),
 };
 
-export default function EditRoomDialog(props: {room: JID}) {
+export default memo(function EditRoomDialog(props: {room: JID}) {
 	const account = useAccountSig();
 	const conn = useConnectionContext();
 
-	const accountJID = useComputed(() => account.value.jid).value;
+	const accountJIDSig = useComputed(() => account.value.jid);
 
-	const infoState = useData(async () => {
-		return conn.fetchRoomConfig(accountJID, props.room);
-	}, []);
+	const infoState = useDataSig(async () => {
+		return conn.fetchRoomConfig(accountJIDSig.value, props.room);
+	});
 
 	return <Dialog>
 		<DataView state={infoState}>
 			{info => <Content room={props.room} info={info} />}
 		</DataView>
 	</Dialog>;
-}
+});
 
 function Content(props: {room: JID; info: RoomConfig}) {
 	const { $t } = useIntl();
@@ -71,17 +72,17 @@ function Content(props: {room: JID; info: RoomConfig}) {
 
 	const info = {...baseInfo, ...changes};
 
-	const [newAvatarSrc, setNewAvatarSrc] = useState<File | null>(null);
+	const newAvatarSrcSig = useSignal<File | null>(null);
 
 	const onChangeNewAvatar = useCallback((evt: JSX.TargetedEvent<HTMLInputElement>) => {
-		setNewAvatarSrc(evt.currentTarget.files?.[0] ?? null);
-	}, []);
+		newAvatarSrcSig.value = evt.currentTarget.files?.[0] ?? null;
+	}, [newAvatarSrcSig]);
 
-	const newAvatarState = useData(async () => {
-		if(newAvatarSrc === null) return null;
+	const newAvatarState = useDataSig(async () => {
+		if(newAvatarSrcSig.value === null) return null;
 
-		return convertImage(newAvatarSrc, {maxSize: AVATAR_MAX_SIZE, square: true});
-	}, [newAvatarSrc]);
+		return convertImage(newAvatarSrcSig.value, {maxSize: AVATAR_MAX_SIZE, square: true});
+	});
 
 	const accountJID = useComputed(() => accountSig.value.jid).value;
 
@@ -106,12 +107,12 @@ function Content(props: {room: JID; info: RoomConfig}) {
 			}
 		}
 
-		if(newAvatarSrc !== null) {
+		if(newAvatarSrcSig.value !== null) {
 			calls.push(
 				conn.setRoomAvatar(
 					accountJID,
 					props.room,
-					LoadState.assertDone(newAvatarState)!,
+					LoadState.assertDone(newAvatarState.value)!,
 				),
 			);
 		}
@@ -122,6 +123,8 @@ function Content(props: {room: JID; info: RoomConfig}) {
 
 		dialogCtx.close();
 	});
+
+	const saveDisabled = useComputed(() => submitting.value || newAvatarState.value.state !== "done");
 
 	return <form style={{display: "flex", flexDirection: "column"}} onSubmit={submit}>
 		<div>
@@ -152,7 +155,7 @@ function Content(props: {room: JID; info: RoomConfig}) {
 		</div>
 		<DialogFooter>
 			<Button tier="secondary" onClick={dialogCtx.close}>{$t({defaultMessage: "Cancel"})}</Button>
-			<Button type="submit" tier="primary" disabled={submitting.value || newAvatarState.state !== "done"}>
+			<Button type="submit" tier="primary" disabled={saveDisabled}>
 				{$t({defaultMessage: "Save"})}
 			</Button>
 		</DialogFooter>

@@ -1,5 +1,7 @@
 import { css, cx } from "@emotion/css";
 import { mdiEmoticon, mdiSend } from "@mdi/js";
+import { useComputed, useSignal, useSignalEffect } from "@preact/signals";
+import { Show } from "@preact/signals/utils";
 import { Database as EmojiDatabase } from "emoji-picker-element";
 import { EmojiClickEvent, NativeEmoji } from "emoji-picker-element/shared";
 import useLinkState from "linkstate/hook";
@@ -10,7 +12,7 @@ import { useIntl } from "react-intl";
 import useLatestCallback from "use-latest-callback";
 
 import { msgActionSend, msgCancel } from "../util/langCommon";
-import useData, { LoadState } from "../util/useData";
+import { LoadState, useDataSig } from "../util/useData";
 import useSubmitting from "../util/useSubmitting";
 import Button from "./Button";
 import DataView from "./DataView";
@@ -116,7 +118,7 @@ export default forwardRef(function MessageInput(props: {
 		emojiPopoverActionsRef.current!.close();
 	}, [setNewMessage]);
 
-	const [completionText, setCompletionText] = useState("");
+	const completionTextSig = useSignal("");
 
 	const onInput = useCallback((evt: JSX.TargetedEvent<HTMLTextAreaElement>) => {
 		let result = "";
@@ -139,12 +141,14 @@ export default forwardRef(function MessageInput(props: {
 		}
 
 		console.log("completionText", result);
-		setCompletionText(result);
+		completionTextSig.value = result;
 
 		updateInputSize();
-	}, [updateInputSize]);
+	}, [completionTextSig, updateInputSize]);
 
-	const completionsState = useData(async () => {
+	const completionsSig = useDataSig(async () => {
+		const completionText = completionTextSig.value;
+
 		if(completionText.startsWith(":")) {
 			const searchText = completionText.substring(1).toLowerCase();
 
@@ -175,16 +179,18 @@ export default forwardRef(function MessageInput(props: {
 		}
 
 		return [];
-	}, [completionText]);
+	});
 
 	const [completionsSelectedIndex, setCompletionsSelectedIndex] = useState(0);
 
-	useEffect(() => {
+	useSignalEffect(() => {
+		const _ = completionTextSig.value;
+
 		setCompletionsSelectedIndex(0);
-	}, [completionText]);
+	});
 
 	const triggerCompletionInsert = useLatestCallback(() => {
-		LoadState.ifDone(completionsState, list => {
+		LoadState.ifDone(completionsSig.value, list => {
 			if(list.length > 0) {
 				const entry = list[completionsSelectedIndex];
 
@@ -199,7 +205,7 @@ export default forwardRef(function MessageInput(props: {
 					elem.selectionEnd = elem.selectionStart;
 
 					setNewMessage(elem.value);
-					setCompletionText("");
+					completionTextSig.value = "";
 
 					inputRef.current!.focus();
 				}
@@ -211,7 +217,7 @@ export default forwardRef(function MessageInput(props: {
 		if(evt.code === "ArrowDown") {
 			evt.preventDefault();
 
-			LoadState.ifDone(completionsState, list => {
+			LoadState.ifDone(completionsSig.value, list => {
 				setCompletionsSelectedIndex(current => {
 					if(current + 1 < list.length) return current + 1;
 					return 0;
@@ -221,7 +227,7 @@ export default forwardRef(function MessageInput(props: {
 		else if(evt.code === "ArrowUp") {
 			evt.preventDefault();
 
-			LoadState.ifDone(completionsState, list => {
+			LoadState.ifDone(completionsSig.value, list => {
 				setCompletionsSelectedIndex(current => {
 					if(current - 1 >= 0) return current - 1;
 					return list.length - 1;
@@ -229,7 +235,7 @@ export default forwardRef(function MessageInput(props: {
 			});
 		}
 		else if(evt.code === "Enter" || evt.code === "Tab") {
-			LoadState.ifDone(completionsState, list => {
+			LoadState.ifDone(completionsSig.value, list => {
 				if(list.length > 0) {
 					evt.preventDefault();
 					triggerCompletionInsert();
@@ -269,6 +275,10 @@ export default forwardRef(function MessageInput(props: {
 		}
 	}, [ref]);
 
+	const showCompletionsSig = useComputed(() => {
+		return LoadState.ifDone(completionsSig.value, x => x.length > 0, () => true);
+	});
+
 	return <form onSubmit={submitMessage} class={styles.messageInput}>
 		<div class={styles.mainRow}>
 			<Textarea
@@ -298,9 +308,9 @@ export default forwardRef(function MessageInput(props: {
 				</Button>
 			</div>
 		}
-		{LoadState.ifDone(completionsState, x => x.length > 0, () => true) &&
+		<Show when={showCompletionsSig}>
 			<div class={styles.completionsMenu} ref={completionsMenuRef}>
-				<DataView state={completionsState}>
+				<DataView state={completionsSig}>
 					{list => {
 						return list.map((entry, index) => {
 							const selected = index === completionsSelectedIndex;
@@ -317,7 +327,7 @@ export default forwardRef(function MessageInput(props: {
 					}}
 				</DataView>
 			</div>
-		}
+		</Show>
 	</form>;
 });
 

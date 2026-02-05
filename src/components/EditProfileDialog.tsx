@@ -1,5 +1,5 @@
 import { css } from "@emotion/css";
-import { useComputed } from "@preact/signals";
+import { useComputed, useSignal } from "@preact/signals";
 import { JSX } from "preact";
 import { useCallback, useContext, useEffect, useMemo, useState } from "preact/hooks";
 import { useIntl } from "react-intl";
@@ -7,7 +7,7 @@ import { useIntl } from "react-intl";
 import { useAccountSig, useConnectionContext } from "../util/connection";
 import { AVATAR_MAX_SIZE } from "../util/constants";
 import convertImage, { ConvertImageResult } from "../util/convertImage";
-import useData, { LoadState } from "../util/useData";
+import { LoadState, useDataSig } from "../util/useData";
 import useSubmitting from "../util/useSubmitting";
 import Avatar, { RawAvatar } from "./Avatar";
 import Button from "./Button";
@@ -47,17 +47,17 @@ export default function EditProfileDialog() {
 
 	const info = {...baseInfo, ...changes};
 
-	const [newAvatarSrc, setNewAvatarSrc] = useState<File | null>(null);
+	const newAvatarSrcSig = useSignal<File | null>(null);
 
 	const onChangeNewAvatar = useCallback((evt: JSX.TargetedEvent<HTMLInputElement>) => {
-		setNewAvatarSrc(evt.currentTarget.files?.[0] ?? null);
-	}, []);
+		newAvatarSrcSig.value = evt.currentTarget.files?.[0] ?? null;
+	}, [newAvatarSrcSig]);
 
-	const newAvatarState = useData(async () => {
-		if(newAvatarSrc === null) return null;
+	const newAvatarSig = useDataSig(async () => {
+		if(newAvatarSrcSig.value === null) return null;
 
-		return convertImage(newAvatarSrc, {maxSize: AVATAR_MAX_SIZE, square: true});
-	}, [newAvatarSrc]);
+		return convertImage(newAvatarSrcSig.value, {maxSize: AVATAR_MAX_SIZE, square: true});
+	});
 
 	const [submitting, submit] = useSubmitting(async (evt: Event) => {
 		evt.preventDefault();
@@ -77,13 +77,15 @@ export default function EditProfileDialog() {
 						}
 					}),
 			),
-			newAvatarSrc === null ?
+			newAvatarSrcSig.value === null ?
 				undefined :
-				connection.setAvatar(accountSig.value.jid, LoadState.assertDone(newAvatarState)!)
+				connection.setAvatar(accountSig.value.jid, LoadState.assertDone(newAvatarSig.value)!)
 		]);
 
 		dialogCtx.close();
 	});
+
+	const saveDisabled = useComputed(() => submitting.value || newAvatarSig.value.state !== "done");
 
 	return <Dialog>
 		<form style={{display: "flex", flexDirection: "column"}} onSubmit={submit}>
@@ -95,7 +97,7 @@ export default function EditProfileDialog() {
 				<Field>
 					<FieldLabel>{$t({defaultMessage: "Profile Picture"})}</FieldLabel>
 					<Input type="file" onChange={onChangeNewAvatar} />
-					<DataView state={newAvatarState}>
+					<DataView state={newAvatarSig}>
 						{info => {
 							return <AvatarView newInfo={info} />;
 						}}
@@ -104,7 +106,7 @@ export default function EditProfileDialog() {
 			</div>
 			<DialogFooter>
 				<Button tier="secondary" onClick={dialogCtx.close}>{$t({defaultMessage: "Cancel"})}</Button>
-				<Button type="submit" tier="primary" disabled={submitting.value || newAvatarState.state !== "done"}>
+				<Button type="submit" tier="primary" disabled={saveDisabled}>
 					{$t({defaultMessage: "Save"})}
 				</Button>
 			</DialogFooter>
