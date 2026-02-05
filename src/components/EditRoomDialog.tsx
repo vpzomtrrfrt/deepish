@@ -152,7 +152,7 @@ function Content(props: {room: JID; info: RoomConfig}) {
 		</div>
 		<DialogFooter>
 			<Button tier="secondary" onClick={dialogCtx.close}>{$t({defaultMessage: "Cancel"})}</Button>
-			<Button type="submit" tier="primary" disabled={submitting || newAvatarState.state !== "done"}>
+			<Button type="submit" tier="primary" disabled={submitting.value || newAvatarState.state !== "done"}>
 				{$t({defaultMessage: "Save"})}
 			</Button>
 		</DialogFooter>

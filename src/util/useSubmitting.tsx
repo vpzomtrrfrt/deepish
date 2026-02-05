@@ -1,13 +1,14 @@
-import { useCallback, useState } from "preact/hooks";
+import { useSignal } from "@preact/signals";
+import { useCallback } from "preact/hooks";
 import useLatestCallback from "use-latest-callback";
 
 export default function useSubmitting<P extends unknown[], O>(fn: (...args: P) => Promise<O>) {
-	const [submitting, setSubmitting] = useState(false);
+	const submittingSig = useSignal(false);
 
 	const submitInner = useLatestCallback(fn);
 
 	const submit = useCallback(async (...args: P) => {
-		setSubmitting(true);
+		submittingSig.value = true;
 
 		try {
 			await submitInner(...args);
@@ -16,9 +17,9 @@ export default function useSubmitting<P extends unknown[], O>(fn: (...args: P) =
 			alert(err);
 		}
 		finally {
-			setSubmitting(false);
+			submittingSig.value = false;
 		}
-	}, [submitInner]);
+	}, [submitInner, submittingSig]);
 
-	return [submitting, submit] as const;
+	return [submittingSig, submit] as const;
 }

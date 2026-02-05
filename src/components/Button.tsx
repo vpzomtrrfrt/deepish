@@ -1,7 +1,9 @@
 import { Button as BaseButton, ButtonProps as BaseButtonProps } from "@base-ui/react/button";
 import { css, cx } from "@emotion/css";
+import { Signalish } from "preact";
 
 import { themeVars } from "../util/theme";
+import { DistributiveOmit } from "../util/typeUtil";
 import unsignal from "../util/unsignal";
 
 const styles = {
@@ -49,16 +51,24 @@ export default function Button(
 	props: (
 		({href: string}) |
 			({href?: undefined})
-	) & BaseButtonProps & {
+	) & DistributiveOmit<BaseButtonProps, "disabled"> & {
 		tier: ButtonTier,
+		disabled?: Signalish<boolean>,
 	},
 ) {
 	const className = cx(styles.button, tierStyles[props.tier], unsignal(props.class));
 
 	if(typeof props.href === "undefined") {
-		return <BaseButton focusableWhenDisabled {...props} className={className} />;
+		return <BaseButton focusableWhenDisabled {...props} disabled={unsignal(props.disabled)} className={className} />;
 	}
 	else {
-		return <BaseButton focusableWhenDisabled nativeButton={false} render={<a />} {...props} className={className} />;
+		return <BaseButton
+			focusableWhenDisabled
+			nativeButton={false}
+			render={<a />}
+			{...props}
+			disabled={unsignal(props.disabled)}
+			className={className}
+		/>;
 	}
 }
