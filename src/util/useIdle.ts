@@ -1,5 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
-import useLatestCallback from "use-latest-callback";
+import { createModel, effect, signal, useModel } from "@preact/signals";
 
 export interface IdleState {
 	idle: boolean;
@@ -9,34 +8,34 @@ export interface IdleState {
 const TIMEOUT = 1000 * 60;
 const EVENTS = ["mousemove", "keydown"];
 
-export default function useIdle(): IdleState {
-	const initTime = useMemo(() => new Date(), []);
+const IdleModel = createModel(() => {
+	const initTime = new Date();
 
-	const [state, setState] = useState({idle: false, since: initTime});
+	const stateSig = signal<IdleState>({idle: false, since: initTime});
 
-	const lastActivityRef = useRef(initTime.getTime());
-	const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+	let lastActivity = initTime.getTime();
+	let timer: ReturnType<typeof setTimeout> | null = null;
 
-	const onIdle = useCallback(() => {
-		setState({idle: true, since: new Date(lastActivityRef.current)});
-	}, []);
+	function onIdle() {
+		stateSig.value = {idle: true, since: new Date(lastActivity)};
+	}
 
-	const onAnything = useLatestCallback(() => {
-		if(state.idle) {
+	function onAnything() {
+		if(stateSig.peek().idle) {
 			const newTime = new Date();
 
-			setState({idle: false, since: newTime});
-			lastActivityRef.current = newTime.getTime();
+			stateSig.value = {idle: false, since: newTime};
+			lastActivity = newTime.getTime();
 		}
 		else {
-			lastActivityRef.current = Date.now();
-			if(timerRef.current !== null) clearTimeout(timerRef.current);
+			lastActivity = Date.now();
+			if(timer !== null) clearTimeout(timer);
 		}
 
-		timerRef.current = setTimeout(onIdle, TIMEOUT);
-	});
+		timer = setTimeout(onIdle, TIMEOUT);
+	}
 
-	useEffect(() => {
+	effect(() => {
 		EVENTS.forEach(type => {
 			window.addEventListener(type, onAnything);
 		});
@@ -48,7 +47,13 @@ export default function useIdle(): IdleState {
 				window.removeEventListener(type, onAnything);
 			});
 		};
-	}, [onAnything]);
+	});
 
-	return state;
+	return {
+		state: stateSig,
+	};
+});
+
+export default function useIdle() {
+	return useModel(IdleModel);
 }

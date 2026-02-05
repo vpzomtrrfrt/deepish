@@ -5,3 +5,6 @@ export type TupleUnion<U extends string, R extends string[] = []> = {
 
 // https://stackoverflow.com/a/66011942/2533397
 export type StringLiteral<T> = T extends string ? string extends T ? never : T : never;
+
+// https://stackoverflow.com/a/57103940/2533397
+export type DistributiveOmit<T, K extends keyof T> = T extends T ? Omit<T, K> : never;

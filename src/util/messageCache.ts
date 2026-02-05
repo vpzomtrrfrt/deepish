@@ -1,5 +1,4 @@
-import { batch, ReadonlySignal, Signal,signal } from "@preact/signals";
-import { useLiveSignal } from "@preact/signals/utils";
+import { batch, Signal, signal } from "@preact/signals";
 import { JID } from "@xmpp/jid";
 import { pushAtSortPosition } from "array-push-at-sort-position";
 import { useEffect, useMemo } from "preact/hooks";
@@ -17,9 +16,9 @@ export type MessageContainer = {
 };
 
 export function useCreateMessageCache(container: MessageContainer) {
-	const connSig = useLiveSignal(useConnectionContext());
+	const conn = useConnectionContext();
 
-	const msgCache = useMemo(() => new MessageCache(container, connSig), [container, connSig]);
+	const msgCache = useMemo(() => new MessageCache(container, conn), [container, conn]);
 
 	useEffect(() => {
 		return () => msgCache[Symbol.dispose]();
@@ -41,18 +40,18 @@ export class MessageCache {
 		>
 	>;
 
-	public constructor(public readonly container: MessageContainer, private conn: ReadonlySignal<ConnectionContext>) {
-		this.conn.value.addEventListener("message", this.onMessage);
-		this.conn.value.addEventListener("messageRemove", this.onMessageRemove);
-		this.conn.value.addEventListener("messageEdit", this.onMessageEdit);
-		this.conn.value.addEventListener("messageReactionsChange", this.onMessageReactionsChange);
+	public constructor(public readonly container: MessageContainer, private conn: ConnectionContext) {
+		this.conn.addEventListener("message", this.onMessage);
+		this.conn.addEventListener("messageRemove", this.onMessageRemove);
+		this.conn.addEventListener("messageEdit", this.onMessageEdit);
+		this.conn.addEventListener("messageReactionsChange", this.onMessageReactionsChange);
 	}
 
 	public [Symbol.dispose]() {
-		this.conn.value.removeEventListener("message", this.onMessage);
-		this.conn.value.removeEventListener("messageRemove", this.onMessageRemove);
-		this.conn.value.removeEventListener("messageEdit", this.onMessageEdit);
-		this.conn.value.removeEventListener("messageReactionsChange", this.onMessageReactionsChange);
+		this.conn.removeEventListener("message", this.onMessage);
+		this.conn.removeEventListener("messageRemove", this.onMessageRemove);
+		this.conn.removeEventListener("messageEdit", this.onMessageEdit);
+		this.conn.removeEventListener("messageReactionsChange", this.onMessageReactionsChange);
 	}
 
 	public getMessages() {

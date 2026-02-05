@@ -1,5 +1,5 @@
 import { IDBCache } from "@instructure/idb-cache";
-import { batch, ReadonlySignal, Signal, signal, useComputed } from "@preact/signals";
+import { batch, ReadonlySignal, Signal, signal, useComputed, useSignal } from "@preact/signals";
 import { useLiveSignal } from "@preact/signals/utils";
 import Connection from "@xmpp/connection";
 import xid from "@xmpp/id";
@@ -11,7 +11,7 @@ import fromBase64 from "es-arraybuffer-base64/Uint8Array.fromBase64";
 import toBase64 from "es-arraybuffer-base64/Uint8Array.prototype.toBase64";
 import toHex from "es-arraybuffer-base64/Uint8Array.prototype.toHex";
 import { createContext } from "preact";
-import { useCallback, useContext, useEffect, useMemo, useState } from "preact/hooks";
+import { useCallback, useContext, useEffect, useMemo } from "preact/hooks";
 import useLatestCallback from "use-latest-callback";
 
 import { DEFAULT_NOTIFICATIONS_SETTINGS, NotificationsSettings } from "..";
@@ -291,8 +291,8 @@ export interface BaseConnectionContext {
 }
 
 export interface ConnectionContext extends BaseConnectionContext {
-	inited: boolean;
-	idle: IdleState;
+	inited: ReadonlySignal<boolean>;
+	idle: ReadonlySignal<IdleState>;
 
 	saveToken(jid: JID, token: unknown, userAgent: string, resource: string): void;
 	logout(jid: JID): void;
@@ -320,17 +320,16 @@ export function useCreateConnection(
 	const idle = useIdle();
 
 	const cacheSig = useLiveSignal(cache);
-	const idleSig = useLiveSignal(idle);
 	const conn = useMemo(() => {
-		return createBaseConnection(cacheSig, idleSig, notificationsSettingsSig);
-	}, [cacheSig, idleSig, notificationsSettingsSig]);
+		return createBaseConnection(cacheSig, idle.state, notificationsSettingsSig);
+	}, [cacheSig, idle.state, notificationsSettingsSig]);
 
-	const [inited, setInited] = useState(false);
+	const initedSig = useSignal(false);
 
 	const loadAccounts = useCallback(() => {
 		conn.loadAccounts();
-		setInited(true);
-	}, [conn]);
+		initedSig.value = true;
+	}, [conn, initedSig]);
 
 	useEffectOnce(() => {
 		loadAccounts();
@@ -366,8 +365,8 @@ export function useCreateConnection(
 		() => ({
 			...conn,
 
-			inited,
-			idle,
+			inited: initedSig,
+			idle: idle.state,
 
 			saveToken(jid, token, userAgent, resource) {
 				localStorage.setItem("deepishAccount", JSON.stringify({jid: jid.toString(), token, userAgent, resource}));
@@ -382,7 +381,7 @@ export function useCreateConnection(
 			},
 
 		} satisfies ConnectionContext),
-		[conn, idle, inited, loadAccounts],
+		[conn, idle, initedSig, loadAccounts],
 	);
 }
 

@@ -1,9 +1,10 @@
 import { css } from "@emotion/css";
-import { useComputed } from "@preact/signals";
+import { computed, effect, signal, useComputed } from "@preact/signals";
+import { Show, useLiveSignal } from "@preact/signals/utils";
 import { JID, parse as parseJID } from "@xmpp/jid";
-import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { createRef } from "preact";
+import { useMemo } from "preact/hooks";
 import { useIntl } from "react-intl";
-import useLatestCallback from "use-latest-callback";
 
 import { useAppContext } from "../..";
 import ConfirmTaskDialog from "../../components/ConfirmTaskDialog";
@@ -13,8 +14,9 @@ import MessageInput from "../../components/MessageInput";
 import MessageList, { LoadMoreTriggerer, MessageSourceDialog, ReplyingIndicator } from "../../components/MessageList";
 import TypingIndicator from "../../components/TypingIndicator";
 import { Message, ResultSetInfo, useAccountSig, useConnectionContext } from "../../util/connection";
+import createComponent from "../../util/createComponent";
 import { msgActionDelete } from "../../util/langCommon";
-import { useCreateMessageCache } from "../../util/messageCache";
+import { MessageCache } from "../../util/messageCache";
 import { getNickForCounterpart } from "../../util/profileUtil";
 import { LoadState } from "../../util/useData";
 import { StanzaIDType } from "../../util/xmpp/StanzaID";
@@ -58,220 +60,262 @@ export default function DirectChatPage(props: {params: {counterpartJID: string}}
 	return <DirectChatPageInner counterpartJID={counterpartJID} key={counterpartJID} />;
 }
 
-function DirectChatPageInner(props: {counterpartJID: JID}) {
-	const { $t } = useIntl();
+const DirectChatPageInner = createComponent(
+	(props: {counterpartJID: JID}) => {
+		const intlSig = useLiveSignal(useIntl());
 
-	const appCtx = useAppContext();
-	const conn = useConnectionContext();
-	const accountSig = useAccountSig();
-	const counterpart = useComputed(() => accountSig.value.counterparts.getSignal(props.counterpartJID.toString())).value.value;
+		const appCtxSig = useLiveSignal(useAppContext());
 
-	const msgCache = useCreateMessageCache(useMemo(() => ({type: "direct", jid: props.counterpartJID}), [props.counterpartJID]));
-	const [pageState, setPageState] = useState<LoadState<ResultSetInfo | null> | null>(null);
+		const conn = useConnectionContext();
+		const accountSig = useAccountSig();
+		const accountJID = useComputed(() => accountSig.value.jid).value;
 
-	const nextPageRef = useRef<string | null>(null);
+		return useMemo(() => ({
+			intlSig,
 
-	const loadMore = useLatestCallback(() => {
-		setPageState(LoadState.loading);
+			appCtxSig,
 
-		conn.requestArchive(accountSig.value.jid, accountSig.value.jid, {with: props.counterpartJID}, nextPageRef.current ?? undefined)
-			.then(value => {
-				nextPageRef.current = value === null ? null : value.firstItem;
-				setPageState(LoadState.wrapValue(value));
-			})
-			.catch(err => {
-				setPageState(LoadState.wrapError(err));
-			});
-	});
+			conn,
+			accountSig,
+			accountJID,
 
-	useEffect(() => {
-		if(typeof counterpart !== "undefined" && pageState === null) {
-			loadMore();
+			counterpartJID: props.counterpartJID,
+		}), [accountJID, accountSig, appCtxSig, conn, intlSig, props.counterpartJID]);
+	},
+	({intlSig, appCtxSig, conn, accountSig, accountJID, counterpartJID}) => {
+		const counterpartSig = computed(() => accountSig.value.counterparts.get(counterpartJID.toString()));
+
+		const msgCache = new MessageCache({type: "direct", jid: counterpartJID}, conn);
+		const pageStateSig = signal<LoadState<ResultSetInfo | null> | null>(null);
+
+		const nextPageRef = createRef<string | null>();
+
+		function loadMore() {
+			pageStateSig.value = LoadState.loading;
+
+			conn.requestArchive(accountJID, accountJID, {with: counterpartJID}, nextPageRef.current ?? undefined)
+				.then(value => {
+					nextPageRef.current = value === null ? null : value.firstItem;
+					pageStateSig.value = LoadState.wrapValue(value);
+				})
+				.catch(err => {
+					pageStateSig.value = LoadState.wrapError(err);
+				});
 		}
-	}, [pageState, loadMore, accountSig.value.connected, counterpart]);
 
-	useEffect(() => {
-		if(typeof counterpart !== "undefined") {
-			conn.markCounterpartAsVisible.call(undefined, accountSig.value.jid, counterpart.jid);
-		}
-	}, [accountSig.value.jid, conn.markCounterpartAsVisible, counterpart]);
-
-	const messages = msgCache.getMessages();
-
-	useEffect(() => {
-		// TODO skip marking when scrolled up
-		if(
-			pageState !== null &&
-				pageState.state === "done" &&
-				messages.length > 0 &&
-				typeof counterpart !== "undefined"
-		) {
-			const lastMessage = messages[messages.length - 1];
-			const lastMessageID = lastMessage.ids.find(x => {
-				return x.type === StanzaIDType.Stanza && x.by !== null && x.by.equals(accountSig.value.jid);
-			});
-			if(typeof lastMessageID !== "undefined" && counterpart.lastReadMessageID !== lastMessageID.id) {
-				conn.markCounterpartAsRead.call(undefined, accountSig.value.jid, counterpart.jid, lastMessageID.id, false);
+		effect(() => {
+			if(typeof counterpartSig.value !== "undefined" && pageStateSig.value === null) {
+				loadMore();
 			}
+		});
+
+		effect(() => {
+			if(typeof counterpartSig.value !== "undefined") {
+				conn.markCounterpartAsVisible.call(undefined, accountJID, counterpartJID);
+			}
+		});
+
+		effect(() => {
+			const messages = msgCache.getMessages();
+
+			// TODO skip marking when scrolled up
+			if(
+				pageStateSig.value !== null &&
+					pageStateSig.value.state === "done" &&
+					messages.length > 0 &&
+					typeof counterpartSig.value !== "undefined"
+			) {
+				const lastMessage = messages[messages.length - 1];
+				const lastMessageID = lastMessage.ids.find(x => {
+					return x.type === StanzaIDType.Stanza && x.by !== null && x.by.equals(accountJID);
+				});
+				if(typeof lastMessageID !== "undefined" && counterpartSig.value.lastReadMessageID !== lastMessageID.id) {
+					conn.markCounterpartAsRead.call(undefined, accountJID, counterpartJID, lastMessageID.id, false);
+				}
+			}
+		});
+
+		const replyingToSig = signal<Message | null>(null);
+
+		function cancelReply() {
+			replyingToSig.value = null;
+
+			inputRef.current!.focus();
 		}
-	}, [accountSig.value.jid, conn.markCounterpartAsRead, counterpart, messages, pageState]);
 
-	const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+		const inputRef = createRef<HTMLTextAreaElement>();
 
-	const cancelReply = useCallback(() => {
-		setReplyingTo(null);
+		function startReply(message: Message) {
+			replyingToSig.value = message;
 
-		inputRef.current!.focus();
-	}, []);
+			inputRef.current!.focus();
+		}
 
-	const inputRef = useRef<HTMLTextAreaElement>(null);
+		function submitMessage(newMessage: string, options?: {replaces?: string}) {
+			conn.sendMessageToCounterpart(
+				accountJID,
+				counterpartJID,
+				{body: newMessage},
+				{replyingTo: replyingToSig.value ?? undefined, ...options},
+			);
 
-	const startReply = useLatestCallback((message: Message) => {
-		setReplyingTo(message);
+			replyingToSig.value = null;
+		}
 
-		inputRef.current!.focus();
-	});
+		async function submitEdit(newMessage: string, replaces: string) {
+			return submitMessage(newMessage, {replaces});
+		}
 
-	const submitMessage = useLatestCallback((newMessage: string, options?: {replaces?: string}) => {
-		conn.sendMessageToCounterpart(
-			accountSig.value.jid,
-			counterpart!.jid,
-			{body: newMessage},
-			{replyingTo: replyingTo ?? undefined, ...options},
-		);
+		async function submitReactions(reactions: string[], message: Message) {
+			const id = message.ids.find(x => x.type === StanzaIDType.Element);
+			if(typeof id === "undefined") throw new Error("Cannot react to this message");
 
-		setReplyingTo(null);
-	});
+			await conn.sendMessageReactionsToCounterpart.call(
+				undefined,
+				accountJID,
+				counterpartJID,
+				id.id,
+				reactions,
+			);
+		}
 
-	const submitEdit = useLatestCallback(async (newMessage: string, replaces: string) => {
-		return submitMessage(newMessage, {replaces});
-	});
+		function onChangeComposing(composing: boolean) {
+			conn.setComposingToCounterpart(accountJID, counterpartJID, composing);
+		}
 
-	const submitReactions = useLatestCallback(async (reactions: string[], message: Message) => {
-		const id = message.ids.find(x => x.type === StanzaIDType.Element);
-		if(typeof id === "undefined") throw new Error("Cannot react to this message");
+		function retractMessage(messageID: string) {
+			const { $t } = intlSig.value;
 
-		await conn.sendMessageReactionsToCounterpart.call(
-			undefined,
-			accountSig.value.jid,
-			props.counterpartJID,
-			id.id,
-			reactions,
-		);
-	});
+			appCtxSig.value.showDialog.call(
+				undefined,
+				<ConfirmTaskDialog
+					submit={async () => {
+						return conn.retractMessageToCounterpart.call(
+							undefined,
+							accountJID,
+							counterpartJID,
+							messageID,
+						);
+					}}
+					confirmText={$t(msgActionDelete)}
+				>
+					{$t({defaultMessage: "Are you sure you want to delete this message?"})}
+				</ConfirmTaskDialog>
+			);
+		}
 
-	const onChangeComposing = useLatestCallback((composing: boolean) => {
-		conn.setComposingToCounterpart(accountSig.value.jid, props.counterpartJID, composing);
-	});
+		function showSourceDialog(message: Message) {
+			appCtxSig.value.showDialog.call(undefined, <MessageSourceDialog message={message} />);
+		}
 
-	const retractMessage = useCallback((messageID: string) => {
-		appCtx.showDialog.call(
-			undefined,
-			<ConfirmTaskDialog
-				submit={async () => {
-					return conn.retractMessageToCounterpart.call(
-						undefined,
-						accountSig.value.jid,
-						props.counterpartJID,
-						messageID,
+		function renderMenu(message: Message, setMenuOpen: (value: boolean) => void) {
+			const { $t } = intlSig.value;
+
+			const items = [];
+
+			if(message.from.bare().equals(accountJID)) {
+				const id = message.ids.find(x => {
+					return x.type === StanzaIDType.Element && x.by !== null && x.by.equals(accountJID);
+				});
+				if(typeof id !== "undefined") {
+					items.push(
+						<MenuItem onClick={retractMessage.bind(undefined, id.id)}>{$t({defaultMessage: "Delete Message"})}</MenuItem>
 					);
-				}}
-				confirmText={$t(msgActionDelete)}
-			>
-				{$t({defaultMessage: "Are you sure you want to delete this message?"})}
-			</ConfirmTaskDialog>
-		);
-	}, [$t, accountSig.value.jid, appCtx.showDialog, conn.retractMessageToCounterpart, props.counterpartJID]);
+				}
+			}
 
-	const showSourceDialog = useCallback((message: Message) => {
-		appCtx.showDialog.call(undefined, <MessageSourceDialog message={message} />);
-	}, [appCtx.showDialog]);
+			items.push(
+				<MenuItem onClick={showSourceDialog.bind(undefined, message)}>
+					{$t({defaultMessage: "View Source"})}
+				</MenuItem>,
+			);
 
-	const renderMenu = useCallback((message: Message, setMenuOpen: (value: boolean) => void) => {
-		const items = [];
+			if(items.length < 1) return null;
+			else {
+				return <Menu onOpenChange={setMenuOpen}>{items}</Menu>;
+			}
+		}
 
-		if(message.from.bare().equals(accountSig.value.jid)) {
-			const id = message.ids.find(x => {
-				return x.type === StanzaIDType.Element && x.by !== null && x.by.equals(accountSig.value.jid);
-			});
-			if(typeof id !== "undefined") {
-				items.push(
-					<MenuItem onClick={retractMessage.bind(undefined, id.id)}>{$t({defaultMessage: "Delete Message"})}</MenuItem>
+		function canEdit(message: Message) {
+			if(message.from.bare().equals(accountJID)) {
+				const id = message.ids.find(x => {
+					return x.type === StanzaIDType.Element && x.by !== null && x.by.equals(accountJID);
+				});
+				if(typeof id !== "undefined") {
+					return true;
+				}
+			}
+
+			return false;
+		}
+
+		function onInputKeyDown(evt: KeyboardEvent) {
+			if(evt.code === "Escape") {
+				if(replyingToSig.value !== null) {
+					evt.preventDefault();
+					cancelReply();
+				}
+			}
+		}
+
+		effect(() => {
+			return () => onChangeComposing(false);
+		});
+
+		const loaderContent = computed(() => {
+			const { $t } = intlSig.value;
+
+			return pageStateSig.value === null ?
+				<p>{$t({defaultMessage: "Connecting…"})}</p> :
+				LoadState.ifDone(
+					pageStateSig.value,
+					info => info === null ?
+						<p>{$t({defaultMessage: "No more messages known."})}</p> :
+						<LoadMoreTriggerer loadMore={loadMore} />,
+					pageState => <DataNonDoneView state={pageState} />,
 				);
-			}
-		}
+		});
 
-		items.push(
-			<MenuItem onClick={showSourceDialog.bind(undefined, message)}>
-				{$t({defaultMessage: "View Source"})}
-			</MenuItem>,
-		);
+		const nickSig = computed(() => {
+			return typeof counterpartSig.value === "undefined" ?
+				undefined :
+				getNickForCounterpart(counterpartSig.value);
+		});
 
-		if(items.length < 1) return null;
-		else {
-			return <Menu onOpenChange={setMenuOpen}>{items}</Menu>;
-		}
-	}, [$t, accountSig.value.jid, retractMessage, showSourceDialog]);
+		const usersTypingSig = computed(() => {
+			return (typeof counterpartSig.value !== "undefined" && counterpartSig.value.composingFrom) ?
+				[counterpartJID] :
+				[];
+		});
 
-	const canEdit = useCallback((message: Message) => {
-		if(message.from.bare().equals(accountSig.value.jid)) {
-			const id = message.ids.find(x => {
-				return x.type === StanzaIDType.Element && x.by !== null && x.by.equals(accountSig.value.jid);
-			});
-			if(typeof id !== "undefined") {
-				return true;
-			}
-		}
-
-		return false;
-	}, [accountSig.value.jid]);
-
-	const onInputKeyDown = useLatestCallback((evt: KeyboardEvent) => {
-		if(evt.code === "Escape") {
-			if(replyingTo !== null) {
-				evt.preventDefault();
-				cancelReply();
-			}
-		}
-	});
-
-	useEffect(() => {
-		return () => onChangeComposing(false);
-	}, [onChangeComposing]);
-
-	const loaderContent = pageState === null ?
-		<p>{$t({defaultMessage: "Connecting…"})}</p> :
-		LoadState.ifDone(
-			pageState,
-			info => info === null ?
-				<p>{$t({defaultMessage: "No more messages known."})}</p> :
-				<LoadMoreTriggerer loadMore={loadMore} />,
-			pageState => <DataNonDoneView state={pageState} />,
-		);
-
-	return <div class={styles.page}>
-		<div class={styles.header}>
-			{typeof counterpart !== "undefined" && <h1>
-				{getNickForCounterpart(counterpart)}
-			</h1>}
-			<div>{props.counterpartJID.toString()}</div>
-		</div>
-		<MessageList
-			msgCache={msgCache}
-			loaderContent={loaderContent}
-			renderMenu={renderMenu}
-			submitEdit={submitEdit}
-			canEdit={canEdit}
-			submitReactions={submitReactions}
-			startReply={startReply}
-		/>
-		<div onKeyDown={onInputKeyDown}>
-			<TypingIndicator
-				usersTyping={(typeof counterpart !== "undefined" && counterpart.composingFrom) ? [counterpart.jid] : []}
-				inRoom={false}
-			/>
-			{replyingTo !== null && <ReplyingIndicator message={replyingTo} cancelReply={cancelReply} />}
-			<MessageInput submitMessage={submitMessage} autofocus onChangeComposing={onChangeComposing} ref={inputRef} />
-		</div>
-	</div>;
-}
+		return () => {
+			return <div class={styles.page}>
+				<div class={styles.header}>
+					<Show when={nickSig}>
+						<h1>{nickSig}</h1>
+					</Show>
+					<div>{counterpartJID.toString()}</div>
+				</div>
+				<MessageList
+					msgCache={msgCache}
+					loaderContent={loaderContent}
+					renderMenu={renderMenu}
+					submitEdit={submitEdit}
+					canEdit={canEdit}
+					submitReactions={submitReactions}
+					startReply={startReply}
+				/>
+				<div onKeyDown={onInputKeyDown}>
+					<TypingIndicator
+						usersTyping={usersTypingSig}
+						inRoom={false}
+					/>
+					<Show when={replyingToSig}>
+						{replyingTo => <ReplyingIndicator message={replyingTo} cancelReply={cancelReply} />}
+					</Show>
+					<MessageInput submitMessage={submitMessage} autofocus onChangeComposing={onChangeComposing} ref={inputRef} />
+				</div>
+			</div>;
+		};
+	}
+);

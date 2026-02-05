@@ -1,7 +1,7 @@
 import { css, cx, keyframes } from "@emotion/css";
 import { mdiClose, mdiEmoticonPlus, mdiPencil, mdiReply } from "@mdi/js";
 import { useComputed } from "@preact/signals";
-import { useLiveSignal } from "@preact/signals/utils";
+import { For, useLiveSignal } from "@preact/signals/utils";
 import { JID, parse as parseJID } from "@xmpp/jid";
 import { EmojiClickEvent } from "emoji-picker-element/shared";
 import { stringify as stringifyXML } from "ltx";
@@ -17,6 +17,7 @@ import getRoomUserColor from "../util/getRoomUserColor";
 import { MessageCache } from "../util/messageCache";
 import { maybeGetNickForCounterpart } from "../util/profileUtil";
 import { themeVars } from "../util/theme";
+import unsignal from "../util/unsignal";
 import StanzaID, { StanzaIDType } from "../util/xmpp/StanzaID";
 import Avatar from "./Avatar";
 import Block from "./Block";
@@ -51,6 +52,10 @@ const styles = {
 		display: "flex",
 		flexDirection: "column",
 		overflowY: "auto",
+	}),
+	messageListContent: css({
+		display: "flex",
+		flexDirection: "column",
 	}),
 	messageListMain: css({
 		display: "flex",
@@ -198,7 +203,7 @@ const styles = {
 export default memo(function MessageList(props: {
 	msgCache: MessageCache;
 	loaderContent: Signalish<VNode>;
-	pendingMessages?: Array<Pick<Message, "localID" | "content" | "timestamp">>;
+	pendingMessages?: Signalish<Array<Pick<Message, "localID" | "content" | "timestamp">>>;
 
 	renderMenu(message: Message, setMenuOpen: (value: boolean) => void): ComponentChildren;
 	startReply?: (message: Message) => void;
@@ -212,6 +217,7 @@ export default memo(function MessageList(props: {
 
 	const listRef = useRef<HTMLDivElement>(null);
 	const listMainRef = useRef<HTMLDivElement>(null);
+	const listContentRef = useRef<HTMLDivElement>(null);
 
 	const lastLastItemKeyRef = useRef<string | null>(null);
 	const lastLastItemYRef = useRef<number | null>(null);
@@ -275,6 +281,28 @@ export default memo(function MessageList(props: {
 		};
 	}, [onResize]);
 
+	const onListResize = useCallback(() => {
+		const elem = listRef.current;
+
+		console.log("resize of scroll", elem?.scrollHeight);
+
+		if(elem !== null) {
+			if(atBottomRef.current) {
+				elem.scrollTop = elem.scrollHeight;
+				lastScrollHeightRef.current = elem.scrollHeight;
+			}
+		}
+	}, []);
+
+	useEffect(() => {
+		const observer = new ResizeObserver(onListResize);
+		observer.observe(listContentRef.current!);
+
+		return () => {
+			observer.disconnect();
+		};
+	}, [onListResize]);
+
 	const onScroll = useCallback((evt: JSX.TargetedEvent<HTMLDivElement>) => {
 		const elem = evt.currentTarget;
 
@@ -286,9 +314,10 @@ export default memo(function MessageList(props: {
 			)
 		) {
 			atBottomRef.current = atBottom;
+			console.log("updating atBottom to", atBottom);
 		}
 		else {
-			console.log("ignoring scroll as height has changed");
+			console.log("ignoring scroll as height has changed", lastScrollHeightRef.current, elem.scrollHeight, lastClientHeightRef.current, elem.clientHeight);
 		}
 	}, []);
 
@@ -342,74 +371,81 @@ export default memo(function MessageList(props: {
 		return maybeGetNickForCounterpart(selfJIDHereSig.value, counterpartSig.value);
 	});
 
-	return <div class={styles.messageList} ref={listRef} onScroll={onScroll}>
-		<div style={{margin: "auto"}} />
-		{props.loaderContent}
-		<div class={styles.messageListMain} ref={listMainRef}>
-			{messages.map((message, index) => {
-				return <MessageRow
-					key={message.localID}
-					msgCache={props.msgCache}
-					index={index}
-					scrollToMessage={scrollToMessage}
-					renderMenu={props.renderMenu}
-					startReply={props.startReply}
-					submitEdit={props.submitEdit}
-					canEdit={props.canEdit}
-					submitReactions={props.submitReactions}
-				/>;
-			})}
-		</div>
-		{props.pendingMessages?.map((message, index) => {
-			let isMerged;
-			if(index === 0) {
-				const prevMessage = messages[messages.length - 1];
+	const pendingMessagesSrcSig = useLiveSignal(props.pendingMessages);
+	const pendingMessagesSig = useComputed(() => unsignal(pendingMessagesSrcSig.value) ?? []);
 
-				if(message.timestamp.getTime() - prevMessage.timestamp.getTime() < MESSAGE_MERGE_TIME) {
-					if(props.msgCache.container.type === "direct") {
-						if(prevMessage.from.bare().equals(accountJIDSig.value)) {
-							isMerged = true;
-						}
-					}
-					else if(props.msgCache.container.type === "room") {
-						if(typeof selfJIDInRoomSig.value !== "undefined" && prevMessage.from.equals(selfJIDInRoomSig.value)) {
-							isMerged = true;
+	return <div class={styles.messageList} ref={listRef} onScroll={onScroll}>
+		<div class={styles.messageListContent} ref={listContentRef}>
+			<div style={{margin: "auto"}} />
+			{props.loaderContent}
+			<div class={styles.messageListMain} ref={listMainRef}>
+				{messages.map((message, index) => {
+					return <MessageRow
+						key={message.localID}
+						msgCache={props.msgCache}
+						index={index}
+						scrollToMessage={scrollToMessage}
+						renderMenu={props.renderMenu}
+						startReply={props.startReply}
+						submitEdit={props.submitEdit}
+						canEdit={props.canEdit}
+						submitReactions={props.submitReactions}
+					/>;
+				})}
+			</div>
+			<For each={pendingMessagesSig}>
+				{(message, index) => {
+					let isMerged;
+					if(index === 0) {
+						const prevMessage = messages[messages.length - 1];
+
+						if(message.timestamp.getTime() - prevMessage.timestamp.getTime() < MESSAGE_MERGE_TIME) {
+							if(props.msgCache.container.type === "direct") {
+								if(prevMessage.from.bare().equals(accountJIDSig.value)) {
+									isMerged = true;
+								}
+							}
+							else if(props.msgCache.container.type === "room") {
+								if(typeof selfJIDInRoomSig.value !== "undefined" && prevMessage.from.equals(selfJIDInRoomSig.value)) {
+									isMerged = true;
+								}
+							}
+							else {
+								const _: never = props.msgCache.container;
+								isMerged = false;
+							}
 						}
 					}
 					else {
-						const _: never = props.msgCache.container;
-						isMerged = false;
+						isMerged = true;
 					}
-				}
-			}
-			else {
-				isMerged = true;
-			}
 
-			return <div class={cx(styles.messageWrapper, isMerged && "merged")} key={message.localID}>
-				<div class={cx(styles.messageCommon, styles.messageRow, styles.pendingMessage)}>
-					<div class={styles.avatarSegment}>
-						{!isMerged && typeof selfJIDHereSig.value !== "undefined" &&
-							<Avatar size="md" jid={selfJIDHereSig.value} />
-						}
-					</div>
-					<div class={styles.messageContentArea}>
-						{!isMerged &&
-							<div>
-								<span>{nickSig}</span>
-								<span class={styles.messageTimestamp}>
-									{message.timestamp.toLocaleString()}
-								</span>
+					return <div class={cx(styles.messageWrapper, isMerged && "merged")} key={message.localID}>
+						<div class={cx(styles.messageCommon, styles.messageRow, styles.pendingMessage)}>
+							<div class={styles.avatarSegment}>
+								{!isMerged && typeof selfJIDHereSig.value !== "undefined" &&
+									<Avatar size="md" jid={selfJIDHereSig.value} />
+								}
 							</div>
-						}
-						<div>
-							<MessageContentView content={message.content} />
+							<div class={styles.messageContentArea}>
+								{!isMerged &&
+									<div>
+										<span>{nickSig}</span>
+										<span class={styles.messageTimestamp}>
+											{message.timestamp.toLocaleString()}
+										</span>
+									</div>
+								}
+								<div>
+									<MessageContentView content={message.content} />
+								</div>
+							</div>
 						</div>
 					</div>
-				</div>
-			</div>
-		})}
-		<div class={styles.typingIndicatorPlaceholder} />
+				}}
+			</For>
+			<div class={styles.typingIndicatorPlaceholder} />
+		</div>
 	</div>;
 });
 
@@ -714,7 +750,7 @@ export function LoadMoreTriggerer(props: {loadMore: () => void}) {
 				props.loadMore.call(undefined);
 			}
 		}, {
-			root: elemRef.current!.parentNode as Element,
+			root: elemRef.current!.parentNode!.parentNode as Element,
 		});
 
 		observer.observe(elemRef.current!);

@@ -64,7 +64,7 @@ export default function ChatRoomAddPage() {
 			<form onSubmit={submitJoin}>
 				<Input value={joinInput} onChange={linkJoinInput} />
 				{" "}
-				<Button tier="primary" disabled={submittingJoin || joinInput === ""} type="submit">
+				<Button tier="primary" disabled={submittingJoin.value || joinInput === ""} type="submit">
 					{$t({defaultMessage: "Join"})}
 				</Button>
 			</form>

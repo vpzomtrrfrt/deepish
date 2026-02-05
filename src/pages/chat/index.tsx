@@ -345,12 +345,11 @@ function ChatView() {
 
 	return <div class={cx(styles.sidebarSegment, styles.roomList)}>
 		<HomeLink active={currentRoom === null && !addMatch[0]} />
-		<For each={roomsSig}>
+		<For each={roomsSig} static>
 			{info => {
 				return <RoomLink
 					key={info.jid.toString()}
 					room={info}
-					isCurrent={currentRoom === info.jid.toString()}
 					reorderRoom={reorderRoom}
 				/>;
 			}}
@@ -393,13 +392,16 @@ function HomeLink(props: {active: boolean}) {
 
 function RoomLink(props: {
 	room: Room;
-	isCurrent: boolean;
 	reorderRoom(movingRoom: JID, to: {before: JID | null; after: JID | null}): void;
 }) {
 	const conn = useConnectionContext();
 	const accountSig = useAccountSig();
 
 	const accountJID = useComputed(() => accountSig.value.jid).value;
+
+	const roomMatch = useRoute("/rooms/:roomJID");
+	const currentRoom = roomMatch[0] ? decodeURIComponent(roomMatch[1].roomJID) : null;
+	const isCurrent = props.room.jid.toString() === currentRoom;
 
 	const name = LoadState.ifDone(props.room.infoState, disco => disco.name, () => null) ?? props.room.jid.toString();
 
@@ -501,7 +503,7 @@ function RoomLink(props: {
 		<WithTooltip tooltip={name} side="inline-end">
 			<Link
 				to={"~/chat/rooms/" + encodeURIComponent(props.room.jid.toString())}
-				class={cx(styles.roomLink, props.isCurrent && styles.currentRoomLink)}
+				class={cx(styles.roomLink, isCurrent && styles.currentRoomLink)}
 				draggable={false}
 			>
 				<Avatar size="lg" jid={props.room.jid.toString()} />
@@ -683,7 +685,9 @@ function SelfBox() {
 		navigate("~/logout/" + encodeURIComponent(jid.toString()));
 	});
 
-	const showTypeSig = useLiveSignal(conn.idle.idle ? PresenceShowType.Away : PresenceShowTypeExtended.Available);
+	const showTypeSig = useComputed(() => {
+		return conn.idle.value.idle ? PresenceShowType.Away : PresenceShowTypeExtended.Available;
+	});
 
 	const statusContentSig = useComputed(() => {
 		if(typeof counterpartSig.value === "undefined") return null;
@@ -695,7 +699,7 @@ function SelfBox() {
 		<AvatarWithStatusRaw
 			size="md"
 			jid={jid}
-			showType={showTypeSig.value}
+			showType={showTypeSig}
 		/>
 		<div class={styles.selfBoxNameSegment}>
 			{nickSig}

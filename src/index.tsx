@@ -59,6 +59,7 @@ export interface AppContext {
 
 	requestNotificationsPermission(): Promise<void>;
 	showDialog(content: VNode): void;
+	navigate(path: string): void;
 }
 
 export const AppContext = createContext<undefined | AppContext>(undefined);
@@ -81,7 +82,7 @@ const styles = {
 };
 
 function App() {
-	const [location] = useLocation();
+	const [location, navigate] = useLocation();
 
 	const cache = useMemo(() => new IDBCache({dbName: "deepish-cache", cacheBuster: "3", cacheKey: "dummy"}), []);
 
@@ -139,6 +140,9 @@ function App() {
 		notificationsSettingsSig.value = newValue;
 	}, [notificationsSettingsSig]);
 
+	// I don't know if this is necessary, but just in case
+	const navigateStable = useLatestCallback(navigate);
+
 	const appCtx = useMemo(
 		() => ({
 			notificationsPermissionState,
@@ -149,6 +153,7 @@ function App() {
 
 			requestNotificationsPermission,
 			showDialog,
+			navigate: navigateStable,
 		} satisfies AppContext),
 		[
 			cache,
@@ -157,6 +162,7 @@ function App() {
 			requestNotificationsPermission,
 			setNotificationsSettings,
 			showDialog,
+			navigateStable,
 		],
 	);
 

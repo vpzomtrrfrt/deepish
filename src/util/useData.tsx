@@ -1,3 +1,4 @@
+import { useSignal, useSignalEffect } from "@preact/signals";
 import { useEffect, useRef, useState } from "preact/hooks";
 
 export type LoadState<T> = {
@@ -61,6 +62,37 @@ export const LoadState = {
 		else return state;
 	},
 };
+
+export function useDataSig<T>(fn: () => Promise<T>) {
+	const stateSig = useSignal<LoadState<T>>(LoadState.loading);
+	const lastCallRef = useRef(0);
+
+	useSignalEffect(() => {
+		stateSig.value = LoadState.loading;
+
+		const thisCall = lastCallRef.current + 1;
+		lastCallRef.current = thisCall;
+
+		try {
+			fn()
+				.then(value => {
+					if(thisCall === lastCallRef.current) {
+						stateSig.value = LoadState.wrapValue(value);
+					}
+				})
+				.catch(err => {
+					if(thisCall === lastCallRef.current) {
+						stateSig.value = LoadState.wrapError(err);
+					}
+				});
+		}
+		catch(err) {
+			stateSig.value = LoadState.wrapError(err);
+		}
+	});
+
+	return stateSig;
+}
 
 export default function useData<T>(fn: () => Promise<T>, deps: unknown[]) {
 	const [state, setState] = useState<LoadState<T>>(LoadState.loading);
