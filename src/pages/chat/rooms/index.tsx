@@ -4,7 +4,7 @@ import { Show } from "@preact/signals/utils";
 import xid from "@xmpp/id";
 import { JID, parse as parseJID } from "@xmpp/jid";
 import { memo } from "preact/compat";
-import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { useCallback, useEffect, useMemo, useRef } from "preact/hooks";
 import { Fragment } from "preact/jsx-runtime";
 import { defineMessage, MessageDescriptor, useIntl } from "react-intl";
 import useLatestCallback from "use-latest-callback";
@@ -181,18 +181,18 @@ function ChatRoomPageInner(props: {roomJID: JID}) {
 		}
 	});
 
-	const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+	const replyingToSig = useSignal<Message | null>(null);
 
 	const cancelReply = useCallback(() => {
-		setReplyingTo(null);
+		replyingToSig.value = null;
 
 		inputRef.current!.focus();
-	}, []);
+	}, [replyingToSig]);
 
 	const inputRef = useRef<HTMLTextAreaElement>(null);
 
 	const startReply = useLatestCallback((message: Message) => {
-		setReplyingTo(message);
+		replyingToSig.value = message;
 
 		inputRef.current!.focus();
 	});
@@ -215,7 +215,7 @@ function ChatRoomPageInner(props: {roomJID: JID}) {
 					accountJID,
 					room!.jid,
 					{body: newMessage},
-					{replyingTo: replyingTo ?? undefined, ...options},
+					{replyingTo: replyingToSig.value ?? undefined, ...options},
 				);
 			}
 			finally {
@@ -223,7 +223,7 @@ function ChatRoomPageInner(props: {roomJID: JID}) {
 			}
 		})();
 
-		setReplyingTo(null);
+		replyingToSig.value = null;
 	});
 
 	const submitEdit = useLatestCallback(async (newMessage: string, replaces: string) => {
@@ -451,7 +451,7 @@ function ChatRoomPageInner(props: {roomJID: JID}) {
 
 	const onInputKeyDown = useLatestCallback((evt: KeyboardEvent) => {
 		if(evt.code === "Escape") {
-			if(replyingTo !== null) {
+			if(replyingToSig.value !== null) {
 				evt.preventDefault();
 				cancelReply();
 			}
@@ -528,7 +528,9 @@ function ChatRoomPageInner(props: {roomJID: JID}) {
 						/>
 						<div class={styles.messageInputArea} onKeyDown={onInputKeyDown}>
 							<TypingIndicator usersTyping={usersTypingSig} inRoom={true} />
-							{replyingTo !== null && <ReplyingIndicator message={replyingTo} cancelReply={cancelReply} />}
+							<Show when={replyingToSig}>
+								{replyingTo => <ReplyingIndicator message={replyingTo} cancelReply={cancelReply} />}
+							</Show>
 							{
 								canSend === null ?
 									(
