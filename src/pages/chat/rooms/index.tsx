@@ -8,6 +8,7 @@ import { memo } from "preact/compat";
 import { useCallback, useEffect, useMemo } from "preact/hooks";
 import { Fragment } from "preact/jsx-runtime";
 import { defineMessage, MessageDescriptor, useIntl } from "react-intl";
+import { Virtuoso } from "react-virtuoso";
 
 import { NOTIFICATION_LEVEL_NAMES, useAppContext } from "../../..";
 import AvatarWithStatus from "../../../components/AvatarWithStatus";
@@ -63,17 +64,11 @@ const styles = {
 	membersList: css({
 		width: "250px",
 
-		display: "flex",
-		flexDirection: "column",
-		overflowY: "auto",
-		overflowX: "hidden",
-
 		borderRightStyle: "solid",
 		borderRightWidth: "1px",
 		borderRightColor: themeVars.outline1,
 		backgroundColor: themeVars.bg1,
 
-		gap: ".25rem",
 		paddingBlock: ".25rem",
 		paddingInline: ".25rem",
 	}),
@@ -649,17 +644,42 @@ function MembersList(props: {roomJID: JID}) {
 
 	if(typeof room === "undefined" || !room.connected) return null;
 
-	return <SidebarSegment class={styles.membersList}>
-		{Object.keys(MEMBER_GROUP_NAMES).map(group_ => {
-			const group = group_ as keyof typeof MEMBER_GROUP_NAMES;
+	let childCount = 0;
+	Object.keys(MEMBER_GROUP_NAMES).forEach(group_ => {
+		const group = group_ as keyof typeof MEMBER_GROUP_NAMES;
 
-			if(membersByGroupSig.value.has(group)) {
-				return <div key={group}>
-					<div class={styles.memberGroupLabel}>{$t(MEMBER_GROUP_NAMES[group])}</div>
-					{membersByGroupSig.value.get(group)!.map(jid => <MembersListEntry key={jid.toString()} jid={jid} />)}
-				</div>;
-			}
-		})}
+		const list = membersByGroupSig.value.get(group);
+		if(typeof list !== "undefined") childCount += list.length + 1;
+	});
+
+	return <SidebarSegment class={styles.membersList}>
+		<Virtuoso
+			totalCount={childCount}
+			itemContent={index => {
+				let i = 0;
+				for(const group_ of Object.keys(MEMBER_GROUP_NAMES)) {
+					const group = group_ as keyof typeof MEMBER_GROUP_NAMES;
+					const list = membersByGroupSig.value.get(group);
+
+					if(typeof list !== "undefined") {
+						if(i === index) {
+							return <div class={styles.memberGroupLabel}>{$t(MEMBER_GROUP_NAMES[group])}</div>;
+						}
+						else {
+							i += 1;
+
+							if(index < i + list.length) {
+								const jid = list[index - i];
+								return <MembersListEntry key={jid.toString()} jid={jid} />;
+							}
+							else {
+								i += list.length;
+							}
+						}
+					}
+				}
+			}}
+		/>
 	</SidebarSegment>;
 }
 
