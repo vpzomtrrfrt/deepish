@@ -30,6 +30,7 @@ export function useCreateMessageCache(container: MessageContainer) {
 export class MessageCache {
 	private messages: Signal<Message[]> = signal([]);
 	private messageMap = new SignalMap<string, Message>();
+	private appendedCount = signal(0);
 
 	private unresolvedFastens = new Map<
 		string,
@@ -60,6 +61,10 @@ export class MessageCache {
 
 	public getMessage(id: StanzaID) {
 		return this.messageMap.get(id.toString());
+	}
+
+	public getAppendedCount() {
+		return this.appendedCount.value;
 	}
 
 	private onMessage = (evt: MessageEvent) => {
@@ -186,6 +191,7 @@ export class MessageCache {
 			);
 
 			this.messages.value = newMessages;
+			if(newMessages[newMessages.length - 1] === message) this.appendedCount.value += 1;
 		});
 	};
 

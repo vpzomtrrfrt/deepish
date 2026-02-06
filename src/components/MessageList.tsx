@@ -1,14 +1,15 @@
 import { css, cx, keyframes } from "@emotion/css";
 import { mdiClose, mdiEmoticonPlus, mdiPencil, mdiReply } from "@mdi/js";
-import { useComputed } from "@preact/signals";
-import { For, useLiveSignal } from "@preact/signals/utils";
+import { ReadonlySignal, useComputed } from "@preact/signals";
+import { useLiveSignal } from "@preact/signals/utils";
 import { JID, parse as parseJID } from "@xmpp/jid";
 import { EmojiClickEvent } from "emoji-picker-element/shared";
 import { stringify as stringifyXML } from "ltx";
 import { ComponentChildren, JSX, Signalish, VNode } from "preact";
 import { memo } from "preact/compat";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
+import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { FormattedList, useIntl } from "react-intl";
+import { Virtuoso, VirtuosoHandle } from "react-virtuoso";
 import useLatestCallback from "use-latest-callback";
 
 import * as commonStyles from "../util/commonStyles";
@@ -18,6 +19,7 @@ import { MessageCache } from "../util/messageCache";
 import { maybeGetNickForCounterpart } from "../util/profileUtil";
 import { themeVars } from "../util/theme";
 import unsignal from "../util/unsignal";
+import useMirrorSignal from "../util/useMirrorSignal";
 import StanzaID, { StanzaIDType } from "../util/xmpp/StanzaID";
 import Avatar from "./Avatar";
 import Block from "./Block";
@@ -29,9 +31,6 @@ import { MessageContentView } from "./MessageContentView";
 import MessageInput from "./MessageInput";
 import Popover, { PopoverActions } from "./Popover";
 import WithTooltip from "./WithTooltip";
-
-// Not sure why this is necessary but it seems to fix initial load scrolling
-const BOTTOM_TOLERANCE = 5;
 
 const MESSAGE_MERGE_TIME = 1000 * 60;
 
@@ -46,21 +45,6 @@ const flashHighlightAnimation = keyframes({
 });
 
 const styles = {
-	messageList: css({
-		flexGrow: 1,
-
-		display: "flex",
-		flexDirection: "column",
-		overflowY: "auto",
-	}),
-	messageListContent: css({
-		display: "flex",
-		flexDirection: "column",
-	}),
-	messageListMain: css({
-		display: "flex",
-		flexDirection: "column",
-	}),
 	messageWrapper: css({
 		paddingBlockStart: ".5rem",
 
@@ -198,12 +182,88 @@ const styles = {
 
 		fontWeight: "bold",
 	}),
+	loaderContentWrapper: css({
+		minHeight: "1px",
+	}),
 };
+
+type PendingMessage = Pick<Message, "localID" | "content" | "timestamp">;
 
 export default memo(function MessageList(props: {
 	msgCache: MessageCache;
 	loaderContent: Signalish<VNode>;
-	pendingMessages?: Signalish<Array<Pick<Message, "localID" | "content" | "timestamp">>>;
+	pendingMessages?: Signalish<PendingMessage[]>;
+
+	renderMenu(message: Message, setMenuOpen: (value: boolean) => void): ComponentChildren;
+	startReply?: (message: Message) => void;
+	submitEdit?: (text: string, replaces: string) => Promise<void>;
+	canEdit?: (message: Message) => boolean;
+	submitReactions?: (reactions: string[], message: Message) => Promise<void>;
+}) {
+	const listRef = useRef<VirtuosoHandle>(null);
+	const rootRef = useRef<HTMLDivElement>(null);
+
+	const onResize = useCallback(() => {
+		listRef.current!.autoscrollToBottom();
+	}, []);
+	useEffect(() => {
+		const observer = new ResizeObserver(onResize);
+		observer.observe(rootRef.current!);
+
+		return () => {
+			observer.disconnect();
+		};
+	}, [onResize]);
+
+	const scrollToMessage = useLatestCallback((_id: StanzaID) => {
+		// TODO
+	});
+
+	const pendingMessagesSrcSig = useLiveSignal(props.pendingMessages);
+	const pendingMessagesSig = useComputed(() => unsignal(pendingMessagesSrcSig.value) ?? []);
+
+	const allMessagesCountSig = useComputed(() => {
+		const messages = props.msgCache.getMessages();
+
+		return messages.length + pendingMessagesSig.value.length;
+	});
+
+	const loaderContentSig = useMirrorSignal(props.loaderContent);
+
+	const indexOffset = Math.floor(Number.MAX_SAFE_INTEGER / 2) - allMessagesCountSig.value - 2 + props.msgCache.getAppendedCount();
+
+	return <div ref={rootRef} style={{display: "flex", flexDirection: "column", flexGrow: 1}}>
+		<Virtuoso
+			alignToBottom
+			followOutput
+			ref={listRef}
+			totalCount={allMessagesCountSig.value + 2}
+			itemContent={index => {
+				return <MessageRow
+					msgCache={props.msgCache}
+					pendingMessages={pendingMessagesSig}
+					loaderContent={loaderContentSig}
+					index={index - indexOffset}
+					scrollToMessage={scrollToMessage}
+					renderMenu={props.renderMenu}
+					startReply={props.startReply}
+					submitEdit={props.submitEdit}
+					canEdit={props.canEdit}
+					submitReactions={props.submitReactions}
+				/>;
+			}}
+			firstItemIndex={indexOffset}
+		/>
+	</div>;
+});
+
+function MessageRow(props: {
+	msgCache: MessageCache;
+	pendingMessages: ReadonlySignal<PendingMessage[]>;
+	loaderContent: ReadonlySignal<VNode>;
+
+	index: number;
+	scrollToMessage(id: StanzaID): void;
 
 	renderMenu(message: Message, setMenuOpen: (value: boolean) => void): ComponentChildren;
 	startReply?: (message: Message) => void;
@@ -212,136 +272,6 @@ export default memo(function MessageList(props: {
 	submitReactions?: (reactions: string[], message: Message) => Promise<void>;
 }) {
 	const accountSig = useAccountSig();
-
-	const messages = props.msgCache.getMessages();
-
-	const listRef = useRef<HTMLDivElement>(null);
-	const listMainRef = useRef<HTMLDivElement>(null);
-	const listContentRef = useRef<HTMLDivElement>(null);
-
-	const lastLastItemKeyRef = useRef<string | null>(null);
-	const lastLastItemYRef = useRef<number | null>(null);
-
-	const lastScrollHeightRef = useRef<number>(0);
-	const lastClientHeightRef = useRef<number>(0);
-
-	const atBottomRef = useRef(true);
-
-	useLayoutEffect(() => {
-		const elem = listRef.current;
-
-		if(elem !== null) {
-			if(atBottomRef.current) {
-				console.log("adjusting scroll to bottom");
-				elem.scrollTop = elem.scrollHeight;
-				console.log("scroll was to", elem.scrollTop, elem.scrollHeight - elem.clientHeight);
-			}
-			else {
-				const lastItem = listMainRef.current!.lastChild as HTMLElement | null;
-				if(lastItem !== null) {
-					const lastItemKey = lastItem.dataset.key!;
-					const lastItemY = lastItem.offsetTop;
-
-					console.log("maybe adjusting scroll", lastItemKey, lastLastItemKeyRef.current, lastLastItemYRef.current);
-
-					if(lastItemKey === lastLastItemKeyRef.current) {
-						const offset = lastItemY - lastLastItemYRef.current!;
-
-						console.log("adjusting scroll by", offset);
-
-						elem.scrollBy({top: offset, behavior: "instant"});
-					}
-
-					lastLastItemKeyRef.current = lastItemKey;
-					lastLastItemYRef.current = lastItemY;
-				}
-			}
-
-			lastScrollHeightRef.current = elem.scrollHeight;
-			lastClientHeightRef.current = elem.clientHeight;
-		}
-	});
-
-	const onResize = useCallback(() => {
-		const elem = listRef.current;
-
-		if(elem !== null) {
-			if(atBottomRef.current) {
-				elem.scrollTop = elem.scrollHeight;
-			}
-		}
-	}, []);
-
-	useEffect(() => {
-		const observer = new ResizeObserver(onResize);
-		observer.observe(listRef.current!);
-
-		return () => {
-			observer.disconnect();
-		};
-	}, [onResize]);
-
-	const onListResize = useCallback(() => {
-		const elem = listRef.current;
-
-		console.log("resize of scroll", elem?.scrollHeight);
-
-		if(elem !== null) {
-			if(atBottomRef.current) {
-				elem.scrollTop = elem.scrollHeight;
-				lastScrollHeightRef.current = elem.scrollHeight;
-			}
-		}
-	}, []);
-
-	useEffect(() => {
-		const observer = new ResizeObserver(onListResize);
-		observer.observe(listContentRef.current!);
-
-		return () => {
-			observer.disconnect();
-		};
-	}, [onListResize]);
-
-	const onScroll = useCallback((evt: JSX.TargetedEvent<HTMLDivElement>) => {
-		const elem = evt.currentTarget;
-
-		const atBottom = elem.scrollTop >= elem.scrollHeight - elem.clientHeight - BOTTOM_TOLERANCE;
-
-		if(
-			atBottom || (
-				lastScrollHeightRef.current === elem.scrollHeight && lastClientHeightRef.current === elem.clientHeight
-			)
-		) {
-			atBottomRef.current = atBottom;
-			console.log("updating atBottom to", atBottom);
-		}
-		else {
-			console.log("ignoring scroll as height has changed", lastScrollHeightRef.current, elem.scrollHeight, lastClientHeightRef.current, elem.clientHeight);
-		}
-	}, []);
-
-	const scrollToMessage = useLatestCallback((id: StanzaID) => {
-		const message = props.msgCache.getMessage(id);
-
-		if(typeof message === "undefined") {
-			console.warn("Attempted to scroll to unknown message");
-			return;
-		}
-
-		const elemID = "message-" + message.localID;
-		const elem = document.getElementById(elemID);
-		if(elem === null) {
-			console.warn("Couldn't find message in list", elemID);
-			return;
-		}
-
-		console.log("highlighting?");
-
-		elem.scrollIntoView({behavior: "smooth", block: "center"});
-		elem.dataset.flashHighlight = "true";
-	});
-
 	const accountJIDSig = useComputed(() => accountSig.value.jid);
 
 	const roomSig = useComputed((): {value: Room | undefined} => {
@@ -359,7 +289,6 @@ export default memo(function MessageList(props: {
 
 		return new JID(room.jid.local, room.jid.domain, room.nick ?? accountJIDSig.value.local);
 	});
-
 	const selfJIDHereSig = props.msgCache.container.type === "room" ? selfJIDInRoomSig : accountJIDSig;
 	const counterpartSig = useComputed(() => {
 		if(typeof selfJIDHereSig.value === "undefined") return {value: undefined};
@@ -371,134 +300,112 @@ export default memo(function MessageList(props: {
 		return maybeGetNickForCounterpart(selfJIDHereSig.value, counterpartSig.value);
 	});
 
-	const pendingMessagesSrcSig = useLiveSignal(props.pendingMessages);
-	const pendingMessagesSig = useComputed(() => unsignal(pendingMessagesSrcSig.value) ?? []);
-
-	return <div class={styles.messageList} ref={listRef} onScroll={onScroll}>
-		<div class={styles.messageListContent} ref={listContentRef}>
-			<div style={{margin: "auto"}} />
+	if(props.index === 0) {
+		return <div class={styles.loaderContentWrapper}>
 			{props.loaderContent}
-			<div class={styles.messageListMain} ref={listMainRef}>
-				{messages.map((message, index) => {
-					return <MessageRow
-						key={message.localID}
-						msgCache={props.msgCache}
-						index={index}
-						scrollToMessage={scrollToMessage}
-						renderMenu={props.renderMenu}
-						startReply={props.startReply}
-						submitEdit={props.submitEdit}
-						canEdit={props.canEdit}
-						submitReactions={props.submitReactions}
-					/>;
-				})}
-			</div>
-			<For each={pendingMessagesSig}>
-				{(message, index) => {
-					let isMerged;
-					if(index === 0) {
-						const prevMessage = messages[messages.length - 1];
+		</div>;
+	}
+	else {
+		const messages = props.msgCache.getMessages();
 
-						if(message.timestamp.getTime() - prevMessage.timestamp.getTime() < MESSAGE_MERGE_TIME) {
-							if(props.msgCache.container.type === "direct") {
-								if(prevMessage.from.bare().equals(accountJIDSig.value)) {
-									isMerged = true;
-								}
-							}
-							else if(props.msgCache.container.type === "room") {
-								if(typeof selfJIDInRoomSig.value !== "undefined" && prevMessage.from.equals(selfJIDInRoomSig.value)) {
-									isMerged = true;
-								}
-							}
-							else {
-								const _: never = props.msgCache.container;
-								isMerged = false;
-							}
+		if(props.index - 1 < messages.length) {
+			const index = props.index - 1;
+
+			const message = messages[index];
+
+			let isMerged = false;
+			if(index > 0) {
+				const prevMessage = messages[index - 1];
+
+				if(
+					message.timestamp.getTime() - prevMessage.timestamp.getTime() < MESSAGE_MERGE_TIME &&
+						// TODO show edited state somewhere else so we can merge them too
+						message.editedAt === null
+				) {
+					if(message.room === null) {
+						if(message.from.bare().equals(prevMessage.from.bare())) {
+							isMerged = true;
 						}
 					}
 					else {
-						isMerged = true;
+						if(message.from.equals(prevMessage.from)) {
+							isMerged = true;
+						}
 					}
+				}
+			}
 
-					return <div class={cx(styles.messageWrapper, isMerged && "merged")} key={message.localID}>
-						<div class={cx(styles.messageCommon, styles.messageRow, styles.pendingMessage)}>
-							<div class={styles.avatarSegment}>
-								{!isMerged && typeof selfJIDHereSig.value !== "undefined" &&
-									<Avatar size="md" jid={selfJIDHereSig.value} />
-								}
-							</div>
-							<div class={styles.messageContentArea}>
-								{!isMerged &&
-									<div>
-										<span>{nickSig}</span>
-										<span class={styles.messageTimestamp}>
-											{message.timestamp.toLocaleString()}
-										</span>
-									</div>
-								}
+			return <RealMessageRow
+				key={message.localID}
+				message={message}
+				isMerged={isMerged}
+
+				msgCache={props.msgCache}
+				scrollToMessage={props.scrollToMessage}
+				renderMenu={props.renderMenu}
+				startReply={props.startReply}
+				submitEdit={props.submitEdit}
+				canEdit={props.canEdit}
+				submitReactions={props.submitReactions}
+			/>;
+		}
+		else {
+			const pendingMessages = props.pendingMessages.value;
+			if(props.index - 1 - messages.length < pendingMessages.length) {
+				const index = props.index - 1 - messages.length;
+				const message = pendingMessages[index];
+
+				let isMerged;
+				if(index === 0) {
+					const prevMessage = messages[messages.length - 1];
+
+					if(message.timestamp.getTime() - prevMessage.timestamp.getTime() < MESSAGE_MERGE_TIME) {
+						if(props.msgCache.container.type === "direct") {
+							if(prevMessage.from.bare().equals(accountJIDSig.value)) {
+								isMerged = true;
+							}
+						}
+						else if(props.msgCache.container.type === "room") {
+							if(typeof selfJIDInRoomSig.value !== "undefined" && prevMessage.from.equals(selfJIDInRoomSig.value)) {
+								isMerged = true;
+							}
+						}
+						else {
+							const _: never = props.msgCache.container;
+							isMerged = false;
+						}
+					}
+				}
+				else {
+					isMerged = true;
+				}
+
+				return <div class={cx(styles.messageWrapper, isMerged && "merged")} key={message.localID}>
+					<div class={cx(styles.messageCommon, styles.messageRow, styles.pendingMessage)}>
+						<div class={styles.avatarSegment}>
+							{!isMerged && typeof selfJIDHereSig.value !== "undefined" &&
+								<Avatar size="md" jid={selfJIDHereSig.value} />
+							}
+						</div>
+						<div class={styles.messageContentArea}>
+							{!isMerged &&
 								<div>
-									<MessageContentView content={message.content} />
+									<span>{nickSig}</span>
+									<span class={styles.messageTimestamp}>
+										{message.timestamp.toLocaleString()}
+									</span>
 								</div>
+							}
+							<div>
+								<MessageContentView content={message.content} />
 							</div>
 						</div>
 					</div>
-				}}
-			</For>
-			<div class={styles.typingIndicatorPlaceholder} />
-		</div>
-	</div>;
-});
-
-function MessageRow(props: {
-	msgCache: MessageCache;
-	index: number;
-	scrollToMessage(id: StanzaID): void;
-
-	renderMenu(message: Message, setMenuOpen: (value: boolean) => void): ComponentChildren;
-	startReply?: (message: Message) => void;
-	submitEdit?: (text: string, replaces: string) => Promise<void>;
-	canEdit?: (message: Message) => boolean;
-	submitReactions?: (reactions: string[], message: Message) => Promise<void>;
-}) {
-	const index = props.index;
-
-	const messages = props.msgCache.getMessages();
-	const message = messages[index];
-
-	let isMerged = false;
-	if(index > 0) {
-		const prevMessage = messages[index - 1];
-
-		if(
-			message.timestamp.getTime() - prevMessage.timestamp.getTime() < MESSAGE_MERGE_TIME &&
-				// TODO show edited state somewhere else so we can merge them too
-				message.editedAt === null
-		) {
-			if(message.room === null) {
-				if(message.from.bare().equals(prevMessage.from.bare())) {
-					isMerged = true;
-				}
+				</div>
 			}
-			else {
-				if(message.from.equals(prevMessage.from)) {
-					isMerged = true;
-				}
-			}
+			else return <div class={styles.typingIndicatorPlaceholder} />;
 		}
 	}
-
-	return <RealMessageRow
-		message={message}
-		isMerged={isMerged}
-
-		msgCache={props.msgCache}
-		scrollToMessage={props.scrollToMessage}
-		renderMenu={props.renderMenu}
-		startReply={props.startReply}
-		submitEdit={props.submitEdit}
-		canEdit={props.canEdit}
-		submitReactions={props.submitReactions}
-	/>;
 }
 
 const RealMessageRow = memo(function RealMessageRow(props: {
