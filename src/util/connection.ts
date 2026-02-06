@@ -1003,7 +1003,10 @@ function createBaseConnection(
 	function onClientError(client: xmppClient.Client, err: unknown) {
 		console.error(err);
 
-		const stop = err instanceof SASLError;
+		const stop = err instanceof SASLError || (
+			// awkward but there's not a convenient way to detect this
+			typeof err === "object" && err !== null && "message" in err && err.message === "SASL: Mechanism undefined not found."
+		);
 
 		if(stop) client.stop();
 
