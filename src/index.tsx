@@ -16,10 +16,10 @@ import DataView from "./components/DataView";
 import DialogContainer, { DialogContainerRef } from "./components/DialogContainer";
 import ChatPage from "./pages/chat";
 import LoginPage from "./pages/login";
-import { ConnectionContext, MessageContent, MessageEvent, NotificationLevel, useAccountSig, useConnectionContext, useCreateConnection } from "./util/connection";
+import { ConnectionContext, MessageContent, MessageEvent, NotificationLevel, useConnectionContext, useCreateConnection } from "./util/connection";
 import matchLocale from "./util/matchLocale";
 import { maybeGetNickForCounterpart } from "./util/profileUtil";
-import { useSignalMapKeysWhereValueMatches } from "./util/SignalMap";
+import SignalMap, { useSignalMapKeysWhereValueMatches } from "./util/SignalMap";
 import { themeCSS, themeVars } from "./util/theme";
 import { NotificationCategory } from "./util/types";
 import useData, { LoadState } from "./util/useData";
@@ -224,7 +224,6 @@ function AppContent() {
 	const { $t } = useIntl();
 
 	const connection = useConnectionContext();
-	const accountSig = useAccountSig();
 
 	const directMatch = useRoute("/chat/direct/:counterpartJID");
 	const roomMatch = useRoute("/chat/rooms/:roomJID");
@@ -280,7 +279,7 @@ function AppContent() {
 	useEventHandler(connection, "message", onMessage);
 
 	const unreadConversationsSig = useSignalMapKeysWhereValueMatches(
-		accountSig.value.counterparts,
+		connection.accountsSig.value.length < 1 ? (EMPTY_MAP as never) : connection.accountsSig.value[0].counterparts,
 		counterpart => {
 			return counterpart.lastMessageIDForUnread !== null &&
 				counterpart.lastReadMessageID !== counterpart.lastMessageIDForUnread &&
@@ -336,3 +335,5 @@ function onIntlError(err: unknown) {
 		console.error(err);
 	}
 }
+
+const EMPTY_MAP = new SignalMap<never, never>();
