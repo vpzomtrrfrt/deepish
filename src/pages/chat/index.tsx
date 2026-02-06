@@ -5,7 +5,7 @@ import { DropIndicator } from "@atlaskit/pragmatic-drag-and-drop-react-drop-indi
 import { css, cx } from "@emotion/css";
 import { mdiAccountMultiple, mdiConnection, mdiHome, mdiPlus } from "@mdi/js";
 import { useComputed, useSignal, useSignalEffect } from "@preact/signals";
-import { useLiveSignal } from "@preact/signals/utils";
+import { Show, useLiveSignal } from "@preact/signals/utils";
 import { JID } from "@xmpp/jid";
 import { JSX } from "preact";
 import { memo } from "preact/compat";
@@ -377,13 +377,37 @@ function HomeLink(props: {active: boolean}) {
 		return result;
 	}).value;
 
+	const possibleUnreadConversationsSig = useSignalMapKeysWhereValueMatches(
+		accountSig.value.counterparts,
+		counterpart => {
+			return counterpart.lastMessageIDForUnread !== null &&
+				counterpart.lastReadMessageID !== counterpart.lastMessageIDForUnread &&
+				counterpart.lastReadMessageID !== counterpart.lastMessageID;
+		},
+		true,
+	);
+	const hasUnreadConversationsSig = useComputed(() => {
+		// Ignore rooms for this
+
+		for(const key of possibleUnreadConversationsSig.value) {
+			const counterpart = accountSig.value.counterparts.get(key)!;
+
+			if(!accountSig.value.rooms.has(counterpart.jid.toString())) return true;
+		}
+
+		return false;
+	});
+
 	return <div>
 		<Link to="~/">
 			<div class={cx(styles.roomLink, props.active && styles.currentRoomLink, styles.homeAvatar)}>
 				<Icon path={mdiHome} class={styles.roomLinkIcon} />
 				{
-					incomingRequestCounterpartsCount > 0 &&
-						<PriorityUnreadIndicator count={incomingRequestCounterpartsCount} />
+					incomingRequestCounterpartsCount > 0 ?
+						<PriorityUnreadIndicator count={incomingRequestCounterpartsCount} /> :
+						<Show when={hasUnreadConversationsSig}>
+							<div class={styles.roomUnreadIndicator} />
+						</Show>
 				}
 			</div>
 		</Link>
