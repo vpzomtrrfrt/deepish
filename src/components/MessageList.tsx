@@ -183,7 +183,7 @@ const styles = {
 		fontWeight: "bold",
 	}),
 	loaderContentWrapper: css({
-		minHeight: "1px",
+		height: "2rem",
 	}),
 };
 
@@ -202,18 +202,6 @@ export default memo(function MessageList(props: {
 }) {
 	const listRef = useRef<VirtuosoHandle>(null);
 	const rootRef = useRef<HTMLDivElement>(null);
-
-	const onResize = useCallback(() => {
-		listRef.current!.autoscrollToBottom();
-	}, []);
-	useEffect(() => {
-		const observer = new ResizeObserver(onResize);
-		observer.observe(rootRef.current!);
-
-		return () => {
-			observer.disconnect();
-		};
-	}, [onResize]);
 
 	const scrollToMessage = useLatestCallback((_id: StanzaID) => {
 		// TODO
