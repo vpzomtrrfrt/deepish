@@ -1,0 +1,308 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rdf:RDF
+	xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+	xmlns="http://usefulinc.com/ns/doap#"
+	xmlns:xmpp="https://linkmauve.fr/ns/xmpp-doap#"
+>
+	<Project>
+		<name>Deepish</name>
+		<created>2025-11-08</created>
+
+		<shortdesc xml:lang="en">A familiar experience within the XMPP ecosystem</shortdesc>
+
+		<homepage rdf:resource="https://deepish.vpzom.click/" />
+		<bug-database rdf:resource="https://gitlab.com/vpzomtrrfrt/deepish/-/issues" />
+
+		<license rdf:resource="https://gitlab.com/vpzomtrrfrt/deepish/-/raw/master/LICENSE" />
+
+		<programming-language>TypeScript</programming-language>
+		<category rdf:resource="https://linkmauve.fr/ns/xmpp-doap#category-client"/>
+		<os>Browser</os>
+
+		<repository>
+			<GitRepository>
+				<location rdf:resource="https://gitlab.com/vpzomtrrfrt/deepish.git" />
+				<browse rdf:resource="https://gitlab.com/vpzomtrrfrt/deepish" />
+			</GitRepository>
+		</repository>
+
+		<implements rdf:resource="https://xmpp.org/rfcs/rfc6120.html" />
+		<implements rdf:resource="https://xmpp.org/rfcs/rfc6121.html" />
+		<implements rdf:resource="https://xmpp.org/rfcs/rfc6122.html" />
+
+		<implements>
+			<xmpp:SupportedXep>
+				<xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0030.html" />
+				<xmpp:status>complete</xmpp:status>
+			</xmpp:SupportedXep>
+		</implements>
+
+		<implements>
+			<xmpp:SupportedXep>
+				<xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0045.html" />
+				<xmpp:version>1.35.3</xmpp:version>
+				<xmpp:status>partial</xmpp:status>
+				<xmpp:note xml:lang="en">
+					Can join and create rooms. Missing support for registered nicknames.
+				</xmpp:note>
+			</xmpp:SupportedXep>
+		</implements>
+
+		<implements>
+			<xmpp:SupportedXep>
+				<xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0054.html" />
+				<xmpp:status>partial</xmpp:status>
+				<xmpp:note xml:lang="en">Used for MUC avatars.</xmpp:note>
+			</xmpp:SupportedXep>
+		</implements>
+
+		<implements>
+			<xmpp:SupportedXep>
+				<xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0059.html" />
+				<xmpp:status>complete</xmpp:status>
+			</xmpp:SupportedXep>
+		</implements>
+
+		<implements>
+			<xmpp:SupportedXep>
+				<xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0060.html" />
+				<xmpp:status>partial</xmpp:status>
+			</xmpp:SupportedXep>
+		</implements>
+
+		<implements>
+			<xmpp:SupportedXep>
+				<xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0071.html" />
+				<xmpp:status>partial</xmpp:status>
+				<xmpp:note xml:lang="en">Only supports basic formatting</xmpp:note>
+			</xmpp:SupportedXep>
+		</implements>
+
+		<implements>
+			<xmpp:SupportedXep>
+				<xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0084.html" />
+				<xmpp:version>1.1.4</xmpp:version>
+				<xmpp:status>partial</xmpp:status>
+				<xmpp:note xml:lang="en">Missing support for HTTP uploads</xmpp:note>
+			</xmpp:SupportedXep>
+		</implements>
+
+		<implements>
+			<xmpp:SupportedXep>
+				<xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0085.html" />
+				<xmpp:status>partial</xmpp:status>
+				<xmpp:note xml:lang="en">Only sends `active` and `composing`.</xmpp:note>
+			</xmpp:SupportedXep>
+		</implements>
+
+		<implements>
+			<xmpp:SupportedXep>
+				<xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0118.html" />
+				<xmpp:status>partial</xmpp:status>
+				<xmpp:note xml:lang="en">Read-only</xmpp:note>
+			</xmpp:SupportedXep>
+		</implements>
+
+		<implements>
+			<xmpp:SupportedXep>
+				<xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0128.html" />
+				<xmpp:status>complete</xmpp:status>
+			</xmpp:SupportedXep>
+		</implements>
+
+		<implements>
+			<xmpp:SupportedXep>
+				<xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0156.html" />
+				<xmpp:version>1.4.0</xmpp:version>
+				<xmpp:status>complete</xmpp:status>
+				<xmpp:note xml:lang="en">Supports XML format only</xmpp:note>
+			</xmpp:SupportedXep>
+		</implements>
+
+		<implements>
+			<xmpp:SupportedXep>
+				<xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0163.html" />
+				<xmpp:status>complete</xmpp:status>
+			</xmpp:SupportedXep>
+		</implements>
+
+		<implements>
+			<xmpp:SupportedXep>
+				<xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0172.html" />
+				<xmpp:status>partial</xmpp:status>
+				<xmpp:note xml:lang="en">Uses PEP only.</xmpp:note>
+			</xmpp:SupportedXep>
+		</implements>
+
+		<implements>
+			<xmpp:SupportedXep>
+				<xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0199.html" />
+				<xmpp:status>complete</xmpp:status>
+			</xmpp:SupportedXep>
+		</implements>
+
+		<implements>
+			<xmpp:SupportedXep>
+				<xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0203.html" />
+				<xmpp:status>complete</xmpp:status>
+			</xmpp:SupportedXep>
+		</implements>
+
+		<implements>
+			<xmpp:SupportedXep>
+				<xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0280.html" />
+				<xmpp:status>complete</xmpp:status>
+			</xmpp:SupportedXep>
+		</implements>
+
+		<implements>
+			<xmpp:SupportedXep>
+				<xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0308.html" />
+				<xmpp:version>1.2.1</xmpp:version>
+				<xmpp:status>complete</xmpp:status>
+				<xmpp:note xml:lang="en">Allows correcting any of your messages.</xmpp:note>
+			</xmpp:SupportedXep>
+		</implements>
+
+		<implements>
+			<xmpp:SupportedXep>
+				<xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0313.html" />
+				<xmpp:status>complete</xmpp:status>
+			</xmpp:SupportedXep>
+		</implements>
+
+		<implements>
+			<xmpp:SupportedXep>
+				<xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0359.html" />
+				<xmpp:status>complete</xmpp:status>
+			</xmpp:SupportedXep>
+		</implements>
+
+		<implements>
+			<xmpp:SupportedXep>
+				<xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0388.html" />
+				<xmpp:status>complete</xmpp:status>
+				<xmpp:note xml:lang="en">I think so?</xmpp:note>
+			</xmpp:SupportedXep>
+		</implements>
+
+		<implements>
+			<xmpp:SupportedXep>
+				<xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0392.html" />
+				<xmpp:version>1.0.1</xmpp:version>
+				<xmpp:status>complete</xmpp:status>
+			</xmpp:SupportedXep>
+		</implements>
+
+		<implements>
+			<xmpp:SupportedXep>
+				<xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0393.html" />
+				<xmpp:version>1.1.1</xmpp:version>
+				<xmpp:status>partial</xmpp:status>
+				<xmpp:note xml:lang="en">Has incorrect behaviour in some edge cases</xmpp:note>
+			</xmpp:SupportedXep>
+		</implements>
+
+		<implements>
+			<xmpp:SupportedXep>
+				<xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0402.html" />
+				<xmpp:version>1.2.0</xmpp:version>
+				<xmpp:status>complete</xmpp:status>
+			</xmpp:SupportedXep>
+		</implements>
+
+		<implements>
+			<xmpp:SupportedXep>
+				<xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0410.html" />
+				<xmpp:status>complete</xmpp:status>
+			</xmpp:SupportedXep>
+		</implements>
+
+		<implements>
+			<xmpp:SupportedXep>
+				<xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0421.html" />
+				<xmpp:status>partial</xmpp:status>
+				<xmpp:note xml:lang="en">Not consistently used</xmpp:note>
+			</xmpp:SupportedXep>
+		</implements>
+
+		<implements>
+			<xmpp:SupportedXep>
+				<xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0424.html" />
+				<xmpp:version>0.4.2</xmpp:version>
+				<xmpp:status>complete</xmpp:status>
+			</xmpp:SupportedXep>
+		</implements>
+
+		<implements>
+			<xmpp:SupportedXep>
+				<xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0425.html" />
+				<xmpp:version>0.3.0</xmpp:version>
+				<xmpp:status>complete</xmpp:status>
+			</xmpp:SupportedXep>
+		</implements>
+
+		<implements>
+			<xmpp:SupportedXep>
+				<xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0428.html" />
+				<xmpp:status>complete</xmpp:status>
+			</xmpp:SupportedXep>
+		</implements>
+
+		<implements>
+			<xmpp:SupportedXep>
+				<xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0444.html" />
+				<xmpp:version>0.2.1</xmpp:version>
+				<xmpp:status>partial</xmpp:status>
+				<xmpp:note xml:lang="en">Missing handling of restrictions</xmpp:note>
+			</xmpp:SupportedXep>
+		</implements>
+
+		<implements>
+			<xmpp:SupportedXep>
+				<xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0453.html" />
+				<xmpp:status>complete</xmpp:status>
+			</xmpp:SupportedXep>
+		</implements>
+
+		<implements>
+			<xmpp:SupportedXep>
+				<xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0461.html" />
+				<xmpp:version>0.2.0</xmpp:version>
+				<xmpp:status>complete</xmpp:status>
+			</xmpp:SupportedXep>
+		</implements>
+
+		<implements>
+			<xmpp:SupportedXep>
+				<xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0484.html" />
+				<xmpp:version>0.2.0</xmpp:version>
+				<xmpp:status>partial</xmpp:status>
+				<xmpp:note xml:lang="en">Missing rotation support</xmpp:note>
+			</xmpp:SupportedXep>
+		</implements>
+
+		<implements>
+			<xmpp:SupportedXep>
+				<xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0486.html" />
+				<xmpp:version>0.1.0</xmpp:version>
+				<xmpp:status>complete</xmpp:status>
+			</xmpp:SupportedXep>
+		</implements>
+
+		<implements>
+			<xmpp:SupportedXep>
+				<xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0490.html" />
+				<xmpp:status>partial</xmpp:status>
+				<xmpp:note xml:lang="en">Missing handling of unusual values</xmpp:note>
+			</xmpp:SupportedXep>
+		</implements>
+
+		<implements>
+			<xmpp:SupportedXep>
+				<xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0503.html" />
+				<xmpp:status>planned</xmpp:status>
+			</xmpp:SupportedXep>
+		</implements>
+	</Project>
+</rdf:RDF>
