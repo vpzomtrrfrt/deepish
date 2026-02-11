@@ -18,6 +18,7 @@ import { DEFAULT_NOTIFICATIONS_SETTINGS, NotificationsSettings } from "..";
 import { compareRanks, DEFAULT_RANK, genRankBetween } from "./lexrank";
 import { markdownHasAnyFormatting, parseMarkdown, renderMarkdownTo0393, renderMarkdownToXHTML } from "./markdown";
 import SignalMap from "./SignalMap";
+import stringLength, { stringSubstring } from "./stringLength";
 import { AvatarMetadata, Counterpart, NotificationCategory, Presence, PresenceShowType, RosterEntry, TuneInfo } from "./types";
 import { LoadState } from "./useData";
 import useEffectOnce from "./useEffectOnce";
@@ -3748,7 +3749,7 @@ function getContentFromMessageElementAdv(elem: Element): {content: MessageConten
 			const start = Number(skipElem?.getAttr("start"));
 			const end = Number(skipElem?.getAttr("end"));
 
-			if(!isNaN(start) && !isNaN(end) && start < end && start >= 0 && end <= body!.length) {
+			if(!isNaN(start) && !isNaN(end) && start < end && start >= 0 && end <= stringLength(body!)) {
 				if(fallbackElem.getAttr("for") === "urn:xmpp:reply:0" && start === 0) {
 					skippedSpans.push({start, end});
 
@@ -3756,7 +3757,7 @@ function getContentFromMessageElementAdv(elem: Element): {content: MessageConten
 						type: typeHint?.getAttr("type") === "text/markdown" ?
 							"markdown" :
 							(typeof unstyledElem === "undefined" ? "0393" : "plain"),
-						content: body!.substring(start, end),
+						content: stringSubstring(body!, start, end),
 					});
 				}
 			}
@@ -3768,17 +3769,19 @@ function getContentFromMessageElementAdv(elem: Element): {content: MessageConten
 
 			skippedSpans.sort((a, b) => a.start - b.start);
 
+			const srcBodyLength = stringLength(srcBody);
+
 			let bi = 0;
 			let si = 0;
 			while(si < skippedSpans.length) {
 				if(skippedSpans[si].start > bi) {
-					body += srcBody.substring(bi, skippedSpans[si].start);
+					body += stringSubstring(srcBody, bi, skippedSpans[si].start);
 				}
 
 				bi = skippedSpans[si].end;
 				si++;
 			}
-			if(bi < srcBody.length) body += srcBody.substring(bi);
+			if(bi < srcBodyLength) body += stringSubstring(srcBody, bi);
 		}
 
 		content.push({
@@ -3809,14 +3812,4 @@ function parseDataFormsBoolean(src: string) {
 	else if(src === "0" || src === "false") return false;
 
 	throw new Error("Invalid boolean value");
-}
-
-function stringLength(src: string) {
-	let result = 0;
-
-	for(const char of src) {
-		result += char.length;
-	}
-
-	return result;
 }
