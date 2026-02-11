@@ -1,8 +1,8 @@
 export default function stringLength(src: string) {
 	let result = 0;
 
-	for(const char of src) {
-		result += char.length;
+	for(const _ of src) {
+		result += 1;
 	}
 
 	return result;
