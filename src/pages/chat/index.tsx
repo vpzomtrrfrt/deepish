@@ -59,6 +59,7 @@ const styles = {
 		backgroundColor: themeVars.bg1,
 		overflowY: "auto",
 		overflowX: "hidden",
+		scrollbarWidth: "none",
 
 		a: {
 			color: "inherit",
