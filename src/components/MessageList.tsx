@@ -184,6 +184,7 @@ const styles = {
 	}),
 	loaderContentWrapper: css({
 		height: "2rem",
+		padding: "0.01px",
 	}),
 };
 
