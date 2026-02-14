@@ -17,6 +17,7 @@ import useLatestCallback from "use-latest-callback";
 import { DEFAULT_NOTIFICATIONS_SETTINGS, NotificationsSettings } from "..";
 import { compareRanks, DEFAULT_RANK, genRankBetween } from "./lexrank";
 import { markdownHasAnyFormatting, parseMarkdown, renderMarkdownTo0393, renderMarkdownToXHTML } from "./markdown";
+import { MessageCache, MessageContainer, stringifyMessageContainer } from "./messageCache";
 import SignalMap from "./SignalMap";
 import stringLength, { stringSubstring } from "./stringLength";
 import { AvatarMetadata, Counterpart, NotificationCategory, Presence, PresenceShowType, RosterEntry, TuneInfo } from "./types";
@@ -126,6 +127,10 @@ export interface Account {
 
 	avatarStates: SignalMap<string, LoadState<string>>;
 	servicesState: LoadState<ServiceInfo[]>;
+
+	internalMutable: {
+		messageCaches: Map<string, MessageCacheCacheEntry>;
+	};
 }
 
 export type MessageRemoval = {
@@ -246,6 +251,16 @@ interface SendMessageOptions {
 	replyingTo?: Message;
 }
 
+interface MessageCacheCacheEntry {
+	cache: MessageCache;
+	usedBy: Set<symbol>;
+}
+
+export interface CacheHandle<T> {
+	value: T;
+	[Symbol.dispose](): void;
+}
+
 export interface BaseConnectionContext {
 	accountsSig: Signal<Account[]>;
 
@@ -286,6 +301,8 @@ export interface BaseConnectionContext {
 	setAvatar(account: JID, info: ImageInfo): Promise<void>;
 	reorderRoom(account: JID, room: JID, to: {before: JID | null; after: JID | null}): Promise<void>;
 	setRoomNotificationLevel(account: JID, room: JID, level: NotificationLevel): Promise<void>;
+
+	getMessageCache(account: JID, container: MessageContainer): CacheHandle<MessageCache>;
 
 	loadAccounts(): void;
 	pingRoom(account: JID, room: JID): void;
@@ -2128,6 +2145,7 @@ function createBaseConnection(
 							avatarStates: new SignalMap(),
 							servicesState: LoadState.loading,
 							stopped: false,
+							internalMutable: {messageCaches: new Map()},
 						} satisfies Account,
 					];
 				}
@@ -3385,7 +3403,7 @@ function createBaseConnection(
 		}
 	}
 
-	return {
+	const conn: BaseConnectionContext = {
 		accountsSig,
 		getAccount,
 
@@ -3420,9 +3438,38 @@ function createBaseConnection(
 		reorderRoom,
 		setRoomNotificationLevel,
 
+		getMessageCache,
+
 		loadAccounts,
 		pingRoom,
 	};
+
+	function getMessageCache(accountJID: JID, container: MessageContainer): CacheHandle<MessageCache> {
+		const account = getAccount(accountJID);
+		const key = stringifyMessageContainer(container);
+
+		let entry = account.internalMutable.messageCaches.get(key);
+		if(typeof entry === "undefined") {
+			entry = {
+				cache: new MessageCache(accountJID, container, conn),
+				usedBy: new Set(),
+			};
+			account.internalMutable.messageCaches.set(key, entry);
+		}
+
+		const token = Symbol();
+		entry.usedBy.add(token);
+
+		return {
+			value: entry.cache,
+			[Symbol.dispose]() {
+				entry.usedBy.delete(token);
+			},
+		};
+	}
+
+	return conn;
+
 }
 
 function connectMUC(client: xmppClient.Client, roomJID: JID, nick: string) {

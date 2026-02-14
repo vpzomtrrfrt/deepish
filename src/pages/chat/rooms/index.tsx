@@ -25,7 +25,6 @@ import { Message, messageEditIsAllowed, MessageRemovalEvent, messageRemovalIsAll
 import createComponent from "../../../util/createComponent";
 import getRoomUserColor from "../../../util/getRoomUserColor";
 import { msgActionDelete, presenceShowTypeNames } from "../../../util/langCommon";
-import { MessageCache } from "../../../util/messageCache";
 import { signalMapKeysSigWhereValueMatches, useSignalMapKeysWhereValueMatches } from "../../../util/SignalMap";
 import { getShowTypeForCounterpart } from "../../../util/statusUtil";
 import { themeVars } from "../../../util/theme";
@@ -152,7 +151,9 @@ const ChatRoomPageInner = createComponent(
 
 		const pageStateSig = signal<null | LoadState<ResultSetInfo | null>>(null);
 
-		const msgCache = new MessageCache(accountJID, {type: "room", jid: roomJID}, conn);
+		const msgCacheHandle = conn.getMessageCache(accountJID, {type: "room", jid: roomJID});
+		const msgCache = msgCacheHandle.value;
+		effect(() => msgCacheHandle[Symbol.dispose]);
 
 		function loadMore() {
 			pageStateSig.value = LoadState.loading;

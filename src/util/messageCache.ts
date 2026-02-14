@@ -2,7 +2,7 @@ import { batch, Signal, signal } from "@preact/signals";
 import { JID } from "@xmpp/jid";
 import { pushAtSortPosition } from "array-push-at-sort-position";
 
-import { ConnectionContext, Message, MessageEditEvent, messageEditIsAllowed, MessageEvent, MessageReactionsChangeEvent, MessageRemovalEvent, messageRemovalIsAllowed } from "./connection";
+import { BaseConnectionContext, Message, MessageEditEvent, messageEditIsAllowed, MessageEvent, MessageReactionsChangeEvent, MessageRemovalEvent, messageRemovalIsAllowed } from "./connection";
 import SignalMap from "./SignalMap";
 import StanzaID, { StanzaIDType } from "./xmpp/StanzaID";
 
@@ -30,7 +30,7 @@ export class MessageCache {
 		>
 	>;
 
-	public constructor(public readonly account: JID, public readonly container: MessageContainer, private conn: ConnectionContext) {
+	public constructor(public readonly account: JID, public readonly container: MessageContainer, private conn: BaseConnectionContext) {
 		this.conn.addEventListener("message", this.onMessage);
 		this.conn.addEventListener("messageRemove", this.onMessageRemove);
 		this.conn.addEventListener("messageEdit", this.onMessageEdit);
@@ -370,4 +370,8 @@ export class MessageCache {
 			}
 		});
 	};
+}
+
+export function stringifyMessageContainer(src: MessageContainer) {
+	return src.type + "/" + encodeURIComponent(src.jid.toString());
 }
