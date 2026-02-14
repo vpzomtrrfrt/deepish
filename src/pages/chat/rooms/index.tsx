@@ -152,14 +152,13 @@ const ChatRoomPageInner = createComponent(
 
 		const pageStateSig = signal<null | LoadState<ResultSetInfo | null>>(null);
 
-		let nextPage: string | null = null;
+		const msgCache = new MessageCache(accountJID, {type: "room", jid: roomJID}, conn);
 
 		function loadMore() {
 			pageStateSig.value = LoadState.loading;
 
-			conn.requestArchive(accountJID, roomSig.value!.jid, {}, nextPage ?? undefined)
+			msgCache.loadMore()
 				.then(value => {
-					nextPage = value === null ? null : value.firstItem;
 					pageStateSig.value = LoadState.wrapValue(value);
 				})
 				.catch(err => {
@@ -176,8 +175,6 @@ const ChatRoomPageInner = createComponent(
 		});
 
 		const counterpartSig = computed(() => accountSig.value.counterparts.get(roomJID.toString()));
-
-		const msgCache = new MessageCache({type: "room", jid: roomJID}, conn);
 
 		const selfJIDInRoomSig = computed(() => {
 			const room = roomSig.value;

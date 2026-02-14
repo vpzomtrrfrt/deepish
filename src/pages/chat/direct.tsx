@@ -85,17 +85,14 @@ const DirectChatPageInner = createComponent(
 	({intlSig, appCtxSig, conn, accountSig, accountJID, counterpartJID}) => {
 		const counterpartSig = computed(() => accountSig.value.counterparts.get(counterpartJID.toString()));
 
-		const msgCache = new MessageCache({type: "direct", jid: counterpartJID}, conn);
+		const msgCache = new MessageCache(accountJID, {type: "direct", jid: counterpartJID}, conn);
 		const pageStateSig = signal<LoadState<ResultSetInfo | null> | null>(null);
-
-		const nextPageRef = createRef<string | null>();
 
 		function loadMore() {
 			pageStateSig.value = LoadState.loading;
 
-			conn.requestArchive(accountJID, accountJID, {with: counterpartJID}, nextPageRef.current ?? undefined)
+			msgCache.loadMore()
 				.then(value => {
-					nextPageRef.current = value === null ? null : value.firstItem;
 					pageStateSig.value = LoadState.wrapValue(value);
 				})
 				.catch(err => {

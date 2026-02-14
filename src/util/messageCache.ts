@@ -1,9 +1,8 @@
 import { batch, Signal, signal } from "@preact/signals";
 import { JID } from "@xmpp/jid";
 import { pushAtSortPosition } from "array-push-at-sort-position";
-import { useEffect, useMemo } from "preact/hooks";
 
-import { ConnectionContext, Message, MessageEditEvent, messageEditIsAllowed, MessageEvent, MessageReactionsChangeEvent, MessageRemovalEvent, messageRemovalIsAllowed, useConnectionContext } from "./connection";
+import { ConnectionContext, Message, MessageEditEvent, messageEditIsAllowed, MessageEvent, MessageReactionsChangeEvent, MessageRemovalEvent, messageRemovalIsAllowed } from "./connection";
 import SignalMap from "./SignalMap";
 import StanzaID, { StanzaIDType } from "./xmpp/StanzaID";
 
@@ -15,22 +14,12 @@ export type MessageContainer = {
 	jid: JID;
 };
 
-export function useCreateMessageCache(container: MessageContainer) {
-	const conn = useConnectionContext();
-
-	const msgCache = useMemo(() => new MessageCache(container, conn), [container, conn]);
-
-	useEffect(() => {
-		return () => msgCache[Symbol.dispose]();
-	}, [msgCache]);
-
-	return msgCache;
-}
-
 export class MessageCache {
 	private messages: Signal<Message[]> = signal([]);
 	private messageMap = new SignalMap<string, Message>();
 	private appendedCount = signal(0);
+
+	private nextPage: string | null | undefined = undefined;
 
 	private unresolvedFastens = new Map<
 		string,
@@ -41,7 +30,7 @@ export class MessageCache {
 		>
 	>;
 
-	public constructor(public readonly container: MessageContainer, private conn: ConnectionContext) {
+	public constructor(public readonly account: JID, public readonly container: MessageContainer, private conn: ConnectionContext) {
 		this.conn.addEventListener("message", this.onMessage);
 		this.conn.addEventListener("messageRemove", this.onMessageRemove);
 		this.conn.addEventListener("messageEdit", this.onMessageEdit);
@@ -65,6 +54,30 @@ export class MessageCache {
 
 	public getAppendedCount() {
 		return this.appendedCount.value;
+	}
+
+	public async loadMore() {
+		let page;
+		if(typeof this.nextPage === "undefined") page = undefined;
+		else if(this.nextPage === null) {
+			throw new Error("No more messages to load");
+		}
+		else page = this.nextPage;
+
+		let value;
+		if(this.container.type === "direct") {
+			value = await this.conn.requestArchive(this.account, this.account, {with: this.container.jid}, page);
+		}
+		else if(this.container.type === "room") {
+			value = await this.conn.requestArchive(this.account, this.container.jid, {}, page);
+		}
+		else {
+			const _: never = this.container;
+			throw new Error("Unknown container type");
+		}
+
+		this.nextPage = value === null ? null : value.firstItem;
+		return value;
 	}
 
 	private onMessage = (evt: MessageEvent) => {
