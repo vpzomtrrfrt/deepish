@@ -58,6 +58,7 @@ const styles = {
 		borderRightColor: themeVars.outline1,
 		backgroundColor: themeVars.bg1,
 		overflowY: "auto",
+		overflowX: "hidden",
 
 		a: {
 			color: "inherit",
