@@ -2043,6 +2043,8 @@ function createBaseConnection(
 					}
 				}
 
+				const statusText = elem.getChildText("status");
+
 				upsertCounterpart(client, contact, entry => {
 					let presences: Map<string, Presence>;
 					if(entry.presences === null) presences = new Map();
@@ -2050,6 +2052,7 @@ function createBaseConnection(
 
 					presences.set(srcJID.toString(), {
 						show,
+						statusText,
 					});
 
 					return {

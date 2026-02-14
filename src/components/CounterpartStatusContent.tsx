@@ -1,11 +1,13 @@
 import { IntlShape } from "react-intl";
 
 import { presenceShowTypeNames } from "../util/langCommon";
-import { getShowTypeForCounterpart } from "../util/statusUtil";
+import { getDisplayPresenceForCounterpart } from "../util/statusUtil";
 import { Counterpart, PresenceShowTypeExtended } from "../util/types";
 
 export function getCounterpartStatusContent(info: Counterpart, intl: IntlShape, showType?: PresenceShowTypeExtended | null) {
-	showType = typeof showType === "undefined" ? getShowTypeForCounterpart(info) : showType;
+	const displayPresence = typeof showType === "undefined" ?
+		getDisplayPresenceForCounterpart(info) :
+		(showType === null ? null : {show: showType, statusText: null});
 
 	if(info.currentTune !== null && typeof info.currentTune.artist !== "undefined") {
 		return intl.formatMessage({
@@ -20,8 +22,10 @@ export function getCounterpartStatusContent(info: Counterpart, intl: IntlShape, 
 			</span>,
 		});
 	}
-	else if(showType !== null) {
-		return intl.formatMessage(presenceShowTypeNames[showType]);
+	else if(displayPresence !== null) {
+		if(displayPresence.statusText !== null) return displayPresence.statusText;
+
+		return intl.formatMessage(presenceShowTypeNames[displayPresence.show]);
 	}
 	
 	return null;

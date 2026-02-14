@@ -17,6 +17,7 @@ export const PresenceShowTypeExtended = {...PresenceShowType, ...PresenceShowTyp
 
 export interface Presence {
 	show: PresenceShowType | null;
+	statusText: string | null;
 }
 
 export interface RosterEntry {
