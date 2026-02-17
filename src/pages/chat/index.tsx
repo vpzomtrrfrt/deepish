@@ -7,9 +7,10 @@ import { mdiAccountMultiple, mdiConnection, mdiHome, mdiPlus } from "@mdi/js";
 import { useComputed, useSignal, useSignalEffect } from "@preact/signals";
 import { Show, useLiveSignal } from "@preact/signals/utils";
 import { JID } from "@xmpp/jid";
+import useLinkState from "linkstate/hook";
 import { JSX } from "preact";
 import { memo } from "preact/compat";
-import { useCallback, useEffect, useRef, useState } from "preact/hooks";
+import { useCallback, useContext, useEffect, useRef, useState } from "preact/hooks";
 import { useIntl } from "react-intl";
 import useLatestCallback from "use-latest-callback";
 import { Link, Route, Switch, useLocation, useRoute } from "wouter-preact";
@@ -20,14 +21,19 @@ import AvatarWithStatus, { AvatarWithStatusRaw } from "../../components/AvatarWi
 import Button from "../../components/Button";
 import { getCounterpartStatusContent } from "../../components/CounterpartStatusContent";
 import { ErrorAlert } from "../../components/DataView";
+import Dialog, { DialogContext, DialogFooter } from "../../components/Dialog";
 import EditProfileDialog from "../../components/EditProfileDialog";
+import Field, { FieldLabel } from "../../components/Field";
+import FieldList from "../../components/FieldList";
 import For from "../../components/For";
 import Icon from "../../components/Icon";
+import Input from "../../components/Input";
 import Menu, { MenuItem } from "../../components/Menu";
 import PriorityUnreadIndicator from "../../components/PriorityUnreadIndicator";
 import SettingsDialog from "../../components/SettingsDialog";
 import WithTooltip from "../../components/WithTooltip";
 import { Room, useAccountSig, useConnectionContext } from "../../util/connection";
+import { msgActionSave, msgCancel } from "../../util/langCommon";
 import { compareRanks } from "../../util/lexrank";
 import { getNickForCounterpart } from "../../util/profileUtil";
 import { useSignalMapKeysWhereValueMatches } from "../../util/SignalMap";
@@ -36,6 +42,7 @@ import { Counterpart, PresenceShowType, PresenceShowTypeExtended } from "../../u
 import unsignal from "../../util/unsignal";
 import { LoadState } from "../../util/useData";
 import useEventHandler from "../../util/useEventHandler";
+import useSubmitting from "../../util/useSubmitting";
 import ContactsPage from "./ContactsPage";
 import DirectChatPage from "./direct";
 import ChatRoomPage from "./rooms";
@@ -699,6 +706,10 @@ function SelfBox() {
 		return typeof counterpart === "undefined" ? jid.local : getNickForCounterpart(counterpart);
 	});
 
+	const editActivityText = useCallback(() => {
+		appCtx.showDialog.call(undefined, <EditActivityTextDialog />);
+	}, [appCtx.showDialog]);
+
 	const openSettings = useCallback(() => {
 		appCtx.showDialog.call(undefined, <SettingsDialog />);
 	}, [appCtx.showDialog]);
@@ -733,11 +744,46 @@ function SelfBox() {
 			<div class={styles.selfBoxJID}>{jid.toString()}</div>
 		</div>
 		<Menu>
+			<MenuItem onClick={editActivityText}>{$t({defaultMessage: "Set Status Text"})}</MenuItem>
 			<MenuItem onClick={openSettings}>{$t({defaultMessage: "Settings"})}</MenuItem>
 			<MenuItem onClick={editProfile}>{$t({defaultMessage: "Edit Profile"})}</MenuItem>
 			<MenuItem onClick={logout}>{$t({defaultMessage: "Log out"})}</MenuItem>
 		</Menu>
 	</div>;
+}
+
+function EditActivityTextDialog() {
+	const { $t } = useIntl();
+
+	const accountSig = useAccountSig();
+	const conn = useConnectionContext();
+	const dialogCtx = useContext(DialogContext)!;
+
+	const [text, linkText] = useLinkState("");
+
+	const [submitting, submit] = useSubmitting(async (evt: Event) => {
+		evt.preventDefault();
+
+		await conn.setActivityText(accountSig.value.jid, text === "" ? null : text);
+
+		dialogCtx.close();
+	});
+
+	return <Dialog>
+		<form onSubmit={submit}>
+			<FieldList>
+				<Field>
+					<FieldLabel>{$t({defaultMessage: "Status Text"})}</FieldLabel>
+					<Input value={text} onChange={linkText} autofocus />
+				</Field>
+			</FieldList>
+
+			<DialogFooter>
+				<Button tier="secondary" onClick={dialogCtx.close}>{$t(msgCancel)}</Button>
+				<Button tier="primary" type="submit" disabled={submitting}>{$t(msgActionSave)}</Button>
+			</DialogFooter>
+		</form>
+	</Dialog>;
 }
 
 function counterpartIsIncomingRequest(info: Counterpart) {

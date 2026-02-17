@@ -31,6 +31,7 @@ const FEATURES: string[] = [
 	"urn:xmpp:bookmarks:1+notify",
 	"urn:xmpp:avatar:metadata+notify",
 	"urn:xmpp:mds:displayed:0+notify",
+	"http://jabber.org/protocol/activity+notify",
 	"http://jabber.org/protocol/nick+notify",
 	"http://jabber.org/protocol/tune+notify",
 
@@ -60,6 +61,7 @@ const DEFAULT_COUNTERPART_INFO: Omit<Counterpart, "jid"> = {
 	nick: null,
 
 	currentTune: null,
+	currentActivity: null,
 
 	occupantID: null,
 	affiliation: null,
@@ -283,6 +285,7 @@ export interface BaseConnectionContext {
 	fetchRoomConfig(account: JID, room: JID): Promise<RoomConfig>;
 	markCounterpartAsRead(account: JID, target: JID, lastReadMessageID: string, isRoom: boolean): void;
 	setNick(account: JID, value: string): Promise<void>;
+	setActivityText(account: JID, value: string | null): Promise<void>;
 	setAvatar(account: JID, info: ImageInfo): Promise<void>;
 	reorderRoom(account: JID, room: JID, to: {before: JID | null; after: JID | null}): Promise<void>;
 	setRoomNotificationLevel(account: JID, room: JID, level: NotificationLevel): Promise<void>;
@@ -806,7 +809,24 @@ function createBaseConnection(
 
 		const isMe = typeof from === "undefined" || from.bare().equals(client.jid!.bare());
 
-		if(node === "http://jabber.org/protocol/nick") {
+		if(node === "http://jabber.org/protocol/activity") {
+			if(typeof from !== "undefined") {
+				const activityElem = item.element.getChild("activity", "http://jabber.org/protocol/activity");
+
+				let value: {text: string | null} | null = null;
+				if(typeof activityElem !== "undefined" && activityElem.children.length > 0) {
+					value = {
+						text: activityElem.getChildText("text"),
+					};
+				}
+
+				upsertCounterpart(client, from, current => ({
+					...current,
+					currentActivity: value,
+				}));
+			}
+		}
+		else if(node === "http://jabber.org/protocol/nick") {
 			if(typeof from !== "undefined") {
 				const nickElem = item.element.getChild("nick", "http://jabber.org/protocol/nick");
 				if(typeof nickElem !== "undefined") {
@@ -3226,6 +3246,31 @@ function createBaseConnection(
 		);
 	}
 
+	async function setActivityText(accountJID: JID, value: string | null) {
+		const account = getAccount(accountJID);
+
+		await publishPubsubItem(
+			account.client,
+			"http://jabber.org/protocol/activity",
+			xml(
+				"item",
+				{},
+				xml(
+					"activity",
+					{xmlns: "http://jabber.org/protocol/activity"},
+					...(
+						value === null ? 
+							[] :
+							[
+								xml("other"),
+								xml("text", {}, value),
+							]
+					),
+				),
+			),
+		);
+	}
+
 	async function setAvatar(accountJID: JID, value: ImageInfo) {
 		const account = getAccount(accountJID);
 
@@ -3416,6 +3461,7 @@ function createBaseConnection(
 		fetchRoomInfo,
 		fetchRoomConfig,
 		setNick,
+		setActivityText,
 		setAvatar,
 		reorderRoom,
 		setRoomNotificationLevel,
