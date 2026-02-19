@@ -4,7 +4,7 @@ import { JSX } from "preact";
 import { useCallback, useContext, useEffect, useMemo, useState } from "preact/hooks";
 import { useIntl } from "react-intl";
 
-import { useAccountSig, useConnectionContext } from "../util/connection";
+import { useConnectionContext } from "../util/connection";
 import { AVATAR_MAX_SIZE } from "../util/constants";
 import convertImage, { ConvertImageResult } from "../util/convertImage";
 import { LoadState, useDataSig } from "../util/useData";
@@ -26,17 +26,16 @@ const styles = {
 export default function EditProfileDialog() {
 	const { $t } = useIntl();
 
-	const connection = useConnectionContext();
-	const accountSig = useAccountSig();
+	const conn = useConnectionContext();
 
 	const dialogCtx = useContext(DialogContext)!;
 
 	const selfCounterpart = useComputed(() => {
-		return accountSig.value.counterparts.getSignal(accountSig.value.jid.toString());
+		return conn.counterparts.getSignal(conn.jid.toString());
 	}).value.value;
 
 	const baseInfo = {
-		nick: selfCounterpart?.nick ?? accountSig.value.jid.local,
+		nick: selfCounterpart?.nick ?? conn.jid.local,
 	};
 
 	const [changes, setChanges] = useState<Partial<typeof baseInfo>>({});
@@ -69,7 +68,7 @@ export default function EditProfileDialog() {
 						const key = key_ as keyof typeof changes;
 
 						if(key === "nick") {
-							await connection.setNick(accountSig.value.jid, changes[key]!);
+							await conn.setNick(changes[key]!);
 						}
 						else {
 							const _: never = key;
@@ -79,7 +78,7 @@ export default function EditProfileDialog() {
 			),
 			newAvatarSrcSig.value === null ?
 				undefined :
-				connection.setAvatar(accountSig.value.jid, LoadState.assertDone(newAvatarSig.value)!)
+				conn.setAvatar(LoadState.assertDone(newAvatarSig.value)!)
 		]);
 
 		dialogCtx.close();
@@ -115,8 +114,7 @@ export default function EditProfileDialog() {
 }
 
 function AvatarView(props: {newInfo: ConvertImageResult | null}) {
-	const accountSig = useAccountSig();
-	const accountJID = useComputed(() => accountSig.value.jid).value;
+	const conn = useConnectionContext();
 
 	const newURL = useMemo(() => {
 		return props.newInfo === null ? null : URL.createObjectURL(props.newInfo.content);
@@ -133,7 +131,7 @@ function AvatarView(props: {newInfo: ConvertImageResult | null}) {
 	return <div class={styles.avatarView}>
 		{
 			newURL === null ?
-				<Avatar jid={accountJID} size="lg" /> :
+				<Avatar jid={conn.jid} size="lg" /> :
 				<RawAvatar src={newURL} size="lg" />
 		}
 	</div>;

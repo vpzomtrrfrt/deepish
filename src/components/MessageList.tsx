@@ -13,7 +13,7 @@ import { Virtuoso, VirtuosoHandle } from "react-virtuoso";
 import useLatestCallback from "use-latest-callback";
 
 import * as commonStyles from "../util/commonStyles";
-import { Message, MessageContent, Room, useAccountSig } from "../util/connection";
+import { Message, MessageContent, Room, useConnectionContext } from "../util/connection";
 import getRoomUserColor from "../util/getRoomUserColor";
 import { MessageCache } from "../util/messageCache";
 import { maybeGetNickForCounterpart } from "../util/profileUtil";
@@ -260,12 +260,11 @@ function MessageRow(props: {
 	canEdit?: (message: Message) => boolean;
 	submitReactions?: (reactions: string[], message: Message) => Promise<void>;
 }) {
-	const accountSig = useAccountSig();
-	const accountJIDSig = useComputed(() => accountSig.value.jid);
+	const conn = useConnectionContext();
 
 	const roomSig = useComputed((): {value: Room | undefined} => {
 		if(props.msgCache.container.type === "room") {
-			return accountSig.value.rooms.getSignal(props.msgCache.container.jid.toString());
+			return conn.rooms.getSignal(props.msgCache.container.jid.toString());
 		}
 		else {
 			return {value: undefined};
@@ -276,15 +275,15 @@ function MessageRow(props: {
 		const room = roomSig.value;
 		if(typeof room === "undefined") return undefined;
 
-		return new JID(room.jid.local, room.jid.domain, room.nick ?? accountJIDSig.value.local);
+		return new JID(room.jid.local, room.jid.domain, room.nick ?? conn.jid.local);
 	});
-	const selfJIDHereSig = props.msgCache.container.type === "room" ? selfJIDInRoomSig : accountJIDSig;
+	const selfJIDHereSig = props.msgCache.container.type === "room" ? selfJIDInRoomSig : {value: conn.jid};
 	const counterpartSig = useComputed(() => {
 		if(typeof selfJIDHereSig.value === "undefined") return {value: undefined};
-		return accountSig.value.counterparts.getSignal(selfJIDHereSig.value.toString());
+		return conn.counterparts.getSignal(selfJIDHereSig.value.toString());
 	}).value;
 	const nickSig = useComputed(() => {
-		if(typeof selfJIDHereSig.value === "undefined") return accountJIDSig.value.local;
+		if(typeof selfJIDHereSig.value === "undefined") return conn.jid.local;
 
 		return maybeGetNickForCounterpart(selfJIDHereSig.value, counterpartSig.value);
 	});
@@ -350,7 +349,7 @@ function MessageRow(props: {
 
 					if(message.timestamp.getTime() - prevMessage.timestamp.getTime() < MESSAGE_MERGE_TIME) {
 						if(props.msgCache.container.type === "direct") {
-							if(prevMessage.from.bare().equals(accountJIDSig.value)) {
+							if(prevMessage.from.bare().equals(conn.jid)) {
 								isMerged = true;
 							}
 						}
@@ -416,10 +415,10 @@ const RealMessageRow = memo(function RealMessageRow(props: {
 
 	const { $t } = useIntl();
 
-	const accountSig = useAccountSig();
+	const conn = useConnectionContext();
 
 	const fromSig = useComputed(() => messageSig.value.room === null ? messageSig.value.from.bare() : messageSig.value.from);
-	const counterpartSig = useComputed(() => accountSig.value.counterparts.getSignal(fromSig.value.toString())).value;
+	const counterpartSig = conn.counterparts.getSignal(fromSig.value.toString());
 	const nickSig = useComputed(() => maybeGetNickForCounterpart(fromSig.value, counterpartSig.value));
 	const colorSig = useComputed(() => {
 		if(props.msgCache.container.type !== "room") return null;
@@ -487,14 +486,14 @@ const RealMessageRow = memo(function RealMessageRow(props: {
 	const myReactionsSig = useComputed(() => {
 		let key;
 		if(messageSig.value.room === null) {
-			key = accountSig.value.jid.toString() + "/";
+			key = conn.jid.toString() + "/";
 		}
 		else {
-			const room = accountSig.value.rooms.get(messageSig.value.room.toString());
+			const room = conn.rooms.get(messageSig.value.room.toString());
 			if(typeof room === "undefined" || room.connectedNick === null) return null;
 
 			const myJID = new JID(room.jid.local, room.jid.domain, room.connectedNick);
-			const myCounterpart = accountSig.value.counterparts.get(myJID.toString());
+			const myCounterpart = conn.counterparts.get(myJID.toString());
 
 			if(typeof myCounterpart === "undefined") return null;
 
@@ -705,7 +704,7 @@ function ReactionsArea(props: {
 }) {
 	const { $t } = useIntl();
 
-	const accountSig = useAccountSig();
+	const conn = useConnectionContext();
 
 	return <div class={styles.reactionsArea}>
 		{
@@ -721,7 +720,7 @@ function ReactionsArea(props: {
 								value={senders.map(sender => {
 									const from = props.isRoom ? sender.jid : sender.jid.bare();
 
-									const counterpart = accountSig.value.counterparts.get(from.toString());
+									const counterpart = conn.counterparts.get(from.toString());
 
 									return maybeGetNickForCounterpart(from, counterpart);
 								})}
@@ -752,10 +751,10 @@ export function MessageReplyQuoteContent(props: {message: Message}) {
 
 	const { $t } = useIntl();
 
-	const accountSig = useAccountSig();
+	const conn = useConnectionContext();
 
 	const fromSig = useComputed(() => messageSig.value.room === null ? messageSig.value.from.bare() : messageSig.value.from);
-	const counterpartSig = useComputed(() => accountSig.value.counterparts.getSignal(fromSig.value.toString())).value;
+	const counterpartSig = conn.counterparts.getSignal(fromSig.value.toString());
 	const nickSig = useComputed(() => maybeGetNickForCounterpart(fromSig.value, counterpartSig.value));
 
 	return <div class={styles.messageCommon}>

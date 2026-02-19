@@ -21,7 +21,7 @@ import MessageInput from "../../../components/MessageInput";
 import MessageList, { LoadMoreTriggerer, MessageSourceDialog, ReplyingIndicator } from "../../../components/MessageList";
 import TaskDialog from "../../../components/TaskDialog";
 import TypingIndicator from "../../../components/TypingIndicator";
-import { Message, messageEditIsAllowed, MessageRemovalEvent, messageRemovalIsAllowed, NotificationLevel, ResultSetInfo, useAccountSig, useConnectionContext } from "../../../util/connection";
+import { Message, messageEditIsAllowed, MessageRemovalEvent, messageRemovalIsAllowed, NotificationLevel, ResultSetInfo, useConnectionContext } from "../../../util/connection";
 import createComponent from "../../../util/createComponent";
 import getRoomUserColor from "../../../util/getRoomUserColor";
 import { msgActionDelete, presenceShowTypeNames } from "../../../util/langCommon";
@@ -123,22 +123,17 @@ const ChatRoomPageInner = createComponent(
 
 		const appCtxSig = useLiveSignal(useAppContext());
 
-		const accountSig = useAccountSig();
-		const accountJID = useComputed(() => accountSig.value.jid).value;
-
 		const conn = useConnectionContext();
 
 		return useMemo(() => ({
 			intlSig,
 			appCtxSig,
-			accountSig,
-			accountJID,
 			roomJID: props.roomJID,
 			conn,
-		}), [intlSig, appCtxSig, accountSig, accountJID, props.roomJID, conn]);
+		}), [intlSig, appCtxSig, props.roomJID, conn]);
 	},
-	({intlSig, appCtxSig, accountSig, accountJID, roomJID, conn}) => {
-		const roomSig = computed(() => accountSig.value.rooms.get(roomJID.toString()));
+	({intlSig, appCtxSig, roomJID, conn}) => {
+		const roomSig = computed(() => conn.rooms.get(roomJID.toString()));
 
 		const inputRef = createRef<HTMLTextAreaElement>();
 
@@ -152,7 +147,7 @@ const ChatRoomPageInner = createComponent(
 
 		const pageStateSig = signal<null | LoadState<ResultSetInfo | null>>(null);
 
-		const msgCache = new MessageCache(accountJID, {type: "room", jid: roomJID}, conn);
+		const msgCache = new MessageCache({type: "room", jid: roomJID}, conn);
 
 		function loadMore() {
 			pageStateSig.value = LoadState.loading;
@@ -170,17 +165,17 @@ const ChatRoomPageInner = createComponent(
 			if(roomSig.value?.connected === true && pageStateSig.value === null) loadMore();
 		});
 
-		const allUsersTypingSig = signalMapKeysSigWhereValueMatches(accountSig.value.counterparts, value => {
+		const allUsersTypingSig = signalMapKeysSigWhereValueMatches(conn.counterparts, value => {
 			return value.jid.bare().equals(roomJID) && value.composingFrom === true;
 		});
 
-		const counterpartSig = computed(() => accountSig.value.counterparts.get(roomJID.toString()));
+		const counterpartSig = computed(() => conn.counterparts.get(roomJID.toString()));
 
 		const selfJIDInRoomSig = computed(() => {
 			const room = roomSig.value;
 			if(typeof room === "undefined") return undefined;
 
-			return new JID(room.jid.local, room.jid.domain, room.nick ?? accountJID.local);
+			return new JID(room.jid.local, room.jid.domain, room.nick ?? conn.jid.local);
 		});
 
 		const usersTypingSig = computed(() => {
@@ -196,7 +191,7 @@ const ChatRoomPageInner = createComponent(
 
 			return typeof selfJIDInRoom === "undefined" ?
 				undefined :
-				accountSig.value.counterparts.get(selfJIDInRoom.toString());
+				conn.counterparts.get(selfJIDInRoom.toString());
 		});
 
 		const selfOccupantIDSig = useComputed(() => {
@@ -232,7 +227,7 @@ const ChatRoomPageInner = createComponent(
 				undefined,
 				<ConfirmTaskDialog
 					submit={async () => {
-						return conn.retractMessageToRoom.call(undefined, accountJID, roomJID, messageID);
+						return conn.retractMessageToRoom.call(undefined, roomJID, messageID);
 					}}
 					confirmText={$t(msgActionDelete)}
 				>
@@ -249,7 +244,7 @@ const ChatRoomPageInner = createComponent(
 				undefined,
 				<ConfirmTaskDialog
 					submit={async () => {
-						return conn.moderateMessageToRoom.call(undefined, accountJID, roomJID, messageID);
+						return conn.moderateMessageToRoom.call(undefined, roomJID, messageID);
 					}}
 					confirmText={$t(msgActionDelete)}
 				>
@@ -374,7 +369,6 @@ const ChatRoomPageInner = createComponent(
 			(async () => {
 				try {
 					await conn.sendMessageToRoom(
-						accountJID,
 						room!.jid,
 						{body: newMessage},
 						{replyingTo: replyingToSig.value ?? undefined, ...options},
@@ -398,7 +392,6 @@ const ChatRoomPageInner = createComponent(
 
 			await conn.sendMessageReactionsToRoom.call(
 				undefined,
-				accountJID,
 				roomJID,
 				id.id,
 				reactions,
@@ -406,7 +399,7 @@ const ChatRoomPageInner = createComponent(
 		}
 
 		function onChangeComposing(composing: boolean) {
-			conn.setComposingToRoom(accountJID, roomJID, composing);
+			conn.setComposingToRoom(roomJID, composing);
 		}
 
 		effect(() => {
@@ -426,7 +419,7 @@ const ChatRoomPageInner = createComponent(
 				<ConfirmDialog
 					confirmText={$t({defaultMessage: "Leave"})}
 					onConfirm={() => {
-						const task = conn.leaveRoom.call(undefined, accountJID, roomJID);
+						const task = conn.leaveRoom.call(undefined, roomJID);
 
 						appCtxSig.value.showDialog(<TaskDialog task={task}>{$t({defaultMessage: "Leaving…"})}</TaskDialog>);
 
@@ -445,7 +438,7 @@ const ChatRoomPageInner = createComponent(
 		function onChangeNotificationLevel(newValue: NotificationLevel) {
 			console.log("onChangeNotificationLevel");
 
-			conn.setRoomNotificationLevel.call(undefined, accountJID, roomJID, newValue);
+			conn.setRoomNotificationLevel.call(undefined, roomJID, newValue);
 		}
 
 		function onInputKeyDown(evt: KeyboardEvent) {
@@ -473,7 +466,7 @@ const ChatRoomPageInner = createComponent(
 					return x.type === StanzaIDType.Stanza && x.by !== null && x.by.equals(counterpart.jid);
 				});
 				if(typeof lastMessageID !== "undefined" && counterpart.lastReadMessageID !== lastMessageID.id) {
-					conn.markCounterpartAsRead(accountJID, counterpart.jid, lastMessageID.id, false);
+					conn.markCounterpartAsRead(counterpart.jid, lastMessageID.id, false);
 				}
 			}
 		});
@@ -603,11 +596,11 @@ const MEMBER_GROUP_NAMES: Record<MemberGroup, MessageDescriptor> = {
 function MembersList(props: {roomJID: JID}) {
 	const { $t } = useIntl();
 
-	const accountSig = useAccountSig();
+	const conn = useConnectionContext();
 
-	const room = useComputed(() => accountSig.value.rooms.getSignal(props.roomJID.toString())).value.value;
+	const room = conn.rooms.get(props.roomJID.toString());
 
-	const memberKeysSig = useSignalMapKeysWhereValueMatches(accountSig.value.counterparts, useCallback(x => {
+	const memberKeysSig = useSignalMapKeysWhereValueMatches(conn.counterparts, useCallback(x => {
 		return x.jid.bare().equals(props.roomJID) &&
 			x.jid.resource !== "" &&
 			x.presences !== null &&
@@ -618,7 +611,7 @@ function MembersList(props: {roomJID: JID}) {
 		const result = new Map<MemberGroup, JID[]>();
 
 		memberKeysSig.value.forEach(key => {
-			const counterpart = accountSig.value.counterparts.get(key)!;
+			const counterpart = conn.counterparts.get(key)!;
 
 			let group: MemberGroup;
 			if(counterpart.affiliation === "owner") group = "owner";
@@ -683,9 +676,9 @@ function MembersList(props: {roomJID: JID}) {
 const MembersListEntry = memo(function MembersListEntry(props: {jid: JID}) {
 	const { $t } = useIntl();
 
-	const accountSig = useAccountSig();
+	const conn = useConnectionContext();
 
-	const counterpart = accountSig.value.counterparts.get(props.jid.toString())!;
+	const counterpart = conn.counterparts.get(props.jid.toString())!;
 
 	const showType = getShowTypeForCounterpart(counterpart, true);
 

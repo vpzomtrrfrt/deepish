@@ -32,7 +32,7 @@ import Menu, { MenuItem } from "../../components/Menu";
 import PriorityUnreadIndicator from "../../components/PriorityUnreadIndicator";
 import SettingsDialog from "../../components/SettingsDialog";
 import WithTooltip from "../../components/WithTooltip";
-import { Room, useAccountSig, useConnectionContext } from "../../util/connection";
+import { ConnectionsContext, Room, useConnectionContext } from "../../util/connection";
 import { msgActionSave, msgCancel } from "../../util/langCommon";
 import { compareRanks } from "../../util/lexrank";
 import { getNickForCounterpart } from "../../util/profileUtil";
@@ -242,11 +242,9 @@ const styles = {
 };
 
 export default function ChatPage() {
-	const accountSig = useAccountSig();
+	const conn = useConnectionContext();
 
-	const connectedSig = useComputed(() => accountSig.value!.connected);
-
-	if(!connectedSig.value) {
+	if(!conn.connected.value) {
 		return <ConnectingView />;
 	}
 
@@ -281,7 +279,6 @@ function ChatView() {
 	const [, navigate] = useLocation();
 
 	const conn = useConnectionContext();
-	const accountSig = useAccountSig();
 
 	const roomMatch = useRoute("/rooms/:roomJID");
 	const currentRoom = roomMatch[0] ? decodeURIComponent(roomMatch[1].roomJID) : null;
@@ -295,7 +292,7 @@ function ChatView() {
 			const entry = {movingRoom, to};
 			pendingReordersSig.value = withAddedToSet(pendingReordersSig.value, entry);
 			try {
-				await conn.reorderRoom(accountSig.value.jid, movingRoom, to);
+				await conn.reorderRoom(movingRoom, to);
 			}
 			catch(err) {
 				alert(err);
@@ -306,10 +303,8 @@ function ChatView() {
 		})();
 	});
 
-	const roomsSrcSig = useComputed(() => accountSig.value.rooms);
-
 	const roomsSig = useComputed(() => {
-		const rooms = Array.from(roomsSrcSig.value.values());
+		const rooms = Array.from(conn.rooms.values());
 		rooms.sort((a, b) => compareRanks(a.rank, b.rank));
 		applyPendingReorders(rooms, pendingReordersSig.value);
 		return rooms;
@@ -374,12 +369,12 @@ function ChatView() {
 }
 
 function HomeLink(props: {active: boolean}) {
-	const accountSig = useAccountSig();
+	const conn = useConnectionContext();
 
 	const incomingRequestCounterpartsCount = useComputed(() => {
 		let result = 0;
 
-		for(const counterpart of accountSig.value.counterparts.values()) {
+		for(const counterpart of conn.counterparts.values()) {
 			if(counterpartIsIncomingRequest(counterpart)) result += 1;
 		}
 
@@ -387,7 +382,7 @@ function HomeLink(props: {active: boolean}) {
 	}).value;
 
 	const possibleUnreadConversationsSig = useSignalMapKeysWhereValueMatches(
-		accountSig.value.counterparts,
+		conn.counterparts,
 		counterpart => {
 			return counterpart.lastMessageIDForUnread !== null &&
 				counterpart.lastReadMessageID !== counterpart.lastMessageIDForUnread &&
@@ -399,9 +394,9 @@ function HomeLink(props: {active: boolean}) {
 		// Ignore rooms for this
 
 		for(const key of possibleUnreadConversationsSig.value) {
-			const counterpart = accountSig.value.counterparts.get(key)!;
+			const counterpart = conn.counterparts.get(key)!;
 
-			if(!accountSig.value.rooms.has(counterpart.jid.toString())) return true;
+			if(!conn.rooms.has(counterpart.jid.toString())) return true;
 		}
 
 		return false;
@@ -428,9 +423,6 @@ function RoomLink(props: {
 	reorderRoom(movingRoom: JID, to: {before: JID | null; after: JID | null}): void;
 }) {
 	const conn = useConnectionContext();
-	const accountSig = useAccountSig();
-
-	const accountJID = useComputed(() => accountSig.value.jid).value;
 
 	const roomMatch = useRoute("/rooms/:roomJID");
 	const currentRoom = roomMatch[0] ? decodeURIComponent(roomMatch[1].roomJID) : null;
@@ -439,7 +431,7 @@ function RoomLink(props: {
 	const name = LoadState.ifDone(props.room.infoState, disco => disco.name, () => null) ?? props.room.jid.toString();
 
 	const counterpart = useComputed(() => {
-		return accountSig.value.counterparts.get(props.room.jid.toString());
+		return conn.counterparts.get(props.room.jid.toString());
 	}).value;
 	const unread = typeof counterpart !== "undefined" &&
 		counterpart.lastMessageIDForUnread !== null &&
@@ -491,10 +483,7 @@ function RoomLink(props: {
 						const finalInstruction = extractInstruction(args.self.data);
 
 						if(finalInstruction !== null) {
-							const accountNow = conn.accountsSig.value.find(x => x.jid.equals(accountJID));
-							if(typeof accountNow === "undefined") throw new Error("Missing account");
-
-							const rooms = Array.from(accountNow.rooms.values());
+							const rooms = Array.from(conn.rooms.values());
 							rooms.sort((a, b) => compareRanks(a.rank, b.rank));
 
 							const targetIdx = rooms.findIndex(x => x.jid.equals(props.room.jid));
@@ -526,7 +515,7 @@ function RoomLink(props: {
 				},
 			}),
 		);
-	}, [accountJID, conn.accountsSig, props.reorderRoom, props.room.jid]);
+	}, [conn, props.reorderRoom, props.room.jid]);
 
 	return <div
 		key={props.room.jid.toString()}
@@ -559,16 +548,16 @@ function ChatHomePage() {
 
 	const [, navigate] = useLocation();
 
-	const accountSig = useAccountSig();
+	const conn = useConnectionContext();
 
-	const possibleConversationsKeysSig = useSignalMapKeysWhereValueMatches(accountSig.value.counterparts, counterpart => {
+	const possibleConversationsKeysSig = useSignalMapKeysWhereValueMatches(conn.counterparts, counterpart => {
 		return (counterpart.lastMessageTimestamp !== null || counterpart.overrideVisibleTimestamp !== null);
 	}, true);
 
 	// TODO somehow avoid re-sorting so often?
 	const conversationsSig = useComputed(() => {
-		const list = possibleConversationsKeysSig.value.map(x => accountSig.value.counterparts.get(x)!)
-			.filter(x => !accountSig.value.rooms.has(x.jid.toString()));
+		const list = possibleConversationsKeysSig.value.map(x => conn.counterparts.get(x)!)
+			.filter(x => !conn.rooms.has(x.jid.toString()));
 		list.sort((a, b) => {
 			return (b.lastMessageTimestamp ?? b.overrideVisibleTimestamp)!.getTime() -
 				(a.lastMessageTimestamp ?? a.overrideVisibleTimestamp)!.getTime();
@@ -626,8 +615,9 @@ function ChatHomePage() {
 }
 
 const ConversationLink = memo(function ConversationLink(props: {jid: JID}) {
-	const accountSig = useAccountSig();
-	const counterpart = useComputed(() => accountSig.value.counterparts.get(props.jid.toString())).value!;
+	const conn = useConnectionContext();
+
+	const counterpart = useComputed(() => conn.counterparts.get(props.jid.toString())).value!;
 
 	return <Link
 		to={"~/chat/direct/" + encodeURIComponent(props.jid.toString())}
@@ -649,14 +639,14 @@ function ConnectingView() {
 
 	const [, navigate] = useLocation();
 
-	const accountSig = useAccountSig();
+	const conn = useConnectionContext();
 
 	const logout = useLatestCallback(() => {
-		navigate("~/logout/" + encodeURIComponent(accountSig.value.jid.toString()));
+		navigate("~/logout/" + encodeURIComponent(conn.jid.toString()));
 	});
 
 	useSignalEffect(() => {
-		if(accountSig.value.stopped) {
+		if(conn.stopped.value) {
 			// Assume that means expired login
 
 			logout();
@@ -664,13 +654,13 @@ function ConnectingView() {
 	});
 
 	return <div class={styles.connectingView}>
-		{!accountSig.value.stopped &&
+		<Show when={() => !conn.stopped.value}>
 			<div>
 				{$t({defaultMessage: "Connecting…"})}
 			</div>
-		}
-		{accountSig.value.lastError !== null &&
-			<ErrorAlert error={accountSig.value.lastError} />
+		</Show>
+		{conn.lastError.value !== null &&
+			<ErrorAlert error={conn.lastError.value} />
 		}
 		<Button tier="secondary" onClick={logout}>{$t({defaultMessage: "Log out"})}</Button>
 	</div>;
@@ -684,26 +674,15 @@ function SelfBox() {
 	const [, navigate] = useLocation();
 
 	const appCtx = useAppContext();
+	const connections = useContext(ConnectionsContext)!;
 	const conn = useConnectionContext();
-	const accountSig = useAccountSig();
 
-	const jid = useComputed(() => {
-		const account = accountSig.value;
-		if(typeof account === "undefined") throw new Error("Not logged in");
-		return account.jid;
-	}).value;
-
-	const counterpartSig = useComputed(() => {
-		const account = accountSig.value;
-		if(typeof account === "undefined") throw new Error("Not logged in");
-
-		return account.counterparts.get(account.jid.toString());
-	});
+	const counterpartSig = conn.counterparts.getSignal(conn.jid.toString());
 
 	const nickSig = useComputed(() => {
 		const counterpart = counterpartSig.value;
 
-		return typeof counterpart === "undefined" ? jid.local : getNickForCounterpart(counterpart);
+		return typeof counterpart === "undefined" ? conn.jid.local : getNickForCounterpart(counterpart);
 	});
 
 	const editActivityText = useCallback(() => {
@@ -719,11 +698,11 @@ function SelfBox() {
 	});
 
 	const logout = useLatestCallback(() => {
-		navigate("~/logout/" + encodeURIComponent(jid.toString()));
+		navigate("~/logout/" + encodeURIComponent(conn.jid.toString()));
 	});
 
 	const showTypeSig = useComputed(() => {
-		return conn.idle.value.idle ? PresenceShowType.Away : PresenceShowTypeExtended.Available;
+		return connections.idle.value.idle ? PresenceShowType.Away : PresenceShowTypeExtended.Available;
 	});
 
 	const statusContentSig = useComputed(() => {
@@ -735,13 +714,13 @@ function SelfBox() {
 	return <div class={styles.selfBox}>
 		<AvatarWithStatusRaw
 			size="md"
-			jid={jid}
+			jid={conn.jid}
 			showType={showTypeSig}
 		/>
 		<div class={styles.selfBoxNameSegment}>
 			{nickSig}
 			<div class={cx(styles.statusText)}>{statusContentSig}</div>
-			<div class={styles.selfBoxJID}>{jid.toString()}</div>
+			<div class={styles.selfBoxJID}>{conn.jid.toString()}</div>
 		</div>
 		<Menu>
 			<MenuItem onClick={editActivityText}>{$t({defaultMessage: "Set Status Text"})}</MenuItem>
@@ -755,7 +734,6 @@ function SelfBox() {
 function EditActivityTextDialog() {
 	const { $t } = useIntl();
 
-	const accountSig = useAccountSig();
 	const conn = useConnectionContext();
 	const dialogCtx = useContext(DialogContext)!;
 
@@ -764,7 +742,7 @@ function EditActivityTextDialog() {
 	const [submitting, submit] = useSubmitting(async (evt: Event) => {
 		evt.preventDefault();
 
-		await conn.setActivityText(accountSig.value.jid, text === "" ? null : text);
+		await conn.setActivityText(text === "" ? null : text);
 
 		dialogCtx.close();
 	});

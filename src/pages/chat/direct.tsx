@@ -1,5 +1,5 @@
 import { css } from "@emotion/css";
-import { computed, effect, signal, useComputed } from "@preact/signals";
+import { computed, effect, signal } from "@preact/signals";
 import { Show, useLiveSignal } from "@preact/signals/utils";
 import { JID, parse as parseJID } from "@xmpp/jid";
 import { createRef } from "preact";
@@ -13,7 +13,7 @@ import Menu, { MenuItem } from "../../components/Menu";
 import MessageInput from "../../components/MessageInput";
 import MessageList, { LoadMoreTriggerer, MessageSourceDialog, ReplyingIndicator } from "../../components/MessageList";
 import TypingIndicator from "../../components/TypingIndicator";
-import { Message, ResultSetInfo, useAccountSig, useConnectionContext } from "../../util/connection";
+import { Message, ResultSetInfo, useConnectionContext } from "../../util/connection";
 import createComponent from "../../util/createComponent";
 import { msgActionDelete } from "../../util/langCommon";
 import { MessageCache } from "../../util/messageCache";
@@ -67,8 +67,6 @@ const DirectChatPageInner = createComponent(
 		const appCtxSig = useLiveSignal(useAppContext());
 
 		const conn = useConnectionContext();
-		const accountSig = useAccountSig();
-		const accountJID = useComputed(() => accountSig.value.jid).value;
 
 		return useMemo(() => ({
 			intlSig,
@@ -76,16 +74,14 @@ const DirectChatPageInner = createComponent(
 			appCtxSig,
 
 			conn,
-			accountSig,
-			accountJID,
 
 			counterpartJID: props.counterpartJID,
-		}), [accountJID, accountSig, appCtxSig, conn, intlSig, props.counterpartJID]);
+		}), [appCtxSig, conn, intlSig, props.counterpartJID]);
 	},
-	({intlSig, appCtxSig, conn, accountSig, accountJID, counterpartJID}) => {
-		const counterpartSig = computed(() => accountSig.value.counterparts.get(counterpartJID.toString()));
+	({intlSig, appCtxSig, conn, counterpartJID}) => {
+		const counterpartSig = conn.counterparts.getSignal(counterpartJID.toString());
 
-		const msgCache = new MessageCache(accountJID, {type: "direct", jid: counterpartJID}, conn);
+		const msgCache = new MessageCache({type: "direct", jid: counterpartJID}, conn);
 		const pageStateSig = signal<LoadState<ResultSetInfo | null> | null>(null);
 
 		function loadMore() {
@@ -108,7 +104,7 @@ const DirectChatPageInner = createComponent(
 
 		effect(() => {
 			if(typeof counterpartSig.value !== "undefined") {
-				conn.markCounterpartAsVisible.call(undefined, accountJID, counterpartJID);
+				conn.markCounterpartAsVisible.call(undefined, counterpartJID);
 			}
 		});
 
@@ -124,10 +120,10 @@ const DirectChatPageInner = createComponent(
 			) {
 				const lastMessage = messages[messages.length - 1];
 				const lastMessageID = lastMessage.ids.find(x => {
-					return x.type === StanzaIDType.Stanza && x.by !== null && x.by.equals(accountJID);
+					return x.type === StanzaIDType.Stanza && x.by !== null && x.by.equals(conn.jid);
 				});
 				if(typeof lastMessageID !== "undefined" && counterpartSig.value.lastReadMessageID !== lastMessageID.id) {
-					conn.markCounterpartAsRead.call(undefined, accountJID, counterpartJID, lastMessageID.id, false);
+					conn.markCounterpartAsRead.call(undefined, counterpartJID, lastMessageID.id, false);
 				}
 			}
 		});
@@ -150,7 +146,6 @@ const DirectChatPageInner = createComponent(
 
 		function submitMessage(newMessage: string, options?: {replaces?: string}) {
 			conn.sendMessageToCounterpart(
-				accountJID,
 				counterpartJID,
 				{body: newMessage},
 				{replyingTo: replyingToSig.value ?? undefined, ...options},
@@ -169,7 +164,6 @@ const DirectChatPageInner = createComponent(
 
 			await conn.sendMessageReactionsToCounterpart.call(
 				undefined,
-				accountJID,
 				counterpartJID,
 				id.id,
 				reactions,
@@ -177,7 +171,7 @@ const DirectChatPageInner = createComponent(
 		}
 
 		function onChangeComposing(composing: boolean) {
-			conn.setComposingToCounterpart(accountJID, counterpartJID, composing);
+			conn.setComposingToCounterpart(counterpartJID, composing);
 		}
 
 		function retractMessage(messageID: string) {
@@ -189,7 +183,6 @@ const DirectChatPageInner = createComponent(
 					submit={async () => {
 						return conn.retractMessageToCounterpart.call(
 							undefined,
-							accountJID,
 							counterpartJID,
 							messageID,
 						);
@@ -210,9 +203,9 @@ const DirectChatPageInner = createComponent(
 
 			const items = [];
 
-			if(message.from.bare().equals(accountJID)) {
+			if(message.from.bare().equals(conn.jid)) {
 				const id = message.ids.find(x => {
-					return x.type === StanzaIDType.Element && x.by !== null && x.by.equals(accountJID);
+					return x.type === StanzaIDType.Element && x.by !== null && x.by.equals(conn.jid);
 				});
 				if(typeof id !== "undefined") {
 					items.push(
@@ -234,9 +227,9 @@ const DirectChatPageInner = createComponent(
 		}
 
 		function canEdit(message: Message) {
-			if(message.from.bare().equals(accountJID)) {
+			if(message.from.bare().equals(conn.jid)) {
 				const id = message.ids.find(x => {
-					return x.type === StanzaIDType.Element && x.by !== null && x.by.equals(accountJID);
+					return x.type === StanzaIDType.Element && x.by !== null && x.by.equals(conn.jid);
 				});
 				if(typeof id !== "undefined") {
 					return true;

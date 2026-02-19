@@ -30,7 +30,7 @@ export class MessageCache {
 		>
 	>;
 
-	public constructor(public readonly account: JID, public readonly container: MessageContainer, private conn: ConnectionContext) {
+	public constructor(public readonly container: MessageContainer, private conn: ConnectionContext) {
 		this.conn.addEventListener("message", this.onMessage);
 		this.conn.addEventListener("messageRemove", this.onMessageRemove);
 		this.conn.addEventListener("messageEdit", this.onMessageEdit);
@@ -66,10 +66,10 @@ export class MessageCache {
 
 		let value;
 		if(this.container.type === "direct") {
-			value = await this.conn.requestArchive(this.account, this.account, {with: this.container.jid}, page);
+			value = await this.conn.requestArchive(this.conn.jid, {with: this.container.jid}, page);
 		}
 		else if(this.container.type === "room") {
-			value = await this.conn.requestArchive(this.account, this.container.jid, {}, page);
+			value = await this.conn.requestArchive(this.container.jid, {}, page);
 		}
 		else {
 			const _: never = this.container;

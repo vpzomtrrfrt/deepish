@@ -1,5 +1,5 @@
 import { IDBCache } from "@instructure/idb-cache";
-import { batch, ReadonlySignal, Signal, signal, useComputed, useSignal } from "@preact/signals";
+import { batch, ReadonlySignal, Signal, signal, useSignal } from "@preact/signals";
 import { useLiveSignal } from "@preact/signals/utils";
 import Connection from "@xmpp/connection";
 import xid from "@xmpp/id";
@@ -11,7 +11,7 @@ import fromBase64 from "es-arraybuffer-base64/Uint8Array.fromBase64";
 import toBase64 from "es-arraybuffer-base64/Uint8Array.prototype.toBase64";
 import toHex from "es-arraybuffer-base64/Uint8Array.prototype.toHex";
 import { createContext } from "preact";
-import { useCallback, useContext, useEffect, useMemo } from "preact/hooks";
+import { useCallback, useContext, useEffect, useMemo, useRef } from "preact/hooks";
 import useLatestCallback from "use-latest-callback";
 
 import { DEFAULT_NOTIFICATIONS_SETTINGS, NotificationsSettings } from "..";
@@ -116,20 +116,6 @@ export interface ServiceInfo {
 	features: string[];
 }
 
-export interface Account {
-	jid: JID;
-	client: xmppClient.Client;
-	connected: boolean;
-	lastError: unknown;
-	stopped: boolean;
-
-	counterparts: SignalMap<string, Counterpart>;
-	rooms: SignalMap<string, Room>;
-
-	avatarStates: SignalMap<string, LoadState<string>>;
-	servicesState: LoadState<ServiceInfo[]>;
-}
-
 export type MessageRemoval = {
 	type: "retract";
 } | {
@@ -203,11 +189,15 @@ export interface MessageReactionsChangeEvent {
 	from: {jid: JID; occupantID?: string};
 }
 
-interface AppEventMap {
+interface ConnectionEventMap {
 	message: MessageEvent;
 	messageEdit: MessageEditEvent;
 	messageReactionsChange: MessageReactionsChangeEvent;
 	messageRemove: MessageRemovalEvent;
+}
+
+interface AppEventMap {
+	message: MessageEvent;
 }
 
 export interface ResultSetInfo {
@@ -248,10 +238,68 @@ interface SendMessageOptions {
 	replyingTo?: Message;
 }
 
-export interface BaseConnectionContext {
-	accountsSig: Signal<Account[]>;
+export interface ConnectionContext {
+	jid: JID;
 
-	getAccount(identifier: JID): Account;
+	avatarStates: SignalMap<string, LoadState<string>>;
+	counterparts: SignalMap<string, Counterpart>;
+	rooms: SignalMap<string, Room>;
+
+	connected: ReadonlySignal<boolean>;
+	lastError: ReadonlySignal<unknown>;
+	servicesState: ReadonlySignal<LoadState<ServiceInfo[]>>;
+	stopped: ReadonlySignal<boolean>;
+
+	addEventListener<K extends keyof ConnectionEventMap>(
+		event: K,
+		listener: (evt: ConnectionEventMap[K]) => void,
+	): void;
+	removeEventListener<K extends keyof ConnectionEventMap>(
+		event: K,
+		listener: (evt: ConnectionEventMap[K]) => void,
+	): void;
+	requestArchive(entity: JID, params: {with?: JID}, before?: string): Promise<ResultSetInfo | null>;
+	sendMessageToRoom(room: JID, message: {body: string}, options?: SendMessageOptions): Promise<void>;
+	sendMessageToCounterpart(target: JID, message: {body: string}, options?: SendMessageOptions): Promise<void>;
+	retractMessageToRoom(room: JID, messageID: string): Promise<void>;
+	moderateMessageToRoom(room: JID, messageID: string): Promise<void>;
+	retractMessageToCounterpart(target: JID, messageID: string): Promise<void>;
+	sendMessageReactionsToRoom(room: JID, messageID: string, reactions: string[]): Promise<void>;
+	sendMessageReactionsToCounterpart(room: JID, messageID: string, reactions: string[]): Promise<void>;
+	markCounterpartAsVisible(target: JID): void;
+	acceptFriendRequest(target: JID): void;
+	rejectFriendRequest(target: JID): void;
+	removeFriend(target: JID): void;
+	sendFriendRequest(target: JID): void;
+	setComposingToCounterpart(target: JID, composing: boolean): void;
+	setComposingToRoom(room: JID, composing: boolean): void;
+	joinRoom(room: JID, nick?: string): Promise<void>;
+	leaveRoom(room: JID): Promise<void>;
+	createRoom(room: JID, params: RoomCreateParams): void;
+	changeRoomConfig(room: JID, params: RoomEditParams): void;
+	setRoomAvatar(room: JID, info: ImageInfo): void;
+	fetchRoomInfo(room: JID): Promise<RoomDiscoInfo>;
+	fetchRoomConfig(room: JID): Promise<RoomConfig>;
+	markCounterpartAsRead(target: JID, lastReadMessageID: string, isRoom: boolean): void;
+	setNick(value: string): Promise<void>;
+	setActivityText(value: string | null): Promise<void>;
+	setAvatar(info: ImageInfo): Promise<void>;
+	reorderRoom(room: JID, to: {before: JID | null; after: JID | null}): Promise<void>;
+	setRoomNotificationLevel(room: JID, level: NotificationLevel): Promise<void>;
+
+	pingRooms(): void;
+
+	[Symbol.dispose](): void;
+}
+
+export interface ConnectionsContext {
+	accounts: ReadonlySignal<ConnectionContext[]>;
+
+	inited: ReadonlySignal<boolean>;
+	idle: ReadonlySignal<IdleState>;
+
+	saveToken(jid: JID, token: unknown, userAgent: string, resource: string): void;
+	logout(jid: JID): void;
 
 	addEventListener<K extends keyof AppEventMap>(
 		event: K,
@@ -261,48 +309,9 @@ export interface BaseConnectionContext {
 		event: K,
 		listener: (evt: AppEventMap[K]) => void,
 	): void;
-	requestArchive(account: JID, entity: JID, params: {with?: JID}, before?: string): Promise<ResultSetInfo | null>;
-	sendMessageToRoom(account: JID, room: JID, message: {body: string}, options?: SendMessageOptions): Promise<void>;
-	sendMessageToCounterpart(account: JID, target: JID, message: {body: string}, options?: SendMessageOptions): Promise<void>;
-	retractMessageToRoom(account: JID, room: JID, messageID: string): Promise<void>;
-	moderateMessageToRoom(account: JID, room: JID, messageID: string): Promise<void>;
-	retractMessageToCounterpart(account: JID, target: JID, messageID: string): Promise<void>;
-	sendMessageReactionsToRoom(account: JID, room: JID, messageID: string, reactions: string[]): Promise<void>;
-	sendMessageReactionsToCounterpart(account: JID, room: JID, messageID: string, reactions: string[]): Promise<void>;
-	markCounterpartAsVisible(account: JID, target: JID): void;
-	acceptFriendRequest(account: JID, target: JID): void;
-	rejectFriendRequest(account: JID, target: JID): void;
-	removeFriend(account: JID, target: JID): void;
-	sendFriendRequest(account: JID, target: JID): void;
-	setComposingToCounterpart(account: JID, target: JID, composing: boolean): void;
-	setComposingToRoom(account: JID, room: JID, composing: boolean): void;
-	joinRoom(account: JID, room: JID, nick?: string): Promise<void>;
-	leaveRoom(account: JID, room: JID): Promise<void>;
-	createRoom(account: JID, room: JID, params: RoomCreateParams): void;
-	changeRoomConfig(account: JID, room: JID, params: RoomEditParams): void;
-	setRoomAvatar(account: JID, room: JID, info: ImageInfo): void;
-	fetchRoomInfo(account: JID, room: JID): Promise<RoomDiscoInfo>;
-	fetchRoomConfig(account: JID, room: JID): Promise<RoomConfig>;
-	markCounterpartAsRead(account: JID, target: JID, lastReadMessageID: string, isRoom: boolean): void;
-	setNick(account: JID, value: string): Promise<void>;
-	setActivityText(account: JID, value: string | null): Promise<void>;
-	setAvatar(account: JID, info: ImageInfo): Promise<void>;
-	reorderRoom(account: JID, room: JID, to: {before: JID | null; after: JID | null}): Promise<void>;
-	setRoomNotificationLevel(account: JID, room: JID, level: NotificationLevel): Promise<void>;
-
-	loadAccounts(): void;
-	pingRoom(account: JID, room: JID): void;
 }
 
-export interface ConnectionContext extends BaseConnectionContext {
-	inited: ReadonlySignal<boolean>;
-	idle: ReadonlySignal<IdleState>;
-
-	saveToken(jid: JID, token: unknown, userAgent: string, resource: string): void;
-	logout(jid: JID): void;
-}
-
-export const ConnectionContext = createContext<ConnectionContext | undefined>(undefined);
+export const ConnectionsContext = createContext<ConnectionsContext | undefined>(undefined);
 
 const BOOKMARKS_PUBLISH_OPTIONS: PubsubPublishOptions = {
 	persistItems: true,
@@ -317,37 +326,93 @@ const NOTIFICATION_LEVEL_ELEMENT_MAP: Record<NotificationLevel, string> = {
 	[NotificationLevel.Never]: "never",
 };
 
-export function useCreateConnection(
+export function useCreateConnections(
 	cache: IDBCache,
 	notificationsSettingsSig: ReadonlySignal<NotificationsSettings>,
-): ConnectionContext {
+): ConnectionsContext {
 	const idle = useIdle();
 
 	const cacheSig = useLiveSignal(cache);
-	const conn = useMemo(() => {
-		return createBaseConnection(cacheSig, idle.state, notificationsSettingsSig);
-	}, [cacheSig, idle.state, notificationsSettingsSig]);
 
 	const initedSig = useSignal(false);
 
+	const accountsSig = useSignal<ConnectionContext[]>([]);
+
+	const listenersRef = useRef<{
+		[K in keyof AppEventMap]: Set<(evt: AppEventMap[K]) => void>;
+	}>({
+		message: new Set(),
+	});
+
+	const emit = useCallback(<K extends keyof AppEventMap>(eventType: K, event: AppEventMap[K]) => {
+		listenersRef.current[eventType].forEach(listener => {
+			try {
+				listener(event);
+			}
+			catch(ex) {
+				console.error(ex);
+			}
+		});
+	}, []);
+
+	const addEventListener = useCallback(<K extends keyof AppEventMap>(event: K, listener: (evt: AppEventMap[K]) => void) => {
+		listenersRef.current[event].add(listener);
+	}, []);
+
+	const removeEventListener = useCallback(<K extends keyof AppEventMap>(event: K, listener: (evt: AppEventMap[K]) => void) => {
+		listenersRef.current[event].delete(listener);
+	}, []);
+
 	const loadAccounts = useCallback(() => {
-		conn.loadAccounts();
-		initedSig.value = true;
-	}, [conn, initedSig]);
+		let newList: ConnectionContext[];
+
+		const infoStr = localStorage.getItem("deepishAccount");
+		if(infoStr === null) {
+			newList = [];
+		}
+		else {
+			const info = JSON.parse(infoStr) as {
+				jid: string;
+				token: unknown;
+				userAgent: string;
+				resource?: string;
+			};
+
+			if(typeof info.resource === "undefined") {
+				newList = [];
+			}
+			else {
+				const jid = parseJID(info.jid);
+
+				{
+					const current = accountsSig.value;
+					current.forEach(account => {
+						account[Symbol.dispose]();
+					});
+				}
+
+				const newConn = createBaseConnection(jid, info as typeof info & {resource: string}, cacheSig, idle.state, notificationsSettingsSig);
+				newConn.addEventListener("message", emit.bind(undefined, "message"));
+
+				newList = [newConn];
+			}
+		}
+
+		batch(() => {
+			accountsSig.value = newList;
+			initedSig.value = true;
+		});
+	}, [accountsSig, cacheSig, emit, idle.state, initedSig, notificationsSettingsSig]);
 
 	useEffectOnce(() => {
 		loadAccounts();
 	});
 
 	const maybePingRooms = useCallback(() => {
-		conn.accountsSig.value.forEach(account => {
-			account.rooms.values().forEach(room => {
-				if(room.connected && new Date().getTime() - room.internalMutable.lastSeen.getTime() > 60000) {
-					conn.pingRoom.call(undefined, account.jid, room.jid);
-				}
-			});
+		accountsSig.value.forEach(account => {
+			account.pingRooms();
 		});
-	}, [conn.accountsSig, conn.pingRoom]);
+	}, [accountsSig]);
 
 	useEffect(() => {
 		const interval = setInterval(maybePingRooms, 10000);
@@ -357,8 +422,8 @@ export function useCreateConnection(
 	}, [maybePingRooms]);
 
 	const onUnmount = useLatestCallback(() => {
-		conn.accountsSig.value.forEach(account => {
-			account.client.stop();
+		accountsSig.value.forEach(account => {
+			account[Symbol.dispose]();
 		});
 	});
 	useEffect(() => {
@@ -367,7 +432,7 @@ export function useCreateConnection(
 
 	return useMemo(
 		() => ({
-			...conn,
+			accounts: accountsSig,
 
 			inited: initedSig,
 			idle: idle.state,
@@ -377,72 +442,85 @@ export function useCreateConnection(
 				loadAccounts();
 			},
 			logout(jid) {
-				const accounts = conn.accountsSig.value;
+				const accounts = accountsSig.value;
 				if(accounts.length > 0 && accounts[0].jid.equals(jid)) {
 					localStorage.removeItem("deepishAccount");
 					loadAccounts();
 				}
 			},
 
-		} satisfies ConnectionContext),
-		[conn, idle, initedSig, loadAccounts],
+			addEventListener,
+			removeEventListener,
+		} satisfies ConnectionsContext),
+		[accountsSig, initedSig, idle.state, addEventListener, removeEventListener, loadAccounts],
 	);
 }
 
 export function useConnectionContext() {
-	const value = useContext(ConnectionContext);
+	const value = useContext(ConnectionsContext);
 
 	if(typeof value === "undefined") throw new Error("Attempted to read connection outside of context");
 
-	return value;
+	return value.accounts.value[0];
 }
 
 function createBaseConnection(
+	jid: JID,
+	authInfo: {token: unknown; userAgent: string; resource: string},
 	cacheSig: Signal<IDBCache>,
 	idleSig: Signal<IdleState>,
 	notificationsSettingsSig: ReadonlySignal<NotificationsSettings>,
-): BaseConnectionContext {
-	// eventually we might support multiple accounts
-	// just one for now though
-	const accountsSig = signal<Account[]>([]);
+): ConnectionContext {
+	const effects: Array<() => void> = [];
+
+	const client = createXMPPClientForAccount(jid, authInfo.token, authInfo.userAgent, authInfo.resource, {
+		online: onClientOnline,
+		status: onClientStatusChanged,
+		error: onClientError,
+		element: onClientElement,
+	}, onClientError);
+
+	client.iqCallee.set("jabber:iq:roster", "query", async (req) => {
+		console.log("got roster update", req);
+
+		if(
+			req.from === null ||
+				req.from.equals(jid) ||
+
+				// I'm assuming xmpp.js adds this? The raw message has no from at all
+				(req.from.domain === jid.domain && req.from.local === "")
+		) {
+			const elem = (req as unknown as {element: Element}).element; // ???
+			handleRosterUpdate(elem.getChildren("item"), false);
+
+			return true; // ???
+		}
+		else {
+			console.log("ignoring roster update since from isn't me");
+		}
+	});
+
+	const connectedSig = signal(false);
+	const lastErrorSig = signal<unknown>(null);
+	const stoppedSig = signal(false);
+	const servicesStateSig = signal<LoadState<ServiceInfo[]>>(LoadState.loading);
+	const avatarStates = new SignalMap<string, LoadState<string>>();
+
+	const counterparts = new SignalMap<string, Counterpart>();
+	const rooms = new SignalMap<string, Room>();
 
 	const outgoingMessages = new Map<string, {resolve: () => void; reject: (err: unknown) => void}>();
 	const newRooms = new Map<string, {resolve: (value: RoomJoinCallbackInfo) => void; reject: (err: unknown) => void}>();
 
-	function updateAccount(identifier: xmppClient.Client | JID, fn: (current: Account) => Account) {
-		accountsSig.value = accountsSig.value.map(account => {
-			if(identifier instanceof JID ? account.jid.equals(identifier) : account.client === identifier) {
-				return fn(account);
-			}
-			else return account;
-		});
-	}
-
-	function tryGetAccount(identifier: xmppClient.Client | JID) {
-		return accountsSig.value.find(account => {
-			return identifier instanceof JID ? account.jid.equals(identifier) : account.client === identifier;
-		});
-	}
-
-	function getAccount(identifier: xmppClient.Client | JID) {
-		const result = tryGetAccount(identifier);
-		if(typeof result === "undefined") throw new Error("No such account");
-		else return result;
-	}
-
-	function upsertCounterpart(accountIdentifier: xmppClient.Client | JID, counterpartJID: JID, fn: (current: Counterpart) => Counterpart) {
-		const account = getAccount(accountIdentifier);
-
-		account.counterparts.set(counterpartJID.toString(), fn(
-			account.counterparts.get(counterpartJID.toString()) ??
+	function upsertCounterpart(counterpartJID: JID, fn: (current: Counterpart) => Counterpart) {
+		counterparts.set(counterpartJID.toString(), fn(
+			counterparts.get(counterpartJID.toString()) ??
 				{...DEFAULT_COUNTERPART_INFO, jid: counterpartJID}
 		));
 	}
 
-	function connectMUCFromBookmarks(client: xmppClient.Client, roomJID: JID) {
-		const account = getAccount(client);
-
-		const info = account.rooms.get(roomJID.toString());
+	function connectMUCFromBookmarks(roomJID: JID) {
+		const info = rooms.get(roomJID.toString());
 		if(typeof info === "undefined") throw new Error("No such bookmark");
 
 		const nick = info.nick ?? client.jid!.local;
@@ -450,7 +528,6 @@ function createBaseConnection(
 	}
 
 	function handleBookmarksUpdate(
-		client: xmppClient.Client,
 		mode: "add" | "remove" | "all",
 		newItems?: PubsubItemInfo[],
 		removedItems?: string[],
@@ -519,11 +596,10 @@ function createBaseConnection(
 			});
 		}
 
-		const account = getAccount(client);
-		const extraRooms = new Set<string>(account.rooms.keys());
+		const extraRooms = new Set<string>(rooms.keys());
 
 		wantedRooms.forEach(entry => {
-			const existing = account.rooms.get(entry.jid);
+			const existing = rooms.get(entry.jid);
 			extraRooms.delete(entry.jid);
 
 			const nick = entry.nick ?? client.jid!.local;
@@ -535,7 +611,7 @@ function createBaseConnection(
 			) {
 				const jid = parseJID(entry.jid);
 
-				account.rooms.set(entry.jid, {
+				rooms.set(entry.jid, {
 					jid,
 					nick: entry.nick ?? null,
 
@@ -554,7 +630,7 @@ function createBaseConnection(
 						lastSeen: new Date(),
 					},
 				});
-				connectMUCFromBookmarks(client, jid);
+				connectMUCFromBookmarks(jid);
 			}
 		});
 
@@ -570,22 +646,22 @@ function createBaseConnection(
 
 		if(unwantedRooms.length > 0) {
 			unwantedRooms.forEach(roomJID => {
-				const entry = account.rooms.get(roomJID);
+				const entry = rooms.get(roomJID);
 				if(typeof entry !== "undefined") {
-					account.rooms.delete(roomJID);
-					disconnectRoom(account, entry);
+					rooms.delete(roomJID);
+					disconnectRoom(entry);
 				}
 			});
 		}
 	}
 
-	async function fetchBookmarks(client: xmppClient.Client) {
+	async function fetchBookmarks() {
 		const initBookmarks = await fetchPubsubItems(client, "urn:xmpp:bookmarks:1");
 
-		handleBookmarksUpdate(client, "all", initBookmarks.items);
+		handleBookmarksUpdate("all", initBookmarks.items);
 	}
 
-	function handleRosterUpdate(accountJID: JID, items: Element[], isAll: boolean) {
+	function handleRosterUpdate(items: Element[], isAll: boolean) {
 		const newContacts = new Map<string, RosterEntry>();
 		items.forEach(item => {
 			const jid = item.getAttr("jid");
@@ -620,19 +696,17 @@ function createBaseConnection(
 		});
 
 		if(newContacts.size > 0 || isAll) {
-			const account = getAccount(accountJID);
-
 			newContacts.forEach((info, contact) => {
-				const entry = account.counterparts.get(contact);
+				const entry = counterparts.get(contact);
 				if(typeof entry === "undefined") {
-					account.counterparts.set(contact, {
+					counterparts.set(contact, {
 						...DEFAULT_COUNTERPART_INFO,
 						jid: parseJID(contact),
 						rosterEntry: info,
 					});
 				}
 				else {
-					account.counterparts.set(contact, {
+					counterparts.set(contact, {
 						...entry,
 						rosterEntry: info,
 						requestingMySubscription: entry.requestingMySubscription && !info.subscriptionFrom,
@@ -641,9 +715,9 @@ function createBaseConnection(
 			});
 
 			if(isAll) {
-				for(const [key, value] of account.counterparts.entries()) {
+				for(const [key, value] of counterparts.entries()) {
 					if(value.rosterEntry !== null && !newContacts.has(key)) {
-						account.counterparts.set(key, {
+						counterparts.set(key, {
 							...value,
 							rosterEntry: null,
 						});
@@ -653,15 +727,15 @@ function createBaseConnection(
 		}
 	}
 
-	async function fetchRoster(client: xmppClient.Client) {
+	async function fetchRoster() {
 		const result = await client.iqCaller.get(xml("query", {xmlns: "jabber:iq:roster"}));
 		if(typeof result === "undefined") throw new Error("Missing result from roster fetch");
 
 		const items = result.getChildren("item", "jabber:iq:roster");
-		handleRosterUpdate(client.jid!.bare(), items, true);
+		handleRosterUpdate(items, true);
 	}
 
-	async function fetchInbox(client: xmppClient.Client) {
+	async function fetchInbox() {
 		const result = await client.iqCaller.get(xml("summary", {xmlns: "xmpp:prosody.im/mod_map"}));
 		if(typeof result === "undefined") throw new Error("Missing result from summary");
 
@@ -682,10 +756,9 @@ function createBaseConnection(
 
 		if(newLastMessageTimestamps.size > 0) {
 			{
-				const account = getAccount(client);
 				newLastMessageTimestamps.forEach((timestamp, itemJID) => {
-					account.counterparts.set(itemJID, {
-						...(account.counterparts.get(itemJID) ?? {...DEFAULT_COUNTERPART_INFO, jid: parseJID(itemJID)}),
+					counterparts.set(itemJID, {
+						...(counterparts.get(itemJID) ?? {...DEFAULT_COUNTERPART_INFO, jid: parseJID(itemJID)}),
 						lastMessageTimestampFromInbox: timestamp,
 					});
 				});
@@ -697,34 +770,24 @@ function createBaseConnection(
 				remaining.set(itemJID, null);
 			});
 			while(true) {
-				{
-					const accounts = accountsSig.value;
-					const account = accounts.find(x => x.client === client);
-					if(typeof account === "undefined") break;
-
-					remaining.forEach((_, itemJID) => {
-						const counterpart = account.counterparts.get(itemJID);
-						if(typeof counterpart !== "undefined" && counterpart.lastMessageIDForUnread !== null) {
-							remaining.delete(itemJID);
-						}
-					});
-				}
+				remaining.forEach((_, itemJID) => {
+					const counterpart = counterparts.get(itemJID);
+					if(typeof counterpart !== "undefined" && counterpart.lastMessageIDForUnread !== null) {
+						remaining.delete(itemJID);
+					}
+				});
 
 				console.log("need last message from", remaining);
 
 				if(remaining.size < 1) break;
 
-				const account = accountsSig.value.find(x => x.client === client);
-				if(typeof account === "undefined") break;
-
 				await Promise.all(
 					Array.from(remaining, async ([key, value]) => {
 						try {
-							const isRoom = account.rooms.has(key);
+							const isRoom = rooms.has(key);
 
 							const fin = await requestArchive(
-								client.jid!.bare(),
-								isRoom ? parseJID(key) : account.jid,
+								isRoom ? parseJID(key) : jid,
 								{with: isRoom ? undefined : parseJID(key)},
 								value === null ? undefined : value,
 							);
@@ -748,7 +811,7 @@ function createBaseConnection(
 		}
 	}
 
-	async function fetchServices(client: xmppClient.Client) {
+	async function fetchServices() {
 		try {
 			const listResult = await client.iqCaller.get(
 				xml(
@@ -793,18 +856,14 @@ function createBaseConnection(
 				}),
 			);
 
-			updateAccount(client, account => {
-				return {...account, servicesState: LoadState.wrapValue(results)};
-			});
+			servicesStateSig.value = LoadState.wrapValue(results);
 		}
 		catch(ex) {
-			updateAccount(client, account => {
-				return {...account, servicesState: LoadState.wrapError(ex)};
-			});
+			servicesStateSig.value = LoadState.wrapError(ex);
 		}
 	}
 
-	function handlePubsubItem(client: xmppClient.Client, from: JID | undefined, node: string, item: PubsubItemInfo) {
+	function handlePubsubItem(from: JID | undefined, node: string, item: PubsubItemInfo) {
 		console.log("handling pubsub item", from, node, item);
 
 		const isMe = typeof from === "undefined" || from.bare().equals(client.jid!.bare());
@@ -820,7 +879,7 @@ function createBaseConnection(
 					};
 				}
 
-				upsertCounterpart(client, from, current => ({
+				upsertCounterpart(from, current => ({
 					...current,
 					currentActivity: value,
 				}));
@@ -832,7 +891,7 @@ function createBaseConnection(
 				if(typeof nickElem !== "undefined") {
 					const nick = nickElem.getText();
 
-					upsertCounterpart(client, from, current => ({
+					upsertCounterpart(from, current => ({
 						...current,
 						nick,
 					}));
@@ -851,7 +910,7 @@ function createBaseConnection(
 					};
 				}
 
-				upsertCounterpart(client, from, current => ({
+				upsertCounterpart(from, current => ({
 					...current,
 					currentTune: value,
 				}));
@@ -878,16 +937,16 @@ function createBaseConnection(
 					});
 				}
 
-				upsertCounterpart(client, contact, current => ({
+				upsertCounterpart(contact, current => ({
 					...current,
 					avatars,
 				}));
 
-				startRequestingAvatar(client, contact, avatars);
+				startRequestingAvatar(contact, avatars);
 			}
 		}
 		else if(node === "urn:xmpp:bookmarks:1") {
-			if(isMe) handleBookmarksUpdate(client, "add", [item]);
+			if(isMe) handleBookmarksUpdate("add", [item]);
 		}
 		else if(node === "urn:xmpp:mds:displayed:0") {
 			if(isMe) {
@@ -899,7 +958,7 @@ function createBaseConnection(
 					if(typeof stanzaIDElem !== "undefined") {
 						const messageID = stanzaIDElem.getAttr("id");
 						if(typeof messageID === "string") {
-							upsertCounterpart(client, jid, current => ({
+							upsertCounterpart(jid, current => ({
 								...current,
 								lastReadMessageID: messageID,
 							}));
@@ -910,12 +969,12 @@ function createBaseConnection(
 		}
 	}
 
-	async function catchupPubsub(client: xmppClient.Client, node: string) {
+	async function catchupPubsub(node: string) {
 		try {
 			const items = await fetchPubsubItems(client, node);
 
 			items.items.forEach(item => {
-				handlePubsubItem(client, undefined, node, item);
+				handlePubsubItem(undefined, node, item);
 			});
 		}
 		catch(ex) {
@@ -928,7 +987,7 @@ function createBaseConnection(
 		}
 	}
 
-	async function sendMyPresence(client: xmppClient.Client) {
+	async function sendMyPresence() {
 		const idle = idleSig.value;
 
 		const ver = await genVerString(
@@ -958,29 +1017,25 @@ function createBaseConnection(
 		);
 	}
 
-	idleSig.subscribe(() => {
-		accountsSig.value.forEach(account => {
-			if(
-				account.client.status === "online" ||
-					(
-						account.client.status === "open" &&
-							account.client.jid !== null &&
-							account.client.jid.resource !== ""
-					)
-			) {
-				sendMyPresence(account.client);
-			}
-		});
-	});
+	effects.push(idleSig.subscribe(() => {
+		if(
+			client.status === "online" ||
+				(
+					client.status === "open" &&
+						client.jid !== null &&
+						client.jid.resource !== ""
+				)
+		) {
+			sendMyPresence();
+		}
+	}));
 
-	function onClientOnline(client: xmppClient.Client) {
+	function onClientOnline() {
 		// assume rooms are disconnected, will get reconnected after bookmarks fetch
 
-		const account = getAccount(client);
-
-		for(const [key, value] of account.rooms.entries()) {
+		for(const [key, value] of rooms.entries()) {
 			if(value.connected) {
-				account.rooms.set(
+				rooms.set(
 					key,
 					{
 						...value,
@@ -991,14 +1046,14 @@ function createBaseConnection(
 			}
 		}
 
-		sendMyPresence(client)
+		sendMyPresence()
 			.then(() => {
 				return Promise.all([
-					fetchBookmarks(client),
-					fetchRoster(client),
-					fetchInbox(client),
-					fetchServices(client),
-					catchupPubsub(client, "urn:xmpp:mds:displayed:0"),
+					fetchBookmarks(),
+					fetchRoster(),
+					fetchInbox(),
+					fetchServices(),
+					catchupPubsub("urn:xmpp:mds:displayed:0"),
 					client.iqCaller.set(xml("enable", {xmlns: "urn:xmpp:carbons:2"})),
 				]);
 			})
@@ -1006,7 +1061,6 @@ function createBaseConnection(
 	}
 
 	function onClientStatusChanged(
-		client: xmppClient.Client,
 		status: keyof Connection.StatusEvents,
 		..._args: unknown[]
 	) {
@@ -1014,14 +1068,14 @@ function createBaseConnection(
 
 		// seems to only go to "online" when not a resume
 		if(status === "online" || (status === "open" && client.jid !== null && client.jid.resource !== "")) {
-			updateAccount(client, account => ({...account, connected: true}));
+			connectedSig.value = true;
 		}
 		else {
-			updateAccount(client, account => ({...account, connected: false}));
+			connectedSig.value = false;
 		}
 	}
 
-	function onClientError(client: xmppClient.Client, err: unknown) {
+	function onClientError(err: unknown) {
 		console.error(err);
 
 		const stop = err instanceof SASLError || (
@@ -1031,16 +1085,19 @@ function createBaseConnection(
 
 		if(stop) client.stop();
 
-		updateAccount(client, account => ({...account, lastError: err, stopped: stop}));
+		batch(() => {
+			lastErrorSig.value = err;
+			stoppedSig.value = stop;
+		});
 	}
 
-	function handlePubsubRetract(client: xmppClient.Client, from: JID | undefined, node: string, itemID: string) {
+	function handlePubsubRetract(from: JID | undefined, node: string, itemID: string) {
 		if(node === "urn:xmpp:bookmarks:1") {
-			handleBookmarksUpdate(client, "remove", undefined, [itemID]);
+			handleBookmarksUpdate("remove", undefined, [itemID]);
 		}
 	}
 
-	function handleChatStateUpdate(client: xmppClient.Client, elem: Element, from: JID) {
+	function handleChatStateUpdate(elem: Element, from: JID) {
 		const composing =
 			(
 				typeof elem.getChild("composing", "http://jabber.org/protocol/chatstates") !== "undefined" ||
@@ -1060,14 +1117,14 @@ function createBaseConnection(
 		if(composing !== null) {
 			console.log("updating composing from", from, composing, elem);
 
-			upsertCounterpart(client, from, current => ({
+			upsertCounterpart(from, current => ({
 				...current,
 				composingFrom: composing,
 			}));
 		}
 	}
 
-	function handleMessageStanza(client: xmppClient.Client, elem: Element, idFromWrapper?: StanzaID, timestampFromWrapper?: Date) {
+	function handleMessageStanza(elem: Element, idFromWrapper?: StanzaID, timestampFromWrapper?: Date) {
 		const fromStr = elem.getAttr("from");
 		const from = typeof fromStr === "undefined" ? undefined : parseJID(fromStr);
 
@@ -1135,7 +1192,7 @@ function createBaseConnection(
 
 				timestamp ??= new Date();
 
-				if(isNew) handleChatStateUpdate(client, elem, from);
+				if(isNew) handleChatStateUpdate(elem, from);
 
 				let ignore = false;
 
@@ -1173,7 +1230,7 @@ function createBaseConnection(
 						});
 
 						if(reloadConfig) {
-							fetchAndStoreRoomDisco(client, room);
+							fetchAndStoreRoomDisco(room);
 						}
 					}
 				}
@@ -1249,7 +1306,7 @@ function createBaseConnection(
 					}
 					else {
 						handleMessage({
-							account: client.jid!.bare(),
+							account: jid,
 							message: {
 								room, // TODO is this correct for non-anonymous MUCs?
 								from: from,
@@ -1269,13 +1326,12 @@ function createBaseConnection(
 							isNew,
 						});
 
-						const account = accountsSig.value.find(x => x.client === client);
-						const roomInfo = account?.rooms.get(room.toString());
+						const roomInfo = rooms.get(room.toString());
 
 						if(typeof roomInfo !== "undefined") {
 							const isMe = from.resource === roomInfo.connectedNick;
 
-							upsertCounterpart(client, room, entry => {
+							upsertCounterpart(room, entry => {
 								if(
 									entry.lastMessageTimestamp === null ||
 										entry.lastMessageTimestamp.getTime() < timestamp.getTime() ||
@@ -1314,16 +1370,14 @@ function createBaseConnection(
 			}
 		}
 		else if(elem.getAttr("type") === "chat") {
-			const account = getAccount(client);
-
-			if(typeof from !== "undefined" && from.equals(account.jid)) {
+			if(typeof from !== "undefined" && from.equals(jid)) {
 				const carbonsElem = elem.getChild("sent", "urn:xmpp:carbons:2");
 				if(typeof carbonsElem !== "undefined") {
 					const forwardedElem = carbonsElem.getChild("forwarded", "urn:xmpp:forward:0");
 					if(typeof forwardedElem !== "undefined") {
 						const messageElem = forwardedElem.getChild("message", "jabber:client");
 						if(typeof messageElem !== "undefined") {
-							handleMessageStanza(client, messageElem);
+							handleMessageStanza(messageElem);
 						}
 					}
 				}
@@ -1401,7 +1455,7 @@ function createBaseConnection(
 			timestamp = timestamp ?? new Date();
 
 			if(typeof from !== "undefined") {
-				if(isNew) handleChatStateUpdate(client, elem, from.bare());
+				if(isNew) handleChatStateUpdate(elem, from.bare());
 
 				const reactionsElem = elem.getChild("reactions", "urn:xmpp:reactions:0");
 				if(typeof reactionsElem !== "undefined") {
@@ -1474,7 +1528,7 @@ function createBaseConnection(
 					const isMe = from.bare().equals(client.jid!.bare());
 					const conversation = isMe ? to : from.bare();
 
-					upsertCounterpart(client, conversation, entry => {
+					upsertCounterpart(conversation, entry => {
 						if(
 							entry.lastMessageTimestamp === null ||
 								entry.lastMessageTimestamp.getTime() < timestamp.getTime() ||
@@ -1515,7 +1569,7 @@ function createBaseConnection(
 					}
 
 					handleMessage({
-						account: client.jid!.bare(),
+						account: jid,
 						message: {
 							room: null,
 							from,
@@ -1562,7 +1616,7 @@ function createBaseConnection(
 							);
 						}
 
-						handleMessageStanza(client, messageElem, id, timestamp);
+						handleMessageStanza(messageElem, id, timestamp);
 					}
 				}
 			}
@@ -1576,7 +1630,6 @@ function createBaseConnection(
 							const id = itemElem.getAttr("id");
 							if(typeof id === "string") {
 								handlePubsubItem(
-									client,
 									from,
 									node,
 									{
@@ -1591,7 +1644,7 @@ function createBaseConnection(
 							const id = retractElem.getAttr("id");
 
 							if(typeof id === "string") {
-								handlePubsubRetract(client, from, node, id);
+								handlePubsubRetract(from, node, id);
 							}
 						});
 					}
@@ -1600,7 +1653,7 @@ function createBaseConnection(
 		}
 	}
 
-	async function saveAvatarToCache(client: xmppClient.Client, contentB64: string, type: string) {
+	async function saveAvatarToCache(contentB64: string, type: string) {
 		const content = fromBase64(contentB64);
 
 		const hash = await crypto.subtle.digest("SHA-1", content)
@@ -1609,8 +1662,7 @@ function createBaseConnection(
 		const blob = new Blob([content], {type});
 		const url = URL.createObjectURL(blob);
 
-		const account = getAccount(client);
-		account.avatarStates.set(hashStr, LoadState.wrapValue(url));
+		avatarStates.set(hashStr, LoadState.wrapValue(url));
 
 		cacheSig.value.setItem(
 			"avatarImages/" + encodeURIComponent(hashStr),
@@ -1619,23 +1671,20 @@ function createBaseConnection(
 	}
 
 	function startRequestingAvatar(
-		client: xmppClient.Client,
 		target: JID,
 		expected: Array<AvatarMetadata | string>,
 	) {
 		{
-			const account = getAccount(client);
-
 			for(const ref of expected) {
 				const hash = typeof ref === "string" ? ref : ref.hash;
 
-				const state = account.avatarStates.get(hash);
+				const state = avatarStates.get(hash);
 				if(typeof state !== "undefined") {
 					console.log("Already loading this avatar");
 					return;
 				}
 
-				account.avatarStates.set(hash, LoadState.loading);
+				avatarStates.set(hash, LoadState.loading);
 			}
 		}
 
@@ -1653,7 +1702,6 @@ function createBaseConnection(
 
 					console.log("got avatar from cache for", target);
 
-					const account = getAccount(client);
 					for(let i = 0; i < expected.length; i++) {
 						const entry = cacheResults[i]!;
 						const content = fromBase64(entry.contentB64);
@@ -1663,7 +1711,7 @@ function createBaseConnection(
 
 						const ref = expected[i];
 
-						account.avatarStates.set(typeof ref === "string" ? ref : ref.hash, LoadState.wrapValue(url));
+						avatarStates.set(typeof ref === "string" ? ref : ref.hash, LoadState.wrapValue(url));
 					}
 
 					return;
@@ -1690,7 +1738,7 @@ function createBaseConnection(
 
 						if(type === null || contentB64 === null) continue;
 
-						calls.push(saveAvatarToCache(client, contentB64, type));
+						calls.push(saveAvatarToCache(contentB64, type));
 					}
 
 					await Promise.all(calls);
@@ -1708,7 +1756,7 @@ function createBaseConnection(
 							const result = await fetchPubsubItem(client, "urn:xmpp:avatar:data", ref.hash);
 							const contentB64 = result.element.getChildText("data", "urn:xmpp:avatar:data");
 							if(contentB64 !== null) {
-								return saveAvatarToCache(client, contentB64, ref.type);
+								return saveAvatarToCache(contentB64, ref.type);
 							}
 						}),
 					);
@@ -1718,13 +1766,12 @@ function createBaseConnection(
 				console.error(err);
 			})
 			.then(() => {
-				const account = getAccount(client);
 				for(const ref of expected) {
 					const hash = typeof ref === "string" ? ref : ref.hash;
 
-					const value = account.avatarStates.get(hash);
+					const value = avatarStates.get(hash);
 					if(typeof value === "undefined" || value.state !== "done") {
-						account.avatarStates.set(
+						avatarStates.set(
 							hash,
 							LoadState.wrapError(new Error("Didn't receive avatar image from request")),
 						);
@@ -1733,7 +1780,7 @@ function createBaseConnection(
 			});
 	}
 
-	async function fetchRoomDisco(client: xmppClient.Client, roomJID: JID): Promise<RoomDiscoInfo> {
+	async function fetchRoomDisco(roomJID: JID): Promise<RoomDiscoInfo> {
 		return client.iqCaller.get(
 			xml("query", {xmlns: "http://jabber.org/protocol/disco#info"}),
 			roomJID.toString(),
@@ -1784,10 +1831,8 @@ function createBaseConnection(
 			});
 	}
 
-	async function fetchRoomConfig(accountJID: JID, roomJID: JID): Promise<RoomConfig> {
-		const account = getAccount(accountJID);
-
-		return account.client.iqCaller.get(
+	async function fetchRoomConfig(roomJID: JID): Promise<RoomConfig> {
+		return client.iqCaller.get(
 			xml("query", {xmlns: "http://jabber.org/protocol/muc#owner"}),
 			roomJID.toString(),
 		)
@@ -1823,41 +1868,39 @@ function createBaseConnection(
 			});
 	}
 
-	function fetchAndStoreRoomDisco(client: xmppClient.Client, roomJID: JID) {
+	function fetchAndStoreRoomDisco(roomJID: JID) {
 		{
-			const account = getAccount(client);
-			const info = account.rooms.get(roomJID.toString());
+			const info = rooms.get(roomJID.toString());
 			if(typeof info === "undefined") {
 				console.warn("trying to fetch disco for unknown room");
 				return;
 			}
 
 			if(info.infoState.state !== "done") {
-				account.rooms.set(roomJID.toString(), {...info, infoState: LoadState.loading});
+				rooms.set(roomJID.toString(), {...info, infoState: LoadState.loading});
 			}
 		}
 
-		fetchRoomDisco(client, roomJID)
+		fetchRoomDisco(roomJID)
 			.then(info => {
 				if(info.avatarHashes.length > 0) {
-					startRequestingAvatar(client, roomJID, info.avatarHashes);
+					startRequestingAvatar(roomJID, info.avatarHashes);
 				}
 
 				return info;
 			})
 			.then(LoadState.wrapValue, LoadState.wrapError)
 			.then(newState => {
-				const account = getAccount(client);
-				const info = account.rooms.get(roomJID.toString());
+				const info = rooms.get(roomJID.toString());
 				if(typeof info === "undefined") {
-					return account;
+					return;
 				}
 
-				account.rooms.set(roomJID.toString(), {...info, infoState: newState});
+				rooms.set(roomJID.toString(), {...info, infoState: newState});
 			});
 	}
 
-	function onClientElement(client: xmppClient.Client, elem: Element) {
+	function onClientElement(elem: Element) {
 		console.log("onClientElement", elem);
 
 		if(elem.getName() === "presence" && elem.getNS() === "jabber:client") {
@@ -1888,17 +1931,15 @@ function createBaseConnection(
 						if(role === "none") {
 							callback?.reject(new Error("Somehow didn't join"));
 
-							const account = getAccount(client);
-
-							const oldInfo = account.rooms.get(srcJID.bare().toString());
+							const oldInfo = rooms.get(srcJID.bare().toString());
 
 							if(typeof oldInfo !== "undefined") {
-								account.rooms.set(srcJID.bare().toString(), {
+								rooms.set(srcJID.bare().toString(), {
 									...oldInfo,
 									connected: false,
 								});
 
-								connectMUCFromBookmarks(client, srcJID.bare());
+								connectMUCFromBookmarks(srcJID.bare());
 							}
 						}
 						else {
@@ -1906,9 +1947,7 @@ function createBaseConnection(
 
 							let shouldFetchDisco = false;
 
-							const account = getAccount(client);
-
-							const oldInfo = account.rooms.get(srcJID.bare().toString());
+							const oldInfo = rooms.get(srcJID.bare().toString());
 							if(typeof oldInfo === "undefined") {
 								console.log("Tried to update room missing in list");
 							}
@@ -1924,12 +1963,12 @@ function createBaseConnection(
 										connected: true,
 										nick: srcJID.resource,
 									};
-									account.rooms.set(srcJID.bare().toString(), newInfo);
+									rooms.set(srcJID.bare().toString(), newInfo);
 									newInfo.internalMutable.lastSeen = new Date();
 								}
 							}
 
-							if(shouldFetchDisco) fetchAndStoreRoomDisco(client, srcJID.bare());
+							if(shouldFetchDisco) fetchAndStoreRoomDisco(srcJID.bare());
 						}
 					}
 					else {
@@ -1940,14 +1979,14 @@ function createBaseConnection(
 				batch(() => {
 					const affiliation = itemElem?.getAttr("affiliation");
 					if(typeof affiliation === "string") {
-						upsertCounterpart(client, srcJID, current => ({
+						upsertCounterpart(srcJID, current => ({
 							...current,
 							affiliation,
 						}));
 					}
 
 					if(typeof role === "string") {
-						upsertCounterpart(client, srcJID, current => ({
+						upsertCounterpart(srcJID, current => ({
 							...current,
 							role,
 						}));
@@ -1957,7 +1996,7 @@ function createBaseConnection(
 					if(typeof occupantIDElem !== "undefined") {
 						const occupantID = occupantIDElem.getAttr("id");
 						if(typeof occupantID === "string") {
-							upsertCounterpart(client, srcJID, current => ({
+							upsertCounterpart(srcJID, current => ({
 								...current,
 								occupantID,
 							}));
@@ -2009,20 +2048,19 @@ function createBaseConnection(
 								);
 							}
 
-							const account = getAccount(client);
-							const entry = account.rooms.get(roomJID.toString());
+							const entry = rooms.get(roomJID.toString());
 
 							if(typeof entry !== "undefined") {
-								account.rooms.set(roomJID.toString(), {
+								rooms.set(roomJID.toString(), {
 									...entry,
 									error,
 									connected: false,
 								});
 
 								setTimeout(() => {
-									const entryNow = account.rooms.get(roomJID.toString());
+									const entryNow = rooms.get(roomJID.toString());
 									if(typeof entryNow !== "undefined" && !entryNow.connected && !entryNow.stopped) {
-										connectMUCFromBookmarks(client, roomJID);
+										connectMUCFromBookmarks(roomJID);
 									}
 								}, ROOM_RETRY_DELAY);
 							}
@@ -2037,7 +2075,7 @@ function createBaseConnection(
 				}
 			}
 			else if(type === "unavailable") {
-				upsertCounterpart(client, contact, entry => {
+				upsertCounterpart(contact, entry => {
 					const presences: typeof entry.presences = entry.presences === null ?
 						new Map() :
 						new Map(entry.presences);
@@ -2050,7 +2088,7 @@ function createBaseConnection(
 				});
 			}
 			else if(type === "subscribe") {
-				upsertCounterpart(client, contact, current => ({...current, requestingMySubscription: true}));
+				upsertCounterpart(contact, current => ({...current, requestingMySubscription: true}));
 			}
 			else if(typeof type === "undefined") {
 				const showValue = elem.getChildText("show");
@@ -2065,7 +2103,7 @@ function createBaseConnection(
 
 				const statusText = elem.getChildText("status");
 
-				upsertCounterpart(client, contact, entry => {
+				upsertCounterpart(contact, entry => {
 					let presences: Map<string, Presence>;
 					if(entry.presences === null) presences = new Map();
 					else presences = new Map(entry.presences);
@@ -2093,111 +2131,48 @@ function createBaseConnection(
 			console.log("got presence from", srcJID.toString(), ", interpreting as from", contact.toString(), ", avatar hashes:", avatarHashes);
 
 			if(typeof avatarHashes !== "undefined") {
-				upsertCounterpart(client, contact, current => ({...current, avatars: avatarHashes}));
+				upsertCounterpart(contact, current => ({...current, avatars: avatarHashes}));
 			}
 
 			if(typeof avatarHashes !== "undefined" && avatarHashes.length > 0) {
-				startRequestingAvatar(client, contact, avatarHashes);
+				startRequestingAvatar(contact, avatarHashes);
 			}
 		}
 		else if(elem.getName() === "message") {
-			handleMessageStanza(client, elem);
+			handleMessageStanza(elem);
 		}
 	}
 
-	function loadAccounts() {
-		const infoStr = localStorage.getItem("deepishAccount");
-		if(infoStr === null) {
-			accountsSig.value = [];
-		}
-		else {
-			const info = JSON.parse(infoStr) as {
-				jid: string;
-				token: unknown;
-				userAgent: string;
-				resource?: string;
-			};
-
-			if(typeof info.resource === "undefined") {
-				accountsSig.value = [];
-			}
-			else {
-				const jid = parseJID(info.jid);
-
-				const client = createXMPPClientForAccount(jid, info.token, info.userAgent, info.resource, {
-					online: onClientOnline,
-					status: onClientStatusChanged,
-					error: onClientError,
-					element: onClientElement,
-				}, onClientError);
-
-				{
-					const current = accountsSig.value;
-					current.forEach(account => {
-						account.client.stop();
-					});
-
-					accountsSig.value = [
-						{
-							jid,
-							client,
-							lastError: null,
-							connected: false,
-							counterparts: new SignalMap(),
-							rooms: new SignalMap(),
-							avatarStates: new SignalMap(),
-							servicesState: LoadState.loading,
-							stopped: false,
-						} satisfies Account,
-					];
-				}
-
-				client.iqCallee.set("jabber:iq:roster", "query", async (req) => {
-					console.log("got roster update", req);
-
-					if(
-						req.from === null ||
-							req.from.equals(jid) ||
-
-							// I'm assuming xmpp.js adds this? The raw message has no from at all
-							(req.from.domain === jid.domain && req.from.local === "")
-					) {
-						const elem = (req as unknown as {element: Element}).element; // ???
-						handleRosterUpdate(jid, elem.getChildren("item"), false);
-
-						return true; // ???
-					}
-					else {
-						console.log("ignoring roster update since from isn't me");
-					}
-				});
-			}
-		}
-	}
-
-	function pingRoom(accountJID: JID, roomJID: JID) {
-		const account = getAccount(accountJID);
-		const room = account.rooms.get(roomJID.toString());
+	function pingRoom(roomJID: JID) {
+		const room = rooms.get(roomJID.toString());
 
 		if(typeof room !== "undefined" && room.connected && room.connectedNick !== null) {
-			account.client.iqCaller.get(
+			client.iqCaller.get(
 				xml("ping", "urn:xmpp:ping"),
 				new JID(room.jid.local, room.jid.domain, room.connectedNick).toString(),
 			)
 				.then(() => {
 					room.internalMutable.lastSeen = new Date();
 				}, () => {
-					const currentEntry = account.rooms.get(room.jid.toString());
+					const currentEntry = rooms.get(room.jid.toString());
 					if(typeof currentEntry !== "undefined") {
-						account.rooms.set(room.jid.toString(), {...currentEntry, connected: false});
-						connectMUCFromBookmarks(account.client, roomJID);
+						rooms.set(room.jid.toString(), {...currentEntry, connected: false});
+						connectMUCFromBookmarks(roomJID);
 					}
 				});
 		}
 	}
 
+	function pingRooms() {
+		rooms.values().forEach(room => {
+			if(room.connected && new Date().getTime() - room.internalMutable.lastSeen.getTime() > 60000) {
+				pingRoom(room.jid);
+			}
+		});
+	}
+
 	const listeners: {
-		[K in keyof AppEventMap]: Set<(evt: AppEventMap[K]) => void>;
+		[K in keyof ConnectionEventMap]: Set<(evt: ConnectionEventMap[K]) => void>;
 	} = {
 		message: new Set(),
 		messageEdit: new Set(),
@@ -2205,15 +2180,15 @@ function createBaseConnection(
 		messageRemove: new Set(),
 	};
 
-	function addEventListener<K extends keyof AppEventMap>(event: K, listener: (evt: AppEventMap[K]) => void) {
+	function addEventListener<K extends keyof ConnectionEventMap>(event: K, listener: (evt: ConnectionEventMap[K]) => void) {
 		listeners[event].add(listener);
 	}
 
-	function removeEventListener<K extends keyof AppEventMap>(event: K, listener: (evt: AppEventMap[K]) => void) {
+	function removeEventListener<K extends keyof ConnectionEventMap>(event: K, listener: (evt: ConnectionEventMap[K]) => void) {
 		listeners[event].delete(listener);
 	}
 
-	function emit<K extends keyof AppEventMap>(eventType: K, event: AppEventMap[K]) {
+	function emit<K extends keyof ConnectionEventMap>(eventType: K, event: ConnectionEventMap[K]) {
 		listeners[eventType].forEach(listener => {
 			try {
 				listener(event);
@@ -2231,18 +2206,15 @@ function createBaseConnection(
 
 		const baseLevel = notificationsSettingsSig.value[category] ?? DEFAULT_NOTIFICATIONS_SETTINGS[category];
 
-		const account = accountsSig.value.find(x => x.jid.equals(evt.account));
-		if(typeof account === "undefined") return false;
-
 		if(!evt.isNew) return false;
 
 		if(evt.message.room === null) {
-			if(evt.message.from.equals(evt.account)) return false;
+			if(evt.message.from.equals(jid)) return false;
 
 			return baseLevel !== NotificationLevel.Never;
 		}
 		else {
-			const room = account.rooms.get(evt.message.room.toString());
+			const room = rooms.get(evt.message.room.toString());
 			if(typeof room === "undefined") return false;
 
 			const level = room.notificationLevel ?? baseLevel;
@@ -2262,15 +2234,12 @@ function createBaseConnection(
 	}
 
 	async function requestArchive(
-		accountJID: JID,
 		entity: JID,
 		params: {with?: JID},
 		before?: string,
 		options: {max?: number} = {},
 	) {
-		const account = getAccount(accountJID);
-
-		return account.client.iqCaller.request(
+		return client.iqCaller.request(
 			xml(
 				"iq",
 				{type: "set", to: entity.toString()},
@@ -2327,14 +2296,11 @@ function createBaseConnection(
 	}
 
 	async function sendMessageToCounterpart(
-		accountJID: JID,
 		targetJID: JID,
 		message: {body: string},
 		options: SendMessageOptions = {},
 	) {
 		const localID = xid();
-
-		const account = getAccount(accountJID);
 
 		const contentResult = convertMarkdownForSend(message.body, options.replyingTo);
 
@@ -2372,19 +2338,19 @@ function createBaseConnection(
 			),
 		);
 
-		await account.client.send(elem);
+		await client.send(elem);
 
 		if(typeof options.replaces === "undefined") {
 			handleMessage({
-				account: accountJID,
+				account: jid,
 				message: {
 					room: null,
-					from: accountJID,
+					from: jid,
 					occupantID: null,
 					to: targetJID,
 					content: contentResult.content,
 					ids: [
-						new StanzaID(StanzaIDType.Element, accountJID, localID),
+						new StanzaID(StanzaIDType.Element, jid, localID),
 					],
 					localID,
 					timestamp: new Date(),
@@ -2407,7 +2373,7 @@ function createBaseConnection(
 			// Non-groupchat messages don't get reflected, so we don't know the stanza ID
 			// Make an archive request to get the latest message
 			// (which may or may not be this one, but fine for the purpose of displayed sync)
-			requestArchive(account.jid, account.jid, {with: targetJID}, undefined, {max: 1});
+			requestArchive(jid, {with: targetJID}, undefined, {max: 1});
 		}
 		else {
 			emit("messageEdit", {
@@ -2415,22 +2381,19 @@ function createBaseConnection(
 					content: contentResult.content,
 					timestamp: new Date(),
 				},
-				target: new StanzaID(StanzaIDType.Element, accountJID, options.replaces),
+				target: new StanzaID(StanzaIDType.Element, jid, options.replaces),
 				room: null,
-				from: {jid: accountJID},
+				from: {jid},
 			});
 		}
 	}
 
 	async function sendMessageToRoom(
-		accountJID: JID,
 		roomJID: JID,
 		message: {body: string},
 		options: SendMessageOptions = {},
 	) {
 		const id = xid();
-
-		const account = getAccount(accountJID);
 
 		const reflectDefer = Promise.withResolvers<void>();
 
@@ -2438,7 +2401,7 @@ function createBaseConnection(
 
 		const contentResult = convertMarkdownForSend(message.body, options.replyingTo);
 
-		await account.client.send(
+		await client.send(
 			xml(
 				"message",
 				{id, to: roomJID.toString(), type: "groupchat"},
@@ -2471,10 +2434,8 @@ function createBaseConnection(
 		await reflectDefer.promise;
 	}
 
-	async function retractMessageToCounterpart(accountJID: JID, targetJID: JID, messageID: string) {
-		const account = getAccount(accountJID);
-
-		await account.client.send(
+	async function retractMessageToCounterpart(targetJID: JID, messageID: string) {
+		await client.send(
 			xml(
 				"message",
 				{id: xid(), to: targetJID.toString(), type: "chat"},
@@ -2502,24 +2463,22 @@ function createBaseConnection(
 			removal: {type: "retract"},
 			target: new StanzaID(
 				StanzaIDType.Element,
-				accountJID,
+				jid,
 				messageID,
 			),
 			room: null,
-			from: {jid: accountJID},
+			from: {jid},
 		});
 	}
 
-	async function retractMessageToRoom(accountJID: JID, roomJID: JID, messageID: string) {
+	async function retractMessageToRoom(roomJID: JID, messageID: string) {
 		const id = xid();
-
-		const account = getAccount(accountJID);
 
 		const reflectDefer = Promise.withResolvers<void>();
 
 		outgoingMessages.set(id, reflectDefer);
 
-		await account.client.send(
+		await client.send(
 			xml(
 				"message",
 				{id, to: roomJID.toString(), type: "groupchat"},
@@ -2546,10 +2505,8 @@ function createBaseConnection(
 		await reflectDefer.promise;
 	}
 
-	async function moderateMessageToRoom(accountJID: JID, roomJID: JID, messageID: string) {
-		const account = getAccount(accountJID);
-
-		await account.client.iqCaller.set(
+	async function moderateMessageToRoom(roomJID: JID, messageID: string) {
+		await client.iqCaller.set(
 			xml(
 				"moderate",
 				{xmlns: "urn:xmpp:message-moderate:1", id: messageID},
@@ -2562,10 +2519,8 @@ function createBaseConnection(
 		);
 	}
 
-	async function sendMessageReactionsToRoom(accountJID: JID, roomJID: JID, messageID: string, reactions: string[]) {
+	async function sendMessageReactionsToRoom(roomJID: JID, messageID: string, reactions: string[]) {
 		const id = xid();
-
-		const account = getAccount(accountJID);
 
 		const reflectDefer = Promise.withResolvers<void>();
 
@@ -2574,7 +2529,7 @@ function createBaseConnection(
 		// Some clients send a fallback body, but the spec doesn't seem to expect that
 		// If we were to, it would probably be similar to replies
 
-		await account.client.send(
+		await client.send(
 			xml(
 				"message",
 				{id, to: roomJID.toString(), type: "groupchat"},
@@ -2596,14 +2551,11 @@ function createBaseConnection(
 	}
 
 	async function sendMessageReactionsToCounterpart(
-		accountJID: JID,
 		targetJID: JID,
 		messageID: string,
 		reactions: string[],
 	) {
-		const account = getAccount(accountJID);
-
-		await account.client.send(
+		await client.send(
 			xml(
 				"message",
 				{id: xid(), to: targetJID.toString(), type: "chat"},
@@ -2632,12 +2584,12 @@ function createBaseConnection(
 				null,
 				messageID,
 			),
-			from: {jid: accountJID},
+			from: {jid},
 		});
 	}
 
-	function markCounterpartAsVisible(accountJID: JID, target: JID) {
-		upsertCounterpart(accountJID, target, entry => {
+	function markCounterpartAsVisible(target: JID) {
+		upsertCounterpart(target, entry => {
 			if(entry.overrideVisibleTimestamp !== null || entry.lastMessageTimestamp !== null) {
 				return entry;
 			}
@@ -2646,15 +2598,13 @@ function createBaseConnection(
 		});
 	}
 
-	function acceptFriendRequest(accountJID: JID, target: JID) {
-		const account = getAccount(accountJID);
-
-		const info = account.counterparts.get(target.toString());
+	function acceptFriendRequest(target: JID) {
+		const info = counterparts.get(target.toString());
 		if(typeof info === "undefined") throw new Error("Unknown counterpart");
 
 		if(!info.requestingMySubscription) throw new Error("No such friend request");
 
-		account.client.send(
+		client.send(
 			xml(
 				"presence",
 				{to: target.toString(), type: "subscribed"},
@@ -2665,7 +2615,7 @@ function createBaseConnection(
 			info.rosterEntry === null ||
 				(!info.rosterEntry.requestingSubscriptionTo && !info.rosterEntry.subscriptionTo)
 		) {
-			account.client.send(
+			client.send(
 				xml(
 					"presence",
 					{to: target.toString(), type: "subscribe"},
@@ -2674,16 +2624,14 @@ function createBaseConnection(
 		}
 	}
 
-	function rejectFriendRequest(accountJID: JID, target: JID) {
+	function rejectFriendRequest(target: JID) {
 		{
-			const account = getAccount(accountJID);
-
-			const info = account.counterparts.get(target.toString());
+			const info = counterparts.get(target.toString());
 			if(typeof info === "undefined") throw new Error("Unknown counterpart");
 
 			if(!info.requestingMySubscription) throw new Error("No such friend request");
 
-			account.client.send(
+			client.send(
 				xml(
 					"presence",
 					{to: target.toString(), type: "unsubscribed"},
@@ -2691,14 +2639,12 @@ function createBaseConnection(
 			);
 		}
 
-		upsertCounterpart(accountJID, target, current => ({...current, requestingMySubscription: false}));
+		upsertCounterpart(target, current => ({...current, requestingMySubscription: false}));
 	}
 
-	async function removeFriend(accountJID: JID, target: JID) {
+	async function removeFriend(target: JID) {
 		{
-			const account = getAccount(accountJID);
-
-			await account.client.iqCaller.set(
+			await client.iqCaller.set(
 				xml(
 					"query",
 					{xmlns: "jabber:iq:roster"},
@@ -2711,11 +2657,10 @@ function createBaseConnection(
 		}
 
 		{
-			const account = getAccount(accountJID);
-			const entry = account.counterparts.get(target.toString());
+			const entry = counterparts.get(target.toString());
 
 			if(typeof entry !== "undefined") {
-				account.counterparts.set(
+				counterparts.set(
 					target.toString(),
 					{
 						...entry,
@@ -2726,25 +2671,23 @@ function createBaseConnection(
 		}
 	}
 
-	function sendFriendRequest(accountJID: JID, target: JID) {
+	function sendFriendRequest(target: JID) {
 		{
-			const account = getAccount(accountJID);
-
-			const entry = account.counterparts.get(target.toString());
+			const entry = counterparts.get(target.toString());
 
 			if(typeof entry !== "undefined" && entry.rosterEntry !== null && entry.rosterEntry.subscriptionTo) {
 				throw new Error("That user is already your friend");
 			}
 
 			// should trigger server to add target to roster
-			account.client.send(
+			client.send(
 				xml(
 					"presence",
 					{to: target.toString(), type: "subscribe"},
 				),
 			);
 
-			account.client.send(
+			client.send(
 				xml(
 					"presence",
 					{to: target.toString(), type: "subscribed"},
@@ -2752,7 +2695,7 @@ function createBaseConnection(
 			);
 		}
 
-		upsertCounterpart(accountJID, target, current => ({
+		upsertCounterpart(target, current => ({
 			...current,
 			rosterEntry: {
 				subscriptionFrom: true,
@@ -2762,20 +2705,16 @@ function createBaseConnection(
 		}));
 	}
 
-	async function fetchRoomInfo(accountJID: JID, roomJID: JID) {
-		const account = getAccount(accountJID);
-
-		return fetchRoomDisco(account.client, roomJID);
+	async function fetchRoomInfo(roomJID: JID) {
+		return fetchRoomDisco(roomJID);
 	}
 
-	function setComposingToCounterpart(accountJID: JID, target: JID, composing: boolean) {
+	function setComposingToCounterpart(target: JID, composing: boolean) {
 		{
-			const account = getAccount(accountJID);
-
-			const counterpart = account.counterparts.get(target.toString());
+			const counterpart = counterparts.get(target.toString());
 			if(counterpart?.lastReportedComposing === composing) return;
 
-			account.client.send(
+			client.send(
 				xml(
 					"message",
 					{type: "chat", to: target.toString()},
@@ -2786,19 +2725,17 @@ function createBaseConnection(
 			);
 		}
 
-		upsertCounterpart(accountJID, target, current => ({
+		upsertCounterpart(target, current => ({
 			...current,
 			lastReportedComposing: composing,
 		}));
 	}
 
-	function setComposingToRoom(accountJID: JID, roomJID: JID, composing: boolean) {
-		const account = getAccount(accountJID);
-
-		const room = account.rooms.get(roomJID.toString());
+	function setComposingToRoom(roomJID: JID, composing: boolean) {
+		const room = rooms.get(roomJID.toString());
 		if(room?.internalMutable.lastReportedComposing === composing) return;
 
-		account.client.send(
+		client.send(
 			xml(
 				"message",
 				{type: "groupchat", to: roomJID.toString()},
@@ -2816,16 +2753,14 @@ function createBaseConnection(
 		}
 	}
 
-	async function joinRoom(accountJID: JID, room: JID, nick?: string) {
-		const account = getAccount(accountJID);
-
-		if(account.rooms.has(room.toString())) {
+	async function joinRoom(room: JID, nick?: string) {
+		if(rooms.has(room.toString())) {
 			// already joined
 			return;
 		}
 
 		{
-			const elem = await account.client.iqCaller.get(
+			const elem = await client.iqCaller.get(
 				xml("query", {xmlns: "http://jabber.org/protocol/disco#info"}),
 				room.toString(),
 			);
@@ -2844,11 +2779,10 @@ function createBaseConnection(
 
 			if(!isRoom) throw new Error("That doesn't appear to be a room");
 
-			const connectNick = nick ?? accountJID.local;
+			const connectNick = nick ?? jid.local;
 
 			{
-				const account = getAccount(accountJID);
-				account.rooms.set(room.toString(), {
+				rooms.set(room.toString(), {
 					jid: room,
 					nick: nick ?? null,
 
@@ -2874,19 +2808,18 @@ function createBaseConnection(
 
 				newRooms.set(room.toString(), defer);
 
-				connectMUC(account.client, room, connectNick);
+				connectMUC(client, room, connectNick);
 
 				await defer.promise;
 			}
 			catch(ex) {
-				const account = getAccount(accountJID);
-				account.rooms.delete(room.toString());
+				rooms.delete(room.toString());
 
 				throw ex;
 			}
 
 			await publishPubsubItem(
-				account.client,
+				client,
 				"urn:xmpp:bookmarks:1",
 				xml(
 					"item",
@@ -2906,40 +2839,38 @@ function createBaseConnection(
 		}
 	}
 
-	function disconnectRoom(account: Account, room: Room) {
-		return account.client.send(
+	function disconnectRoom(room: Room) {
+		return client.send(
 			xml(
 				"presence",
 				{
 					id: xid(),
-					to: new JID(room.jid.local, room.jid.domain, room.nick ?? account.jid.local),
+					to: new JID(room.jid.local, room.jid.domain, room.nick ?? jid.local),
 					type: "unavailable",
 				},
 			),
 		);
 	}
 
-	async function leaveRoom(accountJID: JID, roomJID: JID) {
+	async function leaveRoom(roomJID: JID) {
 		{
-			const account = getAccount(accountJID);
-
-			const room = account.rooms.get(roomJID.toString());
+			const room = rooms.get(roomJID.toString());
 			if(typeof room === "undefined") return;
 
-			account.rooms.set(roomJID.toString(), {
+			rooms.set(roomJID.toString(), {
 				...room,
 				stopped: true,
 			});
 
-			disconnectRoom(account, room);
+			disconnectRoom(room);
 
-			await retractPubsubItem(account.client, "urn:xmpp:bookmarks:1", roomJID.toString(), true);
+			await retractPubsubItem(client, "urn:xmpp:bookmarks:1", roomJID.toString(), true);
 		}
 
-		getAccount(accountJID).rooms.delete(roomJID.toString());
+		rooms.delete(roomJID.toString());
 	}
 
-	async function createRoom(accountJID: JID, room: JID, params: RoomCreateParams) {
+	async function createRoom(room: JID, params: RoomCreateParams) {
 		if(room.local === "") throw new Error("Room ID cannot be empty");
 
 		const realParams = {
@@ -2949,11 +2880,9 @@ function createBaseConnection(
 			"muc#roomconfig_roomname": params.name,
 		};
 
-		const account = getAccount(accountJID);
+		if(rooms.has(room.toString())) throw new Error("A room by that JID already exists");
 
-		if(account.rooms.has(room.toString())) throw new Error("A room by that JID already exists");
-
-		const nick = accountJID.local;
+		const nick = jid.local;
 
 		let joinInfo;
 
@@ -2962,7 +2891,7 @@ function createBaseConnection(
 			const defer = Promise.withResolvers<RoomJoinCallbackInfo>();
 			newRooms.set(room.toString(), defer);
 
-			connectMUC(account.client, room, nick);
+			connectMUC(client, room, nick);
 			joinInfo = await defer.promise;
 		}
 
@@ -2975,7 +2904,7 @@ function createBaseConnection(
 
 			console.log("fetching form");
 
-			const formResult = await account.client.iqCaller.get(
+			const formResult = await client.iqCaller.get(
 				xml(
 					"query",
 					{xmlns: "http://jabber.org/protocol/muc#owner"},
@@ -3007,7 +2936,7 @@ function createBaseConnection(
 
 			console.log("finalizing room creation");
 
-			await account.client.iqCaller.set(
+			await client.iqCaller.set(
 				xml(
 					"query",
 					{xmlns: "http://jabber.org/protocol/muc#owner"},
@@ -3036,7 +2965,7 @@ function createBaseConnection(
 		finally {
 			// Leave room
 
-			account.client.send(
+			client.send(
 				xml(
 					"presence",
 					{id: xid(), to: new JID(room.local, room.domain, nick), type: "unavailable"},
@@ -3045,7 +2974,7 @@ function createBaseConnection(
 		}
 	}
 
-	async function changeRoomConfig(accountJID: JID, room: JID, params: RoomEditParams) {
+	async function changeRoomConfig(room: JID, params: RoomEditParams) {
 		const realParams: Record<string, string> = {};
 
 		if(typeof params.name !== "undefined") realParams["muc#roomconfig_roomname"] = params.name;
@@ -3056,9 +2985,7 @@ function createBaseConnection(
 			realParams["muc#roomconfig_membersonly"] = params.membersOnly.toString();
 		}
 
-		const account = getAccount(accountJID);
-
-		const formResult = await account.client.iqCaller.get(
+		const formResult = await client.iqCaller.get(
 			xml(
 				"query",
 				{xmlns: "http://jabber.org/protocol/muc#owner"},
@@ -3086,7 +3013,7 @@ function createBaseConnection(
 
 		if(missingFields.size > 0) throw new Error("Server is missing required functionality");
 
-		await account.client.iqCaller.set(
+		await client.iqCaller.set(
 			xml(
 				"query",
 				{xmlns: "http://jabber.org/protocol/muc#owner"},
@@ -3113,10 +3040,8 @@ function createBaseConnection(
 		);
 	}
 
-	async function setRoomAvatar(accountJID: JID, roomJID: JID, value: ImageInfo) {
-		const account = getAccount(accountJID);
-
-		const existingVCardQuery = account.client.iqCaller.get(
+	async function setRoomAvatar(roomJID: JID, value: ImageInfo) {
+		const existingVCardQuery = client.iqCaller.get(
 			xml("vCard", "vcard-temp"),
 			roomJID.toString(),
 		)
@@ -3153,19 +3078,17 @@ function createBaseConnection(
 			),
 		);
 
-		await account.client.iqCaller.set(
+		await client.iqCaller.set(
 			vCard,
 			roomJID.toString(),
 		);
 
-		fetchAndStoreRoomDisco(account.client, roomJID);
+		fetchAndStoreRoomDisco(roomJID);
 	}
 
-	async function submitDisplayedUpdateInner(accountJID: JID, targetJID: JID, lastReadMessageID: string, isRoom: boolean) {
-		const account = getAccount(accountJID);
-
+	async function submitDisplayedUpdateInner(targetJID: JID, lastReadMessageID: string, isRoom: boolean) {
 		publishPubsubItem(
-			account.client,
+			client,
 			"urn:xmpp:mds:displayed:0",
 			xml(
 				"item",
@@ -3177,7 +3100,7 @@ function createBaseConnection(
 						"stanza-id",
 						{
 							xmlns: "urn:xmpp:sid:0",
-							by: (isRoom ? targetJID : accountJID).toString(), id: lastReadMessageID,
+							by: (isRoom ? targetJID : jid).toString(), id: lastReadMessageID,
 						},
 					),
 				),
@@ -3193,8 +3116,8 @@ function createBaseConnection(
 
 	const currentDisplayedUpdates = new Map<string, string>();
 
-	function submitDisplayedUpdate(accountJID: JID, targetJID: JID, lastReadMessageID: string, isRoom: boolean) {
-		const key = encodeURIComponent(accountJID.toString()) + "/" + encodeURIComponent(targetJID.toString());
+	function submitDisplayedUpdate(targetJID: JID, lastReadMessageID: string, isRoom: boolean) {
+		const key = encodeURIComponent(jid.toString()) + "/" + encodeURIComponent(targetJID.toString());
 		const running = currentDisplayedUpdates.has(key);
 		currentDisplayedUpdates.set(key, lastReadMessageID);
 
@@ -3204,7 +3127,7 @@ function createBaseConnection(
 		}
 
 		function task(value: string) {
-			submitDisplayedUpdateInner(accountJID, targetJID, value, isRoom)
+			submitDisplayedUpdateInner(targetJID, value, isRoom)
 				.catch(console.error)
 				.then(() => {
 					if(currentDisplayedUpdates.get(key) !== value) {
@@ -3219,20 +3142,18 @@ function createBaseConnection(
 		task(lastReadMessageID);
 	}
 
-	function markCounterpartAsRead(accountJID: JID, targetJID: JID, lastReadMessageID: string, isRoom: boolean) {
-		upsertCounterpart(accountJID, targetJID, current => ({
+	function markCounterpartAsRead(targetJID: JID, lastReadMessageID: string, isRoom: boolean) {
+		upsertCounterpart(targetJID, current => ({
 			...current,
 			lastReadMessageID,
 		}));
 
-		submitDisplayedUpdate(accountJID, targetJID, lastReadMessageID, isRoom);
+		submitDisplayedUpdate(targetJID, lastReadMessageID, isRoom);
 	}
 
-	async function setNick(accountJID: JID, value: string) {
-		const account = getAccount(accountJID);
-
+	async function setNick(value: string) {
 		await publishPubsubItem(
-			account.client,
+			client,
 			"http://jabber.org/protocol/nick",
 			xml(
 				"item",
@@ -3246,11 +3167,9 @@ function createBaseConnection(
 		);
 	}
 
-	async function setActivityText(accountJID: JID, value: string | null) {
-		const account = getAccount(accountJID);
-
+	async function setActivityText(value: string | null) {
 		await publishPubsubItem(
-			account.client,
+			client,
 			"http://jabber.org/protocol/activity",
 			xml(
 				"item",
@@ -3271,9 +3190,7 @@ function createBaseConnection(
 		);
 	}
 
-	async function setAvatar(accountJID: JID, value: ImageInfo) {
-		const account = getAccount(accountJID);
-
+	async function setAvatar(value: ImageInfo) {
 		const content = await value.content.bytes();
 		const hash = await crypto.subtle.digest("SHA-1", content);
 		const hashStr = toHex(new Uint8Array(hash));
@@ -3287,7 +3204,7 @@ function createBaseConnection(
 		);
 
 		await publishPubsubItem(
-			account.client,
+			client,
 			"urn:xmpp:avatar:data",
 			xml(
 				"item",
@@ -3301,7 +3218,7 @@ function createBaseConnection(
 		);
 
 		await publishPubsubItem(
-			account.client,
+			client,
 			"urn:xmpp:avatar:metadata",
 			xml(
 				"item",
@@ -3324,15 +3241,13 @@ function createBaseConnection(
 		);
 	}
 
-	async function setRoomRank(accountJID: JID, roomJID: JID, newRank: string) {
+	async function setRoomRank(roomJID: JID, newRank: string) {
 		{
-			const account = getAccount(accountJID);
-
-			const room = account.rooms.get(roomJID.toString());
+			const room = rooms.get(roomJID.toString());
 			if(typeof room === "undefined") throw new Error("Unknown room");
 
 			await publishRoomBookmarkExtension(
-				account.client,
+				client,
 				room,
 				xml(
 					"rank",
@@ -3343,11 +3258,10 @@ function createBaseConnection(
 		}
 
 		{
-			const account = getAccount(accountJID);
-			const entry = account.rooms.get(roomJID.toString());
+			const entry = rooms.get(roomJID.toString());
 
 			if(typeof entry !== "undefined") {
-				account.rooms.set(roomJID.toString(), {
+				rooms.set(roomJID.toString(), {
 					...entry,
 					rank: newRank,
 				});
@@ -3355,19 +3269,16 @@ function createBaseConnection(
 		}
 	}
 
-	async function reorderRoom(accountJID: JID, roomJID: JID, to: {before: JID | null; after: JID | null}) {
+	async function reorderRoom(roomJID: JID, to: {before: JID | null; after: JID | null}) {
 		async function task() {
-			const account = accountsSig.value.find(x => x.jid.equals(accountJID));
-			if(typeof account === "undefined") throw new Error("No such account");
-
 			const before = to.before === null ?
 				null :
-				account.rooms.get(to.before.toString());
+				rooms.get(to.before.toString());
 			if(typeof before === "undefined") throw new Error("Unknown anchor room");
 
 			const after = to.after === null ?
 				null :
-				account.rooms.get(to.after.toString());
+				rooms.get(to.after.toString());
 			if(typeof after === "undefined") throw new Error("Unknown anchor room");
 
 			if(before === null || after === null || before.rank !== after.rank) {
@@ -3376,18 +3287,17 @@ function createBaseConnection(
 					before === null ? null : before.rank,
 				);
 
-				await setRoomRank(accountJID, roomJID, newRank);
+				await setRoomRank(roomJID, newRank);
 			}
 			else {
 				// Too close, move up after anchor first
 
-				const roomsList = Array.from(account.rooms.values());
+				const roomsList = Array.from(rooms.values());
 				roomsList.sort((a, b) => compareRanks(a.rank, b.rank));
 
 				const idx = roomsList.indexOf(after);
 
 				await reorderRoom(
-					accountJID,
 					after.jid,
 					{after: idx > 0 ? roomsList[idx - 1].jid : null, before: before.jid},
 				);
@@ -3398,17 +3308,14 @@ function createBaseConnection(
 		await task();
 	}
 
-	async function setRoomNotificationLevel(accountJID: JID, roomJID: JID, level: NotificationLevel) {
-		const account = accountsSig.value.find(x => x.jid.equals(accountJID));
-		if(typeof account === "undefined") throw new Error("No such account");
-
-		const room = account.rooms.get(roomJID.toString());
+	async function setRoomNotificationLevel(roomJID: JID, level: NotificationLevel) {
+		const room = rooms.get(roomJID.toString());
 		if(typeof room === "undefined") throw new Error("Unknown room");
 
 		const content = xml(NOTIFICATION_LEVEL_ELEMENT_MAP[level]);
 
 		await publishRoomBookmarkExtension(
-			account.client,
+			client,
 			room,
 			xml(
 				"notify",
@@ -3418,11 +3325,10 @@ function createBaseConnection(
 		);
 
 		{
-			const account = getAccount(accountJID);
-			const entry = account.rooms.get(roomJID.toString());
+			const entry = rooms.get(roomJID.toString());
 
 			if(typeof entry !== "undefined") {
-				account.rooms.set(roomJID.toString(), {
+				rooms.set(roomJID.toString(), {
 					...entry,
 					notificationLevel: level,
 				});
@@ -3431,8 +3337,16 @@ function createBaseConnection(
 	}
 
 	return {
-		accountsSig,
-		getAccount,
+		jid,
+		
+		counterparts,
+		rooms,
+		avatarStates,
+
+		connected: connectedSig,
+		lastError: lastErrorSig,
+		servicesState: servicesStateSig,
+		stopped: stoppedSig,
 
 		addEventListener,
 		removeEventListener,
@@ -3466,8 +3380,12 @@ function createBaseConnection(
 		reorderRoom,
 		setRoomNotificationLevel,
 
-		loadAccounts,
-		pingRoom,
+		pingRooms,
+
+		[Symbol.dispose]() {
+			client.stop();
+			effects.forEach(fn => fn());
+		},
 	};
 }
 
@@ -3498,11 +3416,7 @@ function createXMPPClientForAccount(
 	token: unknown,
 	userAgent: string,
 	resource: string,
-	listeners: {
-		[K in keyof Connection.ConnectionEvents]?: Connection.ConnectionEvents[K] extends (...args: infer T) => infer O ?
-			(client: xmppClient.Client, ...args: T) => O :
-			never
-	},
+	listeners: Partial<Connection.ConnectionEvents>,
 	onStartError: (client: xmppClient.Client, err: unknown) => void,
 ) {
 	const client = xmppClient.client({
@@ -3522,9 +3436,7 @@ function createXMPPClientForAccount(
 		const key = key_ as keyof Connection.ConnectionEvents;
 		if(typeof listeners[key] === "undefined") continue;
 
-		// objects are messy
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		client.on(key, (listeners[key] as any).bind(undefined, client));
+		client.on(key, listeners[key]);
 	}
 
 	client.iqCallee.get("http://jabber.org/protocol/disco#info", "query", async () => {
@@ -3576,15 +3488,6 @@ async function genVerString(
 	const hash = await crypto.subtle.digest("SHA-1", new TextEncoder().encode(s));
 
 	return toBase64(new Uint8Array(hash));
-}
-
-export function useAccountSig(): Signal<Account> {
-	const connectionCtx = useConnectionContext();
-	return useComputed(() => {
-		const result = connectionCtx.accountsSig.value[0];
-		if(typeof result === "undefined") throw new Error("Attempted to read account while not logged in");
-		return result;
-	});
 }
 
 export function messageRemovalIsAllowed(message: Message, evt: Pick<MessageRemovalEvent, "from" | "removal" | "room">) {

@@ -5,7 +5,7 @@ import { JID, parse as parseJID } from "@xmpp/jid";
 import { Signalish } from "preact";
 import { useMemo } from "preact/hooks";
 
-import { useAccountSig } from "../util/connection";
+import { useConnectionContext } from "../util/connection";
 import unsignal from "../util/unsignal";
 import { generateColorForID } from "../util/xmpp/colorGeneration";
 
@@ -44,7 +44,7 @@ const styles = {
 export type AvatarSize = "lg" | "md";
 
 export default function Avatar(props: {size: AvatarSize; jid: Signalish<string | JID>; class?: string}) {
-	const accountSig = useAccountSig();
+	const conn = useConnectionContext();
 
 	const jid = unsignal(props.jid);
 	const parsedJID = useMemo(() => {
@@ -55,28 +55,24 @@ export default function Avatar(props: {size: AvatarSize; jid: Signalish<string |
 	const hashesSig = useComputed(() => {
 		const parsedJID = parsedJIDSig.value;
 
-		const account = accountSig.value;
-
-		if(typeof account === "undefined") return [];
-
-		const roomEntry = account.rooms.get(parsedJID.toString());
+		const roomEntry = conn.rooms.get(parsedJID.toString());
 		if(typeof roomEntry !== "undefined") {
 			if(roomEntry.infoState.state === "done") {
 				return roomEntry.infoState.value.avatarHashes;
 			}
 		}
 
-		let counterpart = account.counterparts.get(parsedJID.toString());
+		let counterpart = conn.counterparts.get(parsedJID.toString());
 		if(typeof counterpart === "undefined" && parsedJID.resource !== "") {
-			counterpart = account.counterparts.get(parsedJID.bare().toString());
+			counterpart = conn.counterparts.get(parsedJID.bare().toString());
 
 			if(typeof counterpart === "undefined") {
 				// Maybe it's me?
 
-				const containerRoomEntry = account.rooms.get(parsedJID.bare().toString());
+				const containerRoomEntry = conn.rooms.get(parsedJID.bare().toString());
 				if(typeof containerRoomEntry !== "undefined") {
 					if(containerRoomEntry.connected && containerRoomEntry.nick === parsedJID.resource) {
-						counterpart = account.counterparts.get(account.jid.toString());
+						counterpart = conn.counterparts.get(conn.jid.toString());
 					}
 				}
 			}
@@ -91,7 +87,7 @@ export default function Avatar(props: {size: AvatarSize; jid: Signalish<string |
 
 	const image = useComputed(() => {
 		for(const hash of hashesSig.value) {
-			const state = accountSig.value.avatarStates.get(hash);
+			const state = conn.avatarStates.get(hash);
 			if(typeof state !== "undefined" && state.state === "done") return state.value;
 		}
 
