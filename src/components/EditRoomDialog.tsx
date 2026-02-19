@@ -140,8 +140,8 @@ function Content(props: {room: JID; info: RoomConfig}) {
 				<FieldLabel>{$t({defaultMessage: "Profile Picture"})}</FieldLabel>
 				<Input type="file" onChange={onChangeNewAvatar} />
 				<DataView state={newAvatarState}>
-					{info => {
-						return <AvatarView newInfo={info} roomJID={props.room} />;
+					{avatar => {
+						return <AvatarView newInfo={avatar} roomJID={props.room} />;
 					}}
 				</DataView>
 			</Field>

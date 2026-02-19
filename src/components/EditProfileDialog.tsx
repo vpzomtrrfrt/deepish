@@ -97,8 +97,8 @@ export default function EditProfileDialog() {
 					<FieldLabel>{$t({defaultMessage: "Profile Picture"})}</FieldLabel>
 					<Input type="file" onChange={onChangeNewAvatar} />
 					<DataView state={newAvatarSig}>
-						{info => {
-							return <AvatarView newInfo={info} />;
+						{avatar => {
+							return <AvatarView newInfo={avatar} />;
 						}}
 					</DataView>
 				</Field>

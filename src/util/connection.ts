@@ -465,7 +465,7 @@ export function useConnectionContext() {
 }
 
 function createBaseConnection(
-	jid: JID,
+	accountJID: JID,
 	authInfo: {token: unknown; userAgent: string; resource: string},
 	cacheSig: Signal<IDBCache>,
 	idleSig: Signal<IdleState>,
@@ -473,7 +473,7 @@ function createBaseConnection(
 ): ConnectionContext {
 	const effects: Array<() => void> = [];
 
-	const client = createXMPPClientForAccount(jid, authInfo.token, authInfo.userAgent, authInfo.resource, {
+	const client = createXMPPClientForAccount(accountJID, authInfo.token, authInfo.userAgent, authInfo.resource, {
 		online: onClientOnline,
 		status: onClientStatusChanged,
 		error: onClientError,
@@ -485,10 +485,10 @@ function createBaseConnection(
 
 		if(
 			req.from === null ||
-				req.from.equals(jid) ||
+				req.from.equals(accountJID) ||
 
 				// I'm assuming xmpp.js adds this? The raw message has no from at all
-				(req.from.domain === jid.domain && req.from.local === "")
+				(req.from.domain === accountJID.domain && req.from.local === "")
 		) {
 			const elem = (req as unknown as {element: Element}).element; // ???
 			handleRosterUpdate(elem.getChildren("item"), false);
@@ -787,7 +787,7 @@ function createBaseConnection(
 							const isRoom = rooms.has(key);
 
 							const fin = await requestArchive(
-								isRoom ? parseJID(key) : jid,
+								isRoom ? parseJID(key) : accountJID,
 								{with: isRoom ? undefined : parseJID(key)},
 								value === null ? undefined : value,
 							);
@@ -1306,7 +1306,7 @@ function createBaseConnection(
 					}
 					else {
 						handleMessage({
-							account: jid,
+							account: accountJID,
 							message: {
 								room, // TODO is this correct for non-anonymous MUCs?
 								from: from,
@@ -1370,7 +1370,7 @@ function createBaseConnection(
 			}
 		}
 		else if(elem.getAttr("type") === "chat") {
-			if(typeof from !== "undefined" && from.equals(jid)) {
+			if(typeof from !== "undefined" && from.equals(accountJID)) {
 				const carbonsElem = elem.getChild("sent", "urn:xmpp:carbons:2");
 				if(typeof carbonsElem !== "undefined") {
 					const forwardedElem = carbonsElem.getChild("forwarded", "urn:xmpp:forward:0");
@@ -1569,7 +1569,7 @@ function createBaseConnection(
 					}
 
 					handleMessage({
-						account: jid,
+						account: accountJID,
 						message: {
 							room: null,
 							from,
@@ -1845,9 +1845,9 @@ function createBaseConnection(
 					membersOnly: null,
 				};
 
-				result.getChildren("x", "jabber:x:data").forEach(x => {
-					if(x.getAttr("type") === "form") {
-						x.getChildren("field").forEach(fieldElem => {
+				result.getChildren("x", "jabber:x:data").forEach(dataset => {
+					if(dataset.getAttr("type") === "form") {
+						dataset.getChildren("field").forEach(fieldElem => {
 							const key = fieldElem.getAttr("var");
 							const values = fieldElem.getChildren("value").map(x => x.getText());
 
@@ -2209,7 +2209,7 @@ function createBaseConnection(
 		if(!evt.isNew) return false;
 
 		if(evt.message.room === null) {
-			if(evt.message.from.equals(jid)) return false;
+			if(evt.message.from.equals(accountJID)) return false;
 
 			return baseLevel !== NotificationLevel.Never;
 		}
@@ -2342,15 +2342,15 @@ function createBaseConnection(
 
 		if(typeof options.replaces === "undefined") {
 			handleMessage({
-				account: jid,
+				account: accountJID,
 				message: {
 					room: null,
-					from: jid,
+					from: accountJID,
 					occupantID: null,
 					to: targetJID,
 					content: contentResult.content,
 					ids: [
-						new StanzaID(StanzaIDType.Element, jid, localID),
+						new StanzaID(StanzaIDType.Element, accountJID, localID),
 					],
 					localID,
 					timestamp: new Date(),
@@ -2373,7 +2373,7 @@ function createBaseConnection(
 			// Non-groupchat messages don't get reflected, so we don't know the stanza ID
 			// Make an archive request to get the latest message
 			// (which may or may not be this one, but fine for the purpose of displayed sync)
-			requestArchive(jid, {with: targetJID}, undefined, {max: 1});
+			requestArchive(accountJID, {with: targetJID}, undefined, {max: 1});
 		}
 		else {
 			emit("messageEdit", {
@@ -2381,9 +2381,9 @@ function createBaseConnection(
 					content: contentResult.content,
 					timestamp: new Date(),
 				},
-				target: new StanzaID(StanzaIDType.Element, jid, options.replaces),
+				target: new StanzaID(StanzaIDType.Element, accountJID, options.replaces),
 				room: null,
-				from: {jid},
+				from: {jid: accountJID},
 			});
 		}
 	}
@@ -2463,11 +2463,11 @@ function createBaseConnection(
 			removal: {type: "retract"},
 			target: new StanzaID(
 				StanzaIDType.Element,
-				jid,
+				accountJID,
 				messageID,
 			),
 			room: null,
-			from: {jid},
+			from: {jid: accountJID},
 		});
 	}
 
@@ -2584,7 +2584,7 @@ function createBaseConnection(
 				null,
 				messageID,
 			),
-			from: {jid},
+			from: {jid: accountJID},
 		});
 	}
 
@@ -2779,7 +2779,7 @@ function createBaseConnection(
 
 			if(!isRoom) throw new Error("That doesn't appear to be a room");
 
-			const connectNick = nick ?? jid.local;
+			const connectNick = nick ?? accountJID.local;
 
 			{
 				rooms.set(room.toString(), {
@@ -2845,7 +2845,7 @@ function createBaseConnection(
 				"presence",
 				{
 					id: xid(),
-					to: new JID(room.jid.local, room.jid.domain, room.nick ?? jid.local),
+					to: new JID(room.jid.local, room.jid.domain, room.nick ?? accountJID.local),
 					type: "unavailable",
 				},
 			),
@@ -2882,7 +2882,7 @@ function createBaseConnection(
 
 		if(rooms.has(room.toString())) throw new Error("A room by that JID already exists");
 
-		const nick = jid.local;
+		const nick = accountJID.local;
 
 		let joinInfo;
 
@@ -3100,7 +3100,7 @@ function createBaseConnection(
 						"stanza-id",
 						{
 							xmlns: "urn:xmpp:sid:0",
-							by: (isRoom ? targetJID : jid).toString(), id: lastReadMessageID,
+							by: (isRoom ? targetJID : accountJID).toString(), id: lastReadMessageID,
 						},
 					),
 				),
@@ -3117,7 +3117,7 @@ function createBaseConnection(
 	const currentDisplayedUpdates = new Map<string, string>();
 
 	function submitDisplayedUpdate(targetJID: JID, lastReadMessageID: string, isRoom: boolean) {
-		const key = encodeURIComponent(jid.toString()) + "/" + encodeURIComponent(targetJID.toString());
+		const key = encodeURIComponent(accountJID.toString()) + "/" + encodeURIComponent(targetJID.toString());
 		const running = currentDisplayedUpdates.has(key);
 		currentDisplayedUpdates.set(key, lastReadMessageID);
 
@@ -3337,7 +3337,7 @@ function createBaseConnection(
 	}
 
 	return {
-		jid,
+		jid: accountJID,
 		
 		counterparts,
 		rooms,

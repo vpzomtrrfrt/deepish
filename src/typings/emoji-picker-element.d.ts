@@ -4,6 +4,7 @@ import { PickerConstructorOptions } from "emoji-picker-element/shared";
 import { JSX } from "preact/jsx-runtime";
 
 declare module "preact/jsx-runtime" {
+	// eslint-disable-next-line @typescript-eslint/no-shadow
 	namespace JSX {
 		interface IntrinsicElements {
 			"emoji-picker": JSX.HTMLAttributes<Picker> & PickerConstructorOptions;
