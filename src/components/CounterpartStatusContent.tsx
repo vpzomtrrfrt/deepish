@@ -9,7 +9,10 @@ export function getCounterpartStatusContent(info: Counterpart, intl: IntlShape, 
 		getDisplayPresenceForCounterpart(info) :
 		(showType === null ? null : {show: showType, statusText: null});
 
-	if(info.currentTune !== null && typeof info.currentTune.artist !== "undefined") {
+	if(info.currentActivity !== null && info.currentActivity.text !== null) {
+		return info.currentActivity.text;
+	}
+	else if(info.currentTune !== null && typeof info.currentTune.artist !== "undefined") {
 		return intl.formatMessage({
 			defaultMessage: "Listening to {name}",
 		}, {

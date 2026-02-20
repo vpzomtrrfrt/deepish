@@ -23,7 +23,7 @@ import PriorityUnreadIndicator from "../../components/PriorityUnreadIndicator";
 import { ManualTabsContainer, TabLink, TabsList } from "../../components/Tabs";
 import WithTooltip from "../../components/WithTooltip";
 import * as commonStyles from "../../util/commonStyles";
-import { useAccountSig, useConnectionContext } from "../../util/connection";
+import { useConnectionContext } from "../../util/connection";
 import { msgActionAdd } from "../../util/langCommon";
 import { getNickForCounterpart } from "../../util/profileUtil";
 import { useSignalMapKeysWhereValueMatches } from "../../util/SignalMap";
@@ -97,7 +97,6 @@ export default function ContactsPage() {
 	const { $t } = useIntl();
 
 	const conn = useConnectionContext();
-	const accountSig = useAccountSig();
 
 	const tabSig = useSignal<FriendsTab>(FriendsTab.All);
 	const setTab = useCallback((newTab: FriendsTab) => {
@@ -105,25 +104,25 @@ export default function ContactsPage() {
 	}, [tabSig]);
 
 	function acceptFriendRequest(target: JID) {
-		conn.acceptFriendRequest(accountSig.value.jid, target);
+		conn.acceptFriendRequest(target);
 	}
 
 	function rejectFriendRequest(target: JID) {
-		conn.rejectFriendRequest(accountSig.value.jid, target);
+		conn.rejectFriendRequest(target);
 	}
 
 	function removeFriend(target: JID) {
-		conn.removeFriend(accountSig.value.jid, target);
+		conn.removeFriend(target);
 	}
 
 	const incomingRequestCounterpartsSig = useComputed(() => {
-		return Array.from(accountSig.value.counterparts.values())
+		return Array.from(conn.counterparts.values())
 			.filter(counterpartIsIncomingRequest);
 	});
 	const incomingRequestCounterpartsCount = useComputed(() => incomingRequestCounterpartsSig.value.length).value;
 
 	const outgoingRequestCounterpartsSig = useComputed(() => {
-		return Array.from(accountSig.value.counterparts.values())
+		return Array.from(conn.counterparts.values())
 			.filter(info => {
 				return info.rosterEntry !== null &&
 					!info.rosterEntry.subscriptionTo &&
@@ -132,7 +131,7 @@ export default function ContactsPage() {
 	});
 	const outgoingRequestCounterpartsCount = useComputed(() => outgoingRequestCounterpartsSig.value.length).value;
 
-	const friendsSig = useSignalMapKeysWhereValueMatches(accountSig.value.counterparts, info => {
+	const friendsSig = useSignalMapKeysWhereValueMatches(conn.counterparts, info => {
 		if(info.rosterEntry === null) return false;
 		if(!info.rosterEntry.subscriptionTo) return false;
 
@@ -143,7 +142,7 @@ export default function ContactsPage() {
 		if(tabSig.value === FriendsTab.All) return friendsSig.value;
 		else if(tabSig.value === FriendsTab.Online) {
 			return friendsSig.value.filter(key => {
-				const info = accountSig.value.counterparts.get(key)!;
+				const info = conn.counterparts.get(key)!;
 				return info.presences !== null && info.presences.size > 0;
 			});
 		}
@@ -256,9 +255,8 @@ function FriendEntry(props: {jid: string}) {
 
 	const appCtx = useAppContext();
 	const conn = useConnectionContext();
-	const accountSig = useAccountSig();
 
-	const info = useComputed(() => accountSig.value.counterparts.get(props.jid)).value!;
+	const info = useComputed(() => conn.counterparts.get(props.jid)).value!;
 
 	const onClickFriendButtons = useCallback((evt: Event) => {
 		evt.stopPropagation();
@@ -266,7 +264,7 @@ function FriendEntry(props: {jid: string}) {
 	}, []);
 
 	function removeFriend(target: JID) {
-		conn.removeFriend(accountSig.value.jid, target);
+		conn.removeFriend(target);
 	}
 
 	const removeFriendAfterConfirm = useLatestCallback((target: JID) => {
@@ -315,14 +313,13 @@ function AddFriendForm() {
 	const { $t } = useIntl();
 
 	const conn = useConnectionContext();
-	const accountSig = useAccountSig();
 
 	const [input, linkInput, setInput] = useLinkState("");
 
 	const [submitting, submit] = useSubmitting((evt: Event) => {
 		evt.preventDefault();
 
-		conn.sendFriendRequest(accountSig.value.jid, parseJID(input));
+		conn.sendFriendRequest(parseJID(input));
 
 		setInput("");
 

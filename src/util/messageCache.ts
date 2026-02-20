@@ -2,7 +2,7 @@ import { batch, Signal, signal } from "@preact/signals";
 import { JID } from "@xmpp/jid";
 import { pushAtSortPosition } from "array-push-at-sort-position";
 
-import { BaseConnectionContext, Message, MessageEditEvent, messageEditIsAllowed, MessageEvent, MessageReactionsChangeEvent, MessageRemovalEvent, messageRemovalIsAllowed } from "./connection";
+import { ConnectionContext, Message, MessageEditEvent, messageEditIsAllowed, MessageEvent, MessageReactionsChangeEvent, MessageRemovalEvent, messageRemovalIsAllowed } from "./connection";
 import SignalMap from "./SignalMap";
 import StanzaID, { StanzaIDType } from "./xmpp/StanzaID";
 
@@ -30,7 +30,7 @@ export class MessageCache {
 		>
 	>;
 
-	public constructor(public readonly account: JID, public readonly container: MessageContainer, private conn: BaseConnectionContext) {
+	public constructor(public readonly container: MessageContainer, private conn: Omit<ConnectionContext, "getMessageCache">) {
 		this.conn.addEventListener("message", this.onMessage);
 		this.conn.addEventListener("messageRemove", this.onMessageRemove);
 		this.conn.addEventListener("messageEdit", this.onMessageEdit);
@@ -66,10 +66,10 @@ export class MessageCache {
 
 		let value;
 		if(this.container.type === "direct") {
-			value = await this.conn.requestArchive(this.account, this.account, {with: this.container.jid}, page);
+			value = await this.conn.requestArchive(this.conn.jid, {with: this.container.jid}, page);
 		}
 		else if(this.container.type === "room") {
-			value = await this.conn.requestArchive(this.account, this.container.jid, {}, page);
+			value = await this.conn.requestArchive(this.container.jid, {}, page);
 		}
 		else {
 			const _: never = this.container;

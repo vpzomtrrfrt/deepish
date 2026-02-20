@@ -6,7 +6,7 @@ import { memo } from "preact/compat";
 import { useCallback, useContext, useEffect, useMemo, useState } from "preact/hooks";
 import { useIntl } from "react-intl";
 
-import { RoomConfig, RoomEditParams, useAccountSig, useConnectionContext } from "../util/connection";
+import { RoomConfig, RoomEditParams, useConnectionContext } from "../util/connection";
 import { AVATAR_MAX_SIZE } from "../util/constants";
 import convertImage, { ConvertImageResult } from "../util/convertImage";
 import { publishingTypeNames } from "../util/langCommon";
@@ -29,13 +29,10 @@ const styles = {
 };
 
 export default memo(function EditRoomDialog(props: {room: JID}) {
-	const account = useAccountSig();
 	const conn = useConnectionContext();
 
-	const accountJIDSig = useComputed(() => account.value.jid);
-
 	const infoState = useDataSig(async () => {
-		return conn.fetchRoomConfig(accountJIDSig.value, props.room);
+		return conn.fetchRoomConfig(props.room);
 	});
 
 	return <Dialog>
@@ -49,7 +46,6 @@ function Content(props: {room: JID; info: RoomConfig}) {
 	const { $t } = useIntl();
 
 	const conn = useConnectionContext();
-	const accountSig = useAccountSig();
 
 	const dialogCtx = useContext(DialogContext)!;
 
@@ -84,8 +80,6 @@ function Content(props: {room: JID; info: RoomConfig}) {
 		return convertImage(newAvatarSrcSig.value, {maxSize: AVATAR_MAX_SIZE, square: true});
 	});
 
-	const accountJID = useComputed(() => accountSig.value.jid).value;
-
 	const [submitting, submit] = useSubmitting(async (evt: Event) => {
 		evt.preventDefault();
 
@@ -110,14 +104,13 @@ function Content(props: {room: JID; info: RoomConfig}) {
 		if(newAvatarSrcSig.value !== null) {
 			calls.push(
 				conn.setRoomAvatar(
-					accountJID,
 					props.room,
 					LoadState.assertDone(newAvatarState.value)!,
 				),
 			);
 		}
 
-		if(Object.keys(mainChanges).length > 0) calls.push(conn.changeRoomConfig(accountJID, props.room, mainChanges));
+		if(Object.keys(mainChanges).length > 0) calls.push(conn.changeRoomConfig(props.room, mainChanges));
 
 		await Promise.all(calls);
 
@@ -147,8 +140,8 @@ function Content(props: {room: JID; info: RoomConfig}) {
 				<FieldLabel>{$t({defaultMessage: "Profile Picture"})}</FieldLabel>
 				<Input type="file" onChange={onChangeNewAvatar} />
 				<DataView state={newAvatarState}>
-					{info => {
-						return <AvatarView newInfo={info} roomJID={props.room} />;
+					{avatar => {
+						return <AvatarView newInfo={avatar} roomJID={props.room} />;
 					}}
 				</DataView>
 			</Field>

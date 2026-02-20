@@ -11,7 +11,7 @@ import Dialog, { DialogContext, DialogFooter, DialogLike } from "../components/D
 import Field, { FieldLabel } from "../components/Field";
 import FieldList from "../components/FieldList";
 import Input from "../components/Input";
-import { useConnectionContext } from "../util/connection";
+import { ConnectionsContext } from "../util/connection";
 import { msgClose, msgJID } from "../util/langCommon";
 import useSubmitting from "../util/useSubmitting";
 
@@ -20,7 +20,7 @@ export default function LoginPage() {
 	const [, navigate] = useLocation();
 
 	const appCtx = useAppContext();
-	const conn = useConnectionContext();
+	const connections = useContext(ConnectionsContext)!;
 
 	const [jid, linkJid] = useLinkState("");
 	const [password, linkPassword] = useLinkState("");
@@ -63,7 +63,7 @@ export default function LoginPage() {
 				const resource = client.jid?.resource;
 				if(typeof resource === "undefined" || resource === "") throw new Error("Missing resource");
 
-				conn.saveToken.call(undefined, client.jid!.bare(), token, userAgent, resource);
+				connections.saveToken.call(undefined, client.jid!.bare(), token, userAgent, resource);
 				navigate("~/");
 			}
 			else {

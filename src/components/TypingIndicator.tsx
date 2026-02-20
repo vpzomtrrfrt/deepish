@@ -3,7 +3,7 @@ import { JID } from "@xmpp/jid";
 import { Signalish } from "preact";
 import { useIntl } from "react-intl";
 
-import { useAccountSig } from "../util/connection";
+import { useConnectionContext } from "../util/connection";
 import { maybeGetNickForCounterpart } from "../util/profileUtil";
 import { themeVars } from "../util/theme";
 import unsignal from "../util/unsignal";
@@ -30,14 +30,14 @@ export default function TypingIndicator(props: {usersTyping: Signalish<JID[]>; i
 	const intl = useIntl();
 	const { $t } = intl;
 
-	const accountSig = useAccountSig();
+	const conn = useConnectionContext();
 
 	const usersTyping = unsignal(props.usersTyping);
 
 	const nameList = usersTyping.map(jid => {
 		if(props.inRoom) return jid.resource;
 		else {
-			const counterpart = accountSig.value.counterparts.get(jid.toString());
+			const counterpart = conn.counterparts.get(jid.toString());
 			return maybeGetNickForCounterpart(jid, counterpart);
 		}
 	});

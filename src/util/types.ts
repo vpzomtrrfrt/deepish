@@ -48,6 +48,7 @@ export interface Counterpart {
 	nick: string | null;
 
 	currentTune: TuneInfo | null;
+	currentActivity: null | {text: string | null};
 
 	occupantID: string | null;
 	affiliation: string | null;

@@ -16,7 +16,7 @@ import DataView from "./components/DataView";
 import DialogContainer, { DialogContainerRef } from "./components/DialogContainer";
 import ChatPage from "./pages/chat";
 import LoginPage from "./pages/login";
-import { ConnectionContext, MessageContent, MessageEvent, NotificationLevel, useConnectionContext, useCreateConnection } from "./util/connection";
+import { ConnectionsContext, MessageContent, MessageEvent, NotificationLevel, useCreateConnections } from "./util/connection";
 import matchLocale from "./util/matchLocale";
 import { maybeGetNickForCounterpart } from "./util/profileUtil";
 import SignalMap, { useSignalMapKeysWhereValueMatches } from "./util/SignalMap";
@@ -170,7 +170,7 @@ function App() {
 		if(dialogContainerRef.current !== null) dialogContainerRef.current.closeAll();
 	}, [location]);
 
-	const connection = useCreateConnection(cache, notificationsSettingsSig);
+	const connections = useCreateConnections(cache, notificationsSettingsSig);
 
 	const lang = useMemo(() => {
 		// TODO check again on language change event
@@ -191,12 +191,12 @@ function App() {
 	const prefersDark = useMediaQuery("(prefers-color-scheme: dark)");
 
 	// This used to trigger a lint warning but doesn't anymore for some reason
-	(window as unknown as {deepishConnection: unknown}).deepishConnection = connection;
+	(window as unknown as {deepishConnection: unknown}).deepishConnection = connections;
 
-	if(!connection.inited) return null;
+	if(!connections.inited.value) return null;
 
 	return <AppContext.Provider value={appCtx}>
-		<ConnectionContext.Provider value={connection}>
+		<ConnectionsContext.Provider value={connections}>
 			<IntlProvider
 				messages={LoadState.ifDone(messagesState, x => x, () => ({}))}
 				locale={lang}
@@ -214,7 +214,7 @@ function App() {
 					}}
 				</DataView>
 			</IntlProvider>
-		</ConnectionContext.Provider>
+		</ConnectionsContext.Provider>
 	</AppContext.Provider>;
 }
 
@@ -223,7 +223,7 @@ render(<App />, document.getElementById("root") as HTMLDivElement);
 function AppContent() {
 	const { $t } = useIntl();
 
-	const connection = useConnectionContext();
+	const connections = useContext(ConnectionsContext)!;
 
 	const directMatch = useRoute("/chat/direct/:counterpartJID");
 	const roomMatch = useRoute("/chat/rooms/:roomJID");
@@ -248,7 +248,7 @@ function AppContent() {
 
 			if(!isActive) {
 				console.log("notifying", evt);
-				const account = connection.getAccount(evt.account);
+				const account = connections.accounts.value.find(x => x.jid.equals(evt.account))!;
 				const counterpart = account.counterparts.get(contact.toString());
 
 				let bestContent = evt.message.content[0];
@@ -276,10 +276,10 @@ function AppContent() {
 		}
 	});
 
-	useEventHandler(connection, "message", onMessage);
+	useEventHandler(connections, "message", onMessage);
 
 	const unreadConversationsSig = useSignalMapKeysWhereValueMatches(
-		connection.accountsSig.value.length < 1 ? (EMPTY_MAP as never) : connection.accountsSig.value[0].counterparts,
+		connections.accounts.value.length < 1 ? (EMPTY_MAP as never) : connections.accounts.value[0].counterparts,
 		counterpart => {
 			return counterpart.lastMessageIDForUnread !== null &&
 				counterpart.lastReadMessageID !== counterpart.lastMessageIDForUnread &&
@@ -302,9 +302,9 @@ function AppContent() {
 }
 
 function RootPage() {
-	const conn = useConnectionContext();
+	const connections = useContext(ConnectionsContext)!;
 
-	const hasAccount = useComputed(() => conn.accountsSig.value.length > 0);
+	const hasAccount = useComputed(() => connections.accounts.value.length > 0);
 
 	if(hasAccount.value) {
 		return <ChatPage />;
@@ -316,10 +316,10 @@ function RootPage() {
 
 function LogoutPage(props: {params: {jid: string}}) {
 	const [, navigate] = useLocation();
-	const conn = useConnectionContext();
+	const connections = useContext(ConnectionsContext)!;
 
 	useEffectOnce(() => {
-		conn.logout(parseJID(decodeURIComponent(props.params.jid)));
+		connections.logout(parseJID(decodeURIComponent(props.params.jid)));
 
 		navigate("~/login");
 	});

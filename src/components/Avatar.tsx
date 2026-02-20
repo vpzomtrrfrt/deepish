@@ -1,12 +1,11 @@
 import { css, cx } from "@emotion/css";
 import { useComputed } from "@preact/signals";
-import { useLiveSignal } from "@preact/signals/utils";
 import { JID, parse as parseJID } from "@xmpp/jid";
 import { Signalish } from "preact";
 import { useMemo } from "preact/hooks";
 
-import { useAccountSig } from "../util/connection";
-import unsignal from "../util/unsignal";
+import { useConnectionContext } from "../util/connection";
+import useMirrorSignal from "../util/useMirrorSignal";
 import { generateColorForID } from "../util/xmpp/colorGeneration";
 
 const styles = {
@@ -44,39 +43,35 @@ const styles = {
 export type AvatarSize = "lg" | "md";
 
 export default function Avatar(props: {size: AvatarSize; jid: Signalish<string | JID>; class?: string}) {
-	const accountSig = useAccountSig();
+	const conn = useConnectionContext();
 
-	const jid = unsignal(props.jid);
-	const parsedJID = useMemo(() => {
+	const jidSig = useMirrorSignal(props.jid);
+	const parsedJIDSig = useComputed(() => {
+		const jid = jidSig.value;
 		return typeof jid === "string" ? parseJID(jid) : jid;
-	}, [jid]);
-	const parsedJIDSig = useLiveSignal(parsedJID);
+	});
 
 	const hashesSig = useComputed(() => {
 		const parsedJID = parsedJIDSig.value;
 
-		const account = accountSig.value;
-
-		if(typeof account === "undefined") return [];
-
-		const roomEntry = account.rooms.get(parsedJID.toString());
+		const roomEntry = conn.rooms.get(parsedJID.toString());
 		if(typeof roomEntry !== "undefined") {
 			if(roomEntry.infoState.state === "done") {
 				return roomEntry.infoState.value.avatarHashes;
 			}
 		}
 
-		let counterpart = account.counterparts.get(parsedJID.toString());
+		let counterpart = conn.counterparts.get(parsedJID.toString());
 		if(typeof counterpart === "undefined" && parsedJID.resource !== "") {
-			counterpart = account.counterparts.get(parsedJID.bare().toString());
+			counterpart = conn.counterparts.get(parsedJID.bare().toString());
 
 			if(typeof counterpart === "undefined") {
 				// Maybe it's me?
 
-				const containerRoomEntry = account.rooms.get(parsedJID.bare().toString());
+				const containerRoomEntry = conn.rooms.get(parsedJID.bare().toString());
 				if(typeof containerRoomEntry !== "undefined") {
 					if(containerRoomEntry.connected && containerRoomEntry.nick === parsedJID.resource) {
-						counterpart = account.counterparts.get(account.jid.toString());
+						counterpart = conn.counterparts.get(conn.jid.toString());
 					}
 				}
 			}
@@ -91,33 +86,37 @@ export default function Avatar(props: {size: AvatarSize; jid: Signalish<string |
 
 	const image = useComputed(() => {
 		for(const hash of hashesSig.value) {
-			const state = accountSig.value.avatarStates.get(hash);
+			const state = conn.avatarStates.get(hash);
 			if(typeof state !== "undefined" && state.state === "done") return state.value;
 		}
 
 		return null;
 	}).value;
 
-	const color = useMemo(() => {
-		return generateColorForID(parsedJID.toString());
-	}, [parsedJID]);
+	{
+		const parsedJID = parsedJIDSig.value;
 
-	return <div class={cx(styles.avatar, props.class)} style={{"--avatar-size": props.size === "lg" ? "50px": "35px"}}>
-		{image === null ?
-			<svg class={styles.fallbackAvatar} style={{backgroundColor: color}} viewBox="0 0 30 30">
-				<text x="50%" y="50%">
-					{
-						(
-							parsedJID.resource === "" ?
-								(parsedJID.local === "" ? parsedJID.domain : parsedJID.local) :
-								parsedJID.resource
-						)[0].toUpperCase()
-					}
-				</text>
-			</svg> :
-			<img src={image} draggable={false} />
-		}
-	</div>;
+		const color = useMemo(() => {
+			return generateColorForID(parsedJID.toString());
+		}, [parsedJID]);
+
+		return <div class={cx(styles.avatar, props.class)} style={{"--avatar-size": props.size === "lg" ? "50px": "35px"}}>
+			{image === null ?
+				<svg class={styles.fallbackAvatar} style={{backgroundColor: color}} viewBox="0 0 30 30">
+					<text x="50%" y="50%">
+						{
+							(
+								parsedJID.resource === "" ?
+									(parsedJID.local === "" ? parsedJID.domain : parsedJID.local) :
+									parsedJID.resource
+							)[0].toUpperCase()
+						}
+					</text>
+				</svg> :
+				<img src={image} draggable={false} />
+			}
+		</div>;
+	}
 }
 
 export function RawAvatar(props: {size: AvatarSize; src: string; class?: string}) {

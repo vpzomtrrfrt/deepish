@@ -5,6 +5,7 @@ import { PresenceShowTypeExtended, RoomPublishing } from "./types";
 export const msgActionAdd = defineMessage({defaultMessage: "Add"});
 export const msgActionCreate = defineMessage({defaultMessage: "Create"});
 export const msgActionDelete = defineMessage({defaultMessage: "Delete"});
+export const msgActionSave = defineMessage({defaultMessage: "Save"});
 export const msgActionSend = defineMessage({defaultMessage: "Send"});
 
 export const msgCancel = defineMessage({

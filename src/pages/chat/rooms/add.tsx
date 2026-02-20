@@ -13,7 +13,7 @@ import Field, { FieldLabel } from "../../../components/Field";
 import FieldList from "../../../components/FieldList";
 import Input, { InputSuffixWrapper } from "../../../components/Input";
 import Select from "../../../components/Select";
-import { RoomDiscoInfo, ServiceInfo, useAccountSig, useConnectionContext } from "../../../util/connection";
+import { RoomDiscoInfo, ServiceInfo, useConnectionContext } from "../../../util/connection";
 import { msgActionCreate, msgCancel, msgJIDShort, publishingTypeNames } from "../../../util/langCommon";
 import { LoadState } from "../../../util/useData";
 import useSubmitting from "../../../util/useSubmitting";
@@ -23,7 +23,6 @@ export default function ChatRoomAddPage() {
 
 	const appCtx = useAppContext();
 	const conn = useConnectionContext();
-	const accountSig = useAccountSig();
 
 	const [joinInput, linkJoinInput] = useLinkState("");
 
@@ -45,7 +44,7 @@ export default function ChatRoomAddPage() {
 
 		const room = parseJID(roomStr);
 
-		const info = await conn.fetchRoomInfo(accountSig.value.jid, room);
+		const info = await conn.fetchRoomInfo(room);
 
 		appCtx.showDialog(<JoinRoomDialog roomJID={room} roomInfo={info} />);
 	});
@@ -75,11 +74,11 @@ export default function ChatRoomAddPage() {
 function CreateRoomDialog() {
 	const { $t } = useIntl();
 
-	const account = useAccountSig().value;
+	const conn = useConnectionContext();
 
 	const dialogCtx = useContext(DialogContext)!;
 
-	const mucServiceState = LoadState.map(account.servicesState, services => {
+	const mucServiceState = LoadState.map(conn.servicesState.value, services => {
 		const result = services.find(x => x.features.includes("http://jabber.org/protocol/muc") && x.jid.local === "");
 
 		if(typeof result === "undefined") throw new Error("Your server does not offer this feature");
@@ -105,7 +104,6 @@ function CreateRoomDialogInner(props: {service: ServiceInfo}) {
 	const { $t } = useIntl();
 
 	const conn = useConnectionContext();
-	const accountSig = useAccountSig();
 
 	const [, navigate] = useLocation();
 
@@ -121,7 +119,6 @@ function CreateRoomDialogInner(props: {service: ServiceInfo}) {
 		const roomJID = new JID(local, props.service.jid.domain);
 
 		await conn.createRoom(
-			accountSig.value.jid,
 			roomJID,
 			{
 				persistent: true,
@@ -133,7 +130,7 @@ function CreateRoomDialogInner(props: {service: ServiceInfo}) {
 
 		console.log("created room");
 
-		await conn.joinRoom(accountSig.value.jid, roomJID);
+		await conn.joinRoom(roomJID);
 
 		navigate("~/chat/rooms/" + encodeURIComponent(roomJID.toString()));
 	});
@@ -184,18 +181,17 @@ function JoinRoomDialog(props: {roomJID: JID; roomInfo: RoomDiscoInfo}) {
 	const { $t } = useIntl();
 
 	const conn = useConnectionContext();
-	const accountSig = useAccountSig();
 
 	const [, navigate] = useLocation();
 
 	const dialogCtx = useContext(DialogContext)!;
 
-	const [nick, linkNick] = useLinkState(accountSig.peek().jid.local);
+	const [nick, linkNick] = useLinkState(conn.jid.local);
 
 	const [submitting, submit] = useSubmitting(async (evt: Event) => {
 		evt.preventDefault();
 
-		await conn.joinRoom(accountSig.value.jid, props.roomJID, nick);
+		await conn.joinRoom(props.roomJID, nick);
 
 		navigate("~/chat/rooms/" + encodeURIComponent(props.roomJID.toString()));
 	});

@@ -1,7 +1,7 @@
 import { css, cx, keyframes } from "@emotion/css";
-import { mdiClose, mdiEmoticonPlus, mdiPencil, mdiReply } from "@mdi/js";
-import { ReadonlySignal, useComputed } from "@preact/signals";
-import { useLiveSignal } from "@preact/signals/utils";
+import { mdiChevronDown, mdiClose, mdiEmoticonPlus, mdiPencil, mdiReply } from "@mdi/js";
+import { ReadonlySignal, useComputed, useSignal } from "@preact/signals";
+import { Show, useLiveSignal } from "@preact/signals/utils";
 import { JID, parse as parseJID } from "@xmpp/jid";
 import { EmojiClickEvent } from "emoji-picker-element/shared";
 import { stringify as stringifyXML } from "ltx";
@@ -13,7 +13,7 @@ import { Virtuoso, VirtuosoHandle } from "react-virtuoso";
 import useLatestCallback from "use-latest-callback";
 
 import * as commonStyles from "../util/commonStyles";
-import { Message, MessageContent, Room, useAccountSig } from "../util/connection";
+import { Message, MessageContent, Room, useConnectionContext } from "../util/connection";
 import getRoomUserColor from "../util/getRoomUserColor";
 import { MessageCache } from "../util/messageCache";
 import { maybeGetNickForCounterpart } from "../util/profileUtil";
@@ -186,6 +186,11 @@ const styles = {
 		height: "2rem",
 		padding: "0.01px",
 	}),
+	jumpToBottomButton: css({
+		position: "absolute",
+		right: "1rem",
+		bottom: "1rem",
+	}),
 };
 
 type PendingMessage = Pick<Message, "localID" | "content" | "timestamp">;
@@ -219,9 +224,25 @@ export default memo(function MessageList(props: {
 
 	const loaderContentSig = useMirrorSignal(props.loaderContent);
 
+	const atBottomSig = useSignal(false);
+	const setAtBottom = useCallback((value: boolean) => {
+		console.log("atBottom =", value);
+		atBottomSig.value = value;
+	}, [atBottomSig]);
+
+	const jumpToBottom = useCallback(() => {
+		listRef.current!.scrollToIndex({index: "LAST", align: "end"});
+	}, []);
+
+	const onMessageExpanded = useCallback(() => {
+		if(atBottomSig.value) {
+			setTimeout(jumpToBottom);
+		}
+	}, [atBottomSig, jumpToBottom]);
+
 	const indexOffset = Math.floor(Number.MAX_SAFE_INTEGER / 2) - allMessagesCountSig.value - 2 + props.msgCache.getAppendedCount();
 
-	return <div ref={rootRef} style={{display: "flex", flexDirection: "column", flexGrow: 1}}>
+	return <div ref={rootRef} style={{display: "flex", flexDirection: "column", flexGrow: 1, position: "relative"}}>
 		<Virtuoso
 			alignToBottom
 			followOutput
@@ -239,10 +260,17 @@ export default memo(function MessageList(props: {
 					submitEdit={props.submitEdit}
 					canEdit={props.canEdit}
 					submitReactions={props.submitReactions}
+					onExpanded={onMessageExpanded}
 				/>;
 			}}
 			firstItemIndex={indexOffset}
+			atBottomStateChange={setAtBottom}
 		/>
+		<Show when={() => !atBottomSig.value}>
+			<IconButton class={styles.jumpToBottomButton} onClick={jumpToBottom}>
+				<Icon path={mdiChevronDown} />
+			</IconButton>
+		</Show>
 	</div>;
 });
 
@@ -253,6 +281,7 @@ function MessageRow(props: {
 
 	index: number;
 	scrollToMessage(id: StanzaID): void;
+	onExpanded(): void;
 
 	renderMenu(message: Message, setMenuOpen: (value: boolean) => void): ComponentChildren;
 	startReply?: (message: Message) => void;
@@ -260,12 +289,11 @@ function MessageRow(props: {
 	canEdit?: (message: Message) => boolean;
 	submitReactions?: (reactions: string[], message: Message) => Promise<void>;
 }) {
-	const accountSig = useAccountSig();
-	const accountJIDSig = useComputed(() => accountSig.value.jid);
+	const conn = useConnectionContext();
 
 	const roomSig = useComputed((): {value: Room | undefined} => {
 		if(props.msgCache.container.type === "room") {
-			return accountSig.value.rooms.getSignal(props.msgCache.container.jid.toString());
+			return conn.rooms.getSignal(props.msgCache.container.jid.toString());
 		}
 		else {
 			return {value: undefined};
@@ -276,15 +304,15 @@ function MessageRow(props: {
 		const room = roomSig.value;
 		if(typeof room === "undefined") return undefined;
 
-		return new JID(room.jid.local, room.jid.domain, room.nick ?? accountJIDSig.value.local);
+		return new JID(room.jid.local, room.jid.domain, room.nick ?? conn.jid.local);
 	});
-	const selfJIDHereSig = props.msgCache.container.type === "room" ? selfJIDInRoomSig : accountJIDSig;
+	const selfJIDHereSig = props.msgCache.container.type === "room" ? selfJIDInRoomSig : {value: conn.jid};
 	const counterpartSig = useComputed(() => {
 		if(typeof selfJIDHereSig.value === "undefined") return {value: undefined};
-		return accountSig.value.counterparts.getSignal(selfJIDHereSig.value.toString());
+		return conn.counterparts.getSignal(selfJIDHereSig.value.toString());
 	}).value;
 	const nickSig = useComputed(() => {
-		if(typeof selfJIDHereSig.value === "undefined") return accountJIDSig.value.local;
+		if(typeof selfJIDHereSig.value === "undefined") return conn.jid.local;
 
 		return maybeGetNickForCounterpart(selfJIDHereSig.value, counterpartSig.value);
 	});
@@ -331,6 +359,7 @@ function MessageRow(props: {
 
 				msgCache={props.msgCache}
 				scrollToMessage={props.scrollToMessage}
+				onExpanded={props.onExpanded}
 				renderMenu={props.renderMenu}
 				startReply={props.startReply}
 				submitEdit={props.submitEdit}
@@ -350,7 +379,7 @@ function MessageRow(props: {
 
 					if(message.timestamp.getTime() - prevMessage.timestamp.getTime() < MESSAGE_MERGE_TIME) {
 						if(props.msgCache.container.type === "direct") {
-							if(prevMessage.from.bare().equals(accountJIDSig.value)) {
+							if(prevMessage.from.bare().equals(conn.jid)) {
 								isMerged = true;
 							}
 						}
@@ -403,6 +432,7 @@ const RealMessageRow = memo(function RealMessageRow(props: {
 	isMerged: boolean;
 
 	scrollToMessage(id: StanzaID): void;
+	onExpanded(): void;
 
 	renderMenu(message: Message, setMenuOpen: (value: boolean) => void): ComponentChildren;
 
@@ -416,10 +446,10 @@ const RealMessageRow = memo(function RealMessageRow(props: {
 
 	const { $t } = useIntl();
 
-	const accountSig = useAccountSig();
+	const conn = useConnectionContext();
 
 	const fromSig = useComputed(() => messageSig.value.room === null ? messageSig.value.from.bare() : messageSig.value.from);
-	const counterpartSig = useComputed(() => accountSig.value.counterparts.getSignal(fromSig.value.toString())).value;
+	const counterpartSig = conn.counterparts.getSignal(fromSig.value.toString());
 	const nickSig = useComputed(() => maybeGetNickForCounterpart(fromSig.value, counterpartSig.value));
 	const colorSig = useComputed(() => {
 		if(props.msgCache.container.type !== "room") return null;
@@ -484,17 +514,30 @@ const RealMessageRow = memo(function RealMessageRow(props: {
 		return result;
 	}, [message.reactions]);
 
+	const lastRenderHadReactionsRef = useRef<boolean | null>(null);
+
+	useEffect(() => {
+		const hasReactions = reactions.size > 0;
+
+		if(lastRenderHadReactionsRef.current === false && hasReactions) {
+			console.log("expanded");
+			props.onExpanded.call(undefined);
+		}
+
+		lastRenderHadReactionsRef.current = hasReactions;
+	}, [props.onExpanded, reactions.size]);
+
 	const myReactionsSig = useComputed(() => {
 		let key;
 		if(messageSig.value.room === null) {
-			key = accountSig.value.jid.toString() + "/";
+			key = conn.jid.toString() + "/";
 		}
 		else {
-			const room = accountSig.value.rooms.get(messageSig.value.room.toString());
+			const room = conn.rooms.get(messageSig.value.room.toString());
 			if(typeof room === "undefined" || room.connectedNick === null) return null;
 
 			const myJID = new JID(room.jid.local, room.jid.domain, room.connectedNick);
-			const myCounterpart = accountSig.value.counterparts.get(myJID.toString());
+			const myCounterpart = conn.counterparts.get(myJID.toString());
 
 			if(typeof myCounterpart === "undefined") return null;
 
@@ -705,7 +748,7 @@ function ReactionsArea(props: {
 }) {
 	const { $t } = useIntl();
 
-	const accountSig = useAccountSig();
+	const conn = useConnectionContext();
 
 	return <div class={styles.reactionsArea}>
 		{
@@ -721,7 +764,7 @@ function ReactionsArea(props: {
 								value={senders.map(sender => {
 									const from = props.isRoom ? sender.jid : sender.jid.bare();
 
-									const counterpart = accountSig.value.counterparts.get(from.toString());
+									const counterpart = conn.counterparts.get(from.toString());
 
 									return maybeGetNickForCounterpart(from, counterpart);
 								})}
@@ -752,10 +795,10 @@ export function MessageReplyQuoteContent(props: {message: Message}) {
 
 	const { $t } = useIntl();
 
-	const accountSig = useAccountSig();
+	const conn = useConnectionContext();
 
 	const fromSig = useComputed(() => messageSig.value.room === null ? messageSig.value.from.bare() : messageSig.value.from);
-	const counterpartSig = useComputed(() => accountSig.value.counterparts.getSignal(fromSig.value.toString())).value;
+	const counterpartSig = conn.counterparts.getSignal(fromSig.value.toString());
 	const nickSig = useComputed(() => maybeGetNickForCounterpart(fromSig.value, counterpartSig.value));
 
 	return <div class={styles.messageCommon}>
