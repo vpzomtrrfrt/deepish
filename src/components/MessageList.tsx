@@ -1,7 +1,7 @@
 import { css, cx, keyframes } from "@emotion/css";
-import { mdiClose, mdiEmoticonPlus, mdiPencil, mdiReply } from "@mdi/js";
-import { ReadonlySignal, useComputed } from "@preact/signals";
-import { useLiveSignal } from "@preact/signals/utils";
+import { mdiChevronDown, mdiClose, mdiEmoticonPlus, mdiPencil, mdiReply } from "@mdi/js";
+import { ReadonlySignal, useComputed, useSignal } from "@preact/signals";
+import { Show, useLiveSignal } from "@preact/signals/utils";
 import { JID, parse as parseJID } from "@xmpp/jid";
 import { EmojiClickEvent } from "emoji-picker-element/shared";
 import { stringify as stringifyXML } from "ltx";
@@ -186,6 +186,11 @@ const styles = {
 		height: "2rem",
 		padding: "0.01px",
 	}),
+	jumpToBottomButton: css({
+		position: "absolute",
+		right: "1rem",
+		bottom: "1rem",
+	}),
 };
 
 type PendingMessage = Pick<Message, "localID" | "content" | "timestamp">;
@@ -219,9 +224,18 @@ export default memo(function MessageList(props: {
 
 	const loaderContentSig = useMirrorSignal(props.loaderContent);
 
+	const atBottomSig = useSignal(false);
+	const setAtBottom = useCallback((value: boolean) => {
+		atBottomSig.value = value;
+	}, [atBottomSig]);
+
+	const jumpToBottom = useCallback(() => {
+		listRef.current!.scrollToIndex({index: "LAST", align: "end"});
+	}, []);
+
 	const indexOffset = Math.floor(Number.MAX_SAFE_INTEGER / 2) - allMessagesCountSig.value - 2 + props.msgCache.getAppendedCount();
 
-	return <div ref={rootRef} style={{display: "flex", flexDirection: "column", flexGrow: 1}}>
+	return <div ref={rootRef} style={{display: "flex", flexDirection: "column", flexGrow: 1, position: "relative"}}>
 		<Virtuoso
 			alignToBottom
 			followOutput
@@ -242,7 +256,13 @@ export default memo(function MessageList(props: {
 				/>;
 			}}
 			firstItemIndex={indexOffset}
+			atBottomStateChange={setAtBottom}
 		/>
+		<Show when={() => !atBottomSig.value}>
+			<IconButton class={styles.jumpToBottomButton} onClick={jumpToBottom}>
+				<Icon path={mdiChevronDown} />
+			</IconButton>
+		</Show>
 	</div>;
 });
 
