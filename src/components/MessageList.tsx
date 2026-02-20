@@ -226,12 +226,19 @@ export default memo(function MessageList(props: {
 
 	const atBottomSig = useSignal(false);
 	const setAtBottom = useCallback((value: boolean) => {
+		console.log("atBottom =", value);
 		atBottomSig.value = value;
 	}, [atBottomSig]);
 
 	const jumpToBottom = useCallback(() => {
 		listRef.current!.scrollToIndex({index: "LAST", align: "end"});
 	}, []);
+
+	const onMessageExpanded = useCallback(() => {
+		if(atBottomSig.value) {
+			setTimeout(jumpToBottom);
+		}
+	}, [atBottomSig, jumpToBottom]);
 
 	const indexOffset = Math.floor(Number.MAX_SAFE_INTEGER / 2) - allMessagesCountSig.value - 2 + props.msgCache.getAppendedCount();
 
@@ -253,6 +260,7 @@ export default memo(function MessageList(props: {
 					submitEdit={props.submitEdit}
 					canEdit={props.canEdit}
 					submitReactions={props.submitReactions}
+					onExpanded={onMessageExpanded}
 				/>;
 			}}
 			firstItemIndex={indexOffset}
@@ -273,6 +281,7 @@ function MessageRow(props: {
 
 	index: number;
 	scrollToMessage(id: StanzaID): void;
+	onExpanded(): void;
 
 	renderMenu(message: Message, setMenuOpen: (value: boolean) => void): ComponentChildren;
 	startReply?: (message: Message) => void;
@@ -350,6 +359,7 @@ function MessageRow(props: {
 
 				msgCache={props.msgCache}
 				scrollToMessage={props.scrollToMessage}
+				onExpanded={props.onExpanded}
 				renderMenu={props.renderMenu}
 				startReply={props.startReply}
 				submitEdit={props.submitEdit}
@@ -422,6 +432,7 @@ const RealMessageRow = memo(function RealMessageRow(props: {
 	isMerged: boolean;
 
 	scrollToMessage(id: StanzaID): void;
+	onExpanded(): void;
 
 	renderMenu(message: Message, setMenuOpen: (value: boolean) => void): ComponentChildren;
 
@@ -502,6 +513,19 @@ const RealMessageRow = memo(function RealMessageRow(props: {
 
 		return result;
 	}, [message.reactions]);
+
+	const lastRenderHadReactionsRef = useRef<boolean | null>(null);
+
+	useEffect(() => {
+		const hasReactions = reactions.size > 0;
+
+		if(lastRenderHadReactionsRef.current === false && hasReactions) {
+			console.log("expanded");
+			props.onExpanded.call(undefined);
+		}
+
+		lastRenderHadReactionsRef.current = hasReactions;
+	}, [props.onExpanded, reactions.size]);
 
 	const myReactionsSig = useComputed(() => {
 		let key;
