@@ -248,6 +248,7 @@ export default memo(function MessageList(props: {
 			followOutput
 			ref={listRef}
 			totalCount={allMessagesCountSig.value + 2}
+			initialTopMostItemIndex={{index: "LAST"}}
 			itemContent={index => {
 				return <MessageRow
 					msgCache={props.msgCache}
