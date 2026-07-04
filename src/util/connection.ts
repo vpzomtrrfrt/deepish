@@ -3417,7 +3417,7 @@ function createXMPPClientForAccount(
 	userAgent: string,
 	resource: string,
 	listeners: Partial<Connection.ConnectionEvents>,
-	onStartError: (client: xmppClient.Client, err: unknown) => void,
+	onStartError: (err: unknown) => void,
 ) {
 	const client = xmppClient.client({
 		service: jid.domain,
@@ -3453,7 +3453,7 @@ function createXMPPClientForAccount(
 		);
 	});
 
-	client.start().catch(onStartError.bind(undefined, client));
+	client.start().catch(onStartError);
 
 	return client;
 }
