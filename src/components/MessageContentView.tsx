@@ -1,3 +1,4 @@
+import { css } from "@emotion/css";
 import * as xml from "@xmpp/xml";
 import inlineStyleParser from "inline-style-parser";
 import { ComponentChildren, h, JSX } from "preact";
@@ -9,6 +10,12 @@ import { parse0393, StylingBlock0393, StylingSpan0393 } from "../util/xmpp/styli
 import { ErrorAlert } from "./DataView";
 
 const MESSAGE_CONTENT_TYPE_PRIORITY: Array<MessageContent["type"]> = ["plain", "0393", "markdown", "xhtml"];
+
+const styles = {
+	plainMessage: css({
+		whiteSpace: "pre-wrap",
+	}),
+};
 
 export function MessageContentView(props: {content: MessageContent[] | MessageContent}) {
 	const content = useMemo(() => {
@@ -32,7 +39,7 @@ export function MessageContentView(props: {content: MessageContent[] | MessageCo
 		}
 	}, [props.content]);
 
-	if(content.type === "plain") return <span>{content.content}</span>;
+	if(content.type === "plain") return <span class={styles.plainMessage}>{content.content}</span>;
 	else if(content.type === "0393") return <MessageContent0393 content={content.content} />;
 	else if(content.type === "xhtml") return <MessageContentXHTMLIM content={content.content} />;
 	else if(content.type === "markdown") return <MessageContentMarkdown content={content.content} />;
@@ -49,7 +56,9 @@ function MessageContent0393(props: {content: string}) {
 }
 
 function convert0393BlockToNode(block: StylingBlock0393) {
-	if(block.type === "plain") return <div>{block.children.map(convert0393SpanToNode)}</div>;
+	if(block.type === "plain") {
+		return <div class={styles.plainMessage}>{block.children.map(convert0393SpanToNode)}</div>;
+	}
 	else if(block.type === "pre") return <pre><code>{block.text}</code></pre>;
 	else if(block.type === "quote") return <blockquote>{block.children.map(convert0393BlockToNode)}</blockquote>;
 	else {
