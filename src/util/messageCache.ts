@@ -30,7 +30,10 @@ export class MessageCache {
 		>
 	>;
 
-	public constructor(public readonly container: MessageContainer, private conn: ConnectionContext) {
+	public constructor(
+		public readonly container: MessageContainer,
+		private conn: Pick<ConnectionContext, "addEventListener" | "removeEventListener" | "requestArchive" | "jid">,
+	) {
 		this.conn.addEventListener("message", this.onMessage);
 		this.conn.addEventListener("messageRemove", this.onMessageRemove);
 		this.conn.addEventListener("messageEdit", this.onMessageEdit);

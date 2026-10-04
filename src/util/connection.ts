@@ -14,7 +14,6 @@ import { createContext } from "preact";
 import { useCallback, useContext, useEffect, useMemo, useRef } from "preact/hooks";
 import useLatestCallback from "use-latest-callback";
 
-import { DEFAULT_NOTIFICATIONS_SETTINGS, NotificationsSettings } from "..";
 import { compareRanks, DEFAULT_RANK, genRankBetween } from "./lexrank";
 import { markdownHasAnyFormatting, parseMarkdown, renderMarkdownTo0393, renderMarkdownToXHTML } from "./markdown";
 import SignalMap from "./SignalMap";
@@ -89,6 +88,13 @@ export enum NotificationLevel {
 	OnMention = "on-mention",
 	Always = "always",
 }
+
+export type NotificationsSettings = Partial<Record<NotificationCategory, NotificationLevel>>;
+
+export const DEFAULT_NOTIFICATIONS_SETTINGS: Record<NotificationCategory, NotificationLevel> = {
+	[NotificationCategory.Direct]: NotificationLevel.Always,
+	[NotificationCategory.Room]: NotificationLevel.Never,
+};
 
 export interface Room {
 	jid: JID;
@@ -189,7 +195,7 @@ export interface MessageReactionsChangeEvent {
 	from: {jid: JID; occupantID?: string};
 }
 
-interface ConnectionEventMap {
+export interface ConnectionEventMap {
 	message: MessageEvent;
 	messageEdit: MessageEditEvent;
 	messageReactionsChange: MessageReactionsChangeEvent;

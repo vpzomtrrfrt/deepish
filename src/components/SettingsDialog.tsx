@@ -2,8 +2,8 @@ import { JSX } from "preact";
 import { useCallback, useContext } from "preact/hooks";
 import { useIntl } from "react-intl";
 
-import { DEFAULT_NOTIFICATIONS_SETTINGS, NOTIFICATION_LEVEL_NAMES, useAppContext } from "..";
-import { NotificationLevel } from "../util/connection";
+import { NOTIFICATION_LEVEL_NAMES, useAppContext } from "..";
+import { DEFAULT_NOTIFICATIONS_SETTINGS, NotificationLevel } from "../util/connection";
 import { msgClose } from "../util/langCommon";
 import Button from "./Button";
 import DataView, { ErrorAlert } from "./DataView";

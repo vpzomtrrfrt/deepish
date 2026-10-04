@@ -16,12 +16,11 @@ import DataView from "./components/DataView";
 import DialogContainer, { DialogContainerRef } from "./components/DialogContainer";
 import ChatPage from "./pages/chat";
 import LoginPage from "./pages/login";
-import { ConnectionsContext, MessageContent, MessageEvent, NotificationLevel, useCreateConnections } from "./util/connection";
+import { ConnectionsContext, MessageContent, MessageEvent, NotificationLevel, NotificationsSettings, useCreateConnections } from "./util/connection";
 import matchLocale from "./util/matchLocale";
 import { maybeGetNickForCounterpart } from "./util/profileUtil";
 import SignalMap, { useSignalMapKeysWhereValueMatches } from "./util/SignalMap";
 import { themeCSS, themeVars } from "./util/theme";
-import { NotificationCategory } from "./util/types";
 import useData, { LoadState } from "./util/useData";
 import useEffectOnce from "./util/useEffectOnce";
 import useEventHandler from "./util/useEventHandler";
@@ -30,13 +29,6 @@ const SUPPORTED_LANGUAGES = ["en", "eo"];
 const DEFAULT_LANGUAGE = "en";
 
 const NOTIFICATIONS_CONTENT_TYPE_PRIORITY: Array<MessageContent["type"]> = ["xhtml", "0393", "plain"];
-
-export type NotificationsSettings = Partial<Record<NotificationCategory, NotificationLevel>>;
-
-export const DEFAULT_NOTIFICATIONS_SETTINGS: Record<NotificationCategory, NotificationLevel> = {
-	[NotificationCategory.Direct]: NotificationLevel.Always,
-	[NotificationCategory.Room]: NotificationLevel.Never,
-};
 
 export const NOTIFICATION_LEVEL_NAMES: Record<NotificationLevel.Never | NotificationLevel.Always, MessageDescriptor> = {
 	[NotificationLevel.Never]: defineMessage({
