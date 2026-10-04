@@ -333,7 +333,16 @@ export class MessageCache {
 
 			this.messages.value = this.messages.value.map(message => {
 				if(message.ids.some(x => x.equals(evt.target, true))) {
-					const key = evt.from.jid.bare().toString() + "/";
+					const key = evt.room === null ?
+						(evt.from.jid.bare().toString() + "/") :
+						(
+							evt.from.jid.toString() + "/" + (
+								typeof evt.from.occupantID === "undefined" ?
+									"" :
+									encodeURIComponent(evt.from.occupantID)
+							)
+						);
+
 					const entry = message.reactions.get(key);
 
 					if(typeof entry === "undefined" || entry.timestamp.getTime() < evt.reactions.timestamp.getTime()) {
